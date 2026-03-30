@@ -1,0 +1,131 @@
+# uncertainty_flow
+
+> Probabilistic forecasting and uncertainty quantification — as easy as `fit` / `predict`.
+
+[![PyPI version](https://badge.fury.io/py/uncertainty-flow.svg)](https://badge.fury.io/py/uncertainty-flow)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+---
+
+## Why uncertainty_flow?
+
+Most forecasting libraries are optimised for point predictions. Real-world decisions require understanding *uncertainty* — but existing tools either lack robust support or scatter it across incompatible APIs.
+
+`uncertainty_flow` is built **distribution-first**: every model returns a `DistributionPrediction` object, not just a number. Uncertainty is not an afterthought.
+
+---
+
+## Key Features
+
+| Feature | Description |
+|---|---|
+| **Distribution-first API** | `model.predict()` returns a `DistributionPrediction` object with `.quantile()`, `.interval()`, `.mean()`, and `.plot()` |
+| **Polars-native I/O** | Pass Polars DataFrames or LazyFrames directly — including lazy evaluation support |
+| **Conformal wrappers** | Wrap any scikit-learn model with statistically rigorous coverage guarantees |
+| **Multivariate support** | Marginal CDFs per target, with Gaussian copula for joint intervals |
+| **Calibration reports** | `.calibration_report()` returns a Polars DataFrame — paste-ready for model cards |
+| **Uncertainty driver detection** | Automatic residual correlation analysis surfaces which features drive interval width |
+| **Time series ready** | Univariate and multivariate forecasting from day one |
+| **Honest guarantees** | Every model is clearly documented: coverage-guaranteed vs. best-effort |
+
+---
+
+## Installation
+
+```bash
+pip install uncertainty-flow
+# or, recommended:
+uv add uncertainty-flow
+```
+
+---
+
+## Quickstart
+
+### Tabular — Wrap any scikit-learn model
+
+```python
+import polars as pl
+from sklearn.ensemble import GradientBoostingRegressor
+from uncertainty_flow.wrappers import ConformalRegressor
+
+# Load data as Polars DataFrame
+df = pl.read_csv("data.csv")
+X_train, X_test = df[:800], df[800:]
+
+# Wrap any sklearn estimator
+base = GradientBoostingRegressor()
+model = ConformalRegressor(base_model=base)
+model.fit(X_train, target="price")
+
+# Get a full distribution prediction
+pred = model.predict(X_test)
+
+# Extract what you need
+pred.interval(confidence=0.9)       # (lower: Series, upper: Series)
+pred.quantile([0.05, 0.5, 0.95])    # Polars DataFrame of quantiles
+pred.mean()                         # point estimate
+pred.plot()                         # fan chart + calibration overlay
+```
+
+### Time Series — Multivariate forecasting
+
+```python
+from uncertainty_flow.models import QuantileForestForecaster
+
+model = QuantileForestForecaster(
+    targets=["price", "volume"],
+    horizon=14,
+    target_correlation="auto",   # learns Gaussian copula from data
+)
+model.fit(ts_train)
+
+pred = model.predict(ts_test)
+pred.interval(confidence=0.9)    # joint intervals across both targets
+```
+
+### Calibration Report
+
+```python
+report = model.calibration_report(X_test, y_test)
+# Returns a Polars DataFrame:
+# ┌────────────┬──────────────────┬───────────────────┬──────────┬───────────────┐
+# │ quantile   │ requested_coverage│ achieved_coverage │ sharpness│ winkler_score │
+# ╞════════════╪══════════════════╪═══════════════════╪══════════╪═══════════════╡
+# │ 0.80       │ 0.80             │ 0.83              │ 12.4     │ 18.2          │
+# │ 0.90       │ 0.90             │ 0.88              │ 17.1     │ 22.7          │
+# │ 0.95       │ 0.95             │ 0.91              │ 21.3     │ 28.4          │
+# └────────────┴──────────────────┴───────────────────┴──────────┴───────────────┘
+```
+
+---
+
+## Coverage Guarantees
+
+Not all models are equal. See [Models Guide](./docs/guides/models.md) for the full breakdown.
+
+| Model | Coverage Guarantee | Non-Crossing |
+|---|---|---|
+| `ConformalRegressor` | ✅ Guaranteed (exchangeability assumption) | ✅ Post-sort |
+| `QuantileForestForecaster` | ⚠️ Empirical only | ✅ Post-sort |
+| `DeepQuantileNet` | ⚠️ Empirical only | ✅ Post-sort |
+| `ConformalForecaster` | ✅ Guaranteed (with temporal correction) | ✅ Post-sort |
+
+---
+
+## Roadmap
+
+See [Roadmap](./docs/project/roadmap.md) for planned features including `.sample()`, Quantile SHAP, PyTorch backend, and full joint copula support.
+
+---
+
+## Contributing
+
+See [Contributing Guide](./docs/project/contributing.md) for dev setup, testing conventions, and how to add a new model.
+
+---
+
+## License
+
+MIT
