@@ -1,15 +1,21 @@
 """ConformalRegressor - wrap any sklearn model with conformal prediction."""
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
-from sklearn.base import BaseEstimator
+from sklearn.base import BaseEstimator, clone
 
 from ..calibration.residual_analysis import compute_uncertainty_drivers
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
+from ..utils.auto_tuning import (
+    estimator_param_candidates,
+    score_distribution_prediction,
+    valid_calibration_candidates,
+)
 from ..utils.exceptions import error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 from ..utils.split import RandomHoldoutSplit
@@ -48,6 +54,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         calibration_method: str = "holdout",
         calibration_size: float = 0.2,
         coverage_target: float = 0.9,
+        auto_tune: bool = True,
         uncertainty_features: list[str] | None = None,
         random_state: int | None = None,
     ):
@@ -59,6 +66,7 @@ class ConformalRegressor(BaseUncertaintyModel):
             calibration_method: "holdout" or "cross"
             calibration_size: Fraction of data for calibration (0-1)
             coverage_target: Default coverage level for intervals
+            auto_tune: Whether to tune supported hyperparameters before final fit
             uncertainty_features: Optional hint for heteroscedastic features
             random_state: Random seed
         """
@@ -66,6 +74,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         self.calibration_method = calibration_method
         self.calibration_size = calibration_size
         self.coverage_target = coverage_target
+        self.auto_tune = auto_tune
         self.uncertainty_features = uncertainty_features
         self.random_state = random_state
 
@@ -75,6 +84,56 @@ class ConformalRegressor(BaseUncertaintyModel):
         self._target_col_: str = ""
         self._quantiles_: np.ndarray | None = None
         self._uncertainty_drivers_: pl.DataFrame | None = None
+        self.tuned_params_: dict[str, float | int] = {}
+
+    def _auto_tune(
+        self,
+        data: pl.DataFrame,
+        target: str,
+    ) -> None:
+        """Tune supported params using a validation split."""
+        splitter = RandomHoldoutSplit(random_state=self.random_state)
+        tune_train, tune_val = splitter.split(data, 0.2)
+
+        best_score = float("inf")
+        best_params: dict[str, float | int] = {}
+        best_model = clone(self.base_model)
+
+        for base_params in estimator_param_candidates(self.base_model):
+            tuned_base = clone(self.base_model)
+            if base_params:
+                tuned_base.set_params(**base_params)
+
+            for calib_size in valid_calibration_candidates(
+                len(tune_train), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
+            ):
+                candidate = ConformalRegressor(
+                    base_model=tuned_base,
+                    calibration_method=self.calibration_method,
+                    calibration_size=calib_size,
+                    coverage_target=self.coverage_target,
+                    auto_tune=False,
+                    uncertainty_features=self.uncertainty_features,
+                    random_state=self.random_state,
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    candidate.fit(tune_train, target=target)
+                    pred = candidate.predict(tune_val)
+                score = score_distribution_prediction(
+                    pred,
+                    tune_val[target],
+                    [target],
+                    confidence=self.coverage_target,
+                )
+                if score < best_score:
+                    best_score = score
+                    best_model = clone(tuned_base)
+                    best_params = {**base_params, "calibration_size": calib_size}
+
+        self.base_model = best_model
+        self.calibration_size = float(best_params.get("calibration_size", self.calibration_size))
+        self.tuned_params_ = best_params
 
     def fit(
         self,
@@ -93,7 +152,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         Returns:
             self (for method chaining)
         """
-        # Materialize LazyFrame if needed
+        # Materialize LazyFrame once at the start
         if isinstance(data, pl.LazyFrame):
             data = data.collect()
 
@@ -102,17 +161,22 @@ class ConformalRegressor(BaseUncertaintyModel):
             raise ValueError("target is required for ConformalRegressor")
         target_str = target if isinstance(target, str) else target[0]
         self._target_col_ = target_str
-        self._feature_cols_ = [col for col in data.columns if col != target_str]
+
+        if self.auto_tune:
+            self._auto_tune(data, target_str)
+
+        feature_cols = [col for col in data.columns if col != target_str]
+        self._feature_cols_ = feature_cols
 
         # Split data
         splitter = RandomHoldoutSplit(random_state=self.random_state)
         train, calib = splitter.split(data, self.calibration_size)
 
-        # Convert to numpy
-        x_train = to_numpy(train, self._feature_cols_)
-        y_train = to_numpy(train, [target_str]).flatten()
-        x_calib = to_numpy(calib, self._feature_cols_)
-        y_calib = to_numpy(calib, [target_str]).flatten()
+        # Convert to numpy - single collect already done above
+        x_train = train.select(feature_cols).to_numpy()
+        y_train = train.select(target_str).to_numpy().flatten()
+        x_calib = calib.select(feature_cols).to_numpy()
+        y_calib = calib.select(target_str).to_numpy().flatten()
 
         # Fit base model
         self.base_model.fit(x_train, y_train)
@@ -125,8 +189,8 @@ class ConformalRegressor(BaseUncertaintyModel):
         self._quantiles_ = np.quantile(residuals, DEFAULT_QUANTILES)
 
         # Compute uncertainty drivers using calibration features
-        feature_df = calib.select(self._feature_cols_)
-        self._uncertainty_drivers_ = compute_uncertainty_drivers(residuals, feature_df)
+        calib_features = calib.select(feature_cols)
+        self._uncertainty_drivers_ = compute_uncertainty_drivers(residuals, calib_features)
 
         self._fitted = True
         return self
@@ -158,19 +222,10 @@ class ConformalRegressor(BaseUncertaintyModel):
         for i, q in enumerate(self._quantiles_):
             quantile_matrix[:, i] = point_preds + q
 
-        # Extract index if available
-        index = None
-        if data.height == len(point_preds):
-            try:
-                index = data.select(pl.row_index()).to_series()
-            except Exception:
-                pass
-
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,
             quantile_levels=DEFAULT_QUANTILES,
             target_names=[self._target_col_],
-            index=index,
         )
 
     @property

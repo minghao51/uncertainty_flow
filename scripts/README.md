@@ -18,6 +18,11 @@ This will:
 
 ## Trial Benchmark
 
+This legacy smoke-test script is kept for quick local experiments.
+For maintained benchmark workflows and committed benchmark artifacts, use
+`scripts/comprehensive_benchmark.py`, `scripts/generate_report.py`, and
+the docs under `docs/benchmarks/`.
+
 Run benchmarks to test models on sample datasets:
 
 ```bash
@@ -28,7 +33,7 @@ This will:
 1. Load each dataset from `data/`
 2. Run each model (QuantileForestForecaster, ConformalRegressor, ConformalForecaster)
 3. Measure coverage, sharpness, Winkler score, and training time
-4. Output summary table to console and `benchmark_results.csv`
+4. Output a local summary table to console and `benchmark_results.csv`
 
 ## Requirements
 

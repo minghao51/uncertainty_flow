@@ -45,11 +45,8 @@ def to_numpy(
     if missing:
         error_invalid_data(f"Columns not found: {missing}")
 
-    # Select columns
-    data = data.select(columns)
-
-    # Convert to numpy
-    return data.to_numpy()
+    # Select and convert in a single operation
+    return data.select(columns).to_numpy()
 
 
 def to_polars(

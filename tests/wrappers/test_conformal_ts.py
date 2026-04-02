@@ -51,6 +51,7 @@ class TestConformalForecasterInit:
         assert model.copula_family == "auto"
         assert model.calibration_method == "holdout"
         assert model.calibration_size == 0.2
+        assert model.auto_tune is True
 
     def test_init_custom_params(self):
         """Should initialize with custom parameters."""
@@ -62,6 +63,7 @@ class TestConformalForecasterInit:
             lags=2,
             calibration_method="cross",
             calibration_size=0.3,
+            auto_tune=False,
             uncertainty_features=["volume"],
             random_state=42,
         )
@@ -71,6 +73,7 @@ class TestConformalForecasterInit:
         assert model.lags == [2]
         assert model.calibration_method == "cross"
         assert model.calibration_size == 0.3
+        assert model.auto_tune is False
         assert model.uncertainty_features == ["volume"]
         assert model.random_state == 42
 

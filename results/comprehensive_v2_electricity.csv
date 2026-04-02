@@ -1,0 +1,10 @@
+dataset,domain,model,n_samples,horizon,coverage_90,coverage_80,sharpness_90,sharpness_80,winkler_90,winkler_80,pinball_loss,train_time_sec,was_tuned,tuned_params
+electricity,Energy,quantile-forest,500,3,0.928,0.856,244.7004,185.5544,306.0097,252.2332,14.3575,0.686,false,{}
+electricity,Energy,conformal-regressor,500,3,0.932,0.856,325.0277,248.1832,365.8501,301.2997,13.2401,0.819,false,{}
+electricity,Energy,conformal-forecaster,498,3,0.9578,0.8735,310.9946,226.5702,342.0786,278.3218,14.4349,0.779,false,{}
+electricity,Energy,linear-regression,500,3,0.98,0.96,823.4391,669.099,849.8088,707.3885,20.2631,0.062,false,{}
+electricity,Energy,ridge-regression,500,3,0.98,0.96,825.0365,667.0104,850.5426,705.3474,20.6168,0.06,false,{}
+electricity,Energy,random-forest,500,3,0.97,0.942,293.9433,224.2133,325.7083,253.5052,12.395,0.204,false,{}
+electricity,Energy,gradient-boosting,500,3,0.932,0.856,325.0277,248.1832,365.8501,301.2997,13.2401,0.984,false,{}
+electricity,Energy,naive-forecast,500,3,0.724,0.618,768.2935,597.8211,1435.8435,1214.9228,58.9326,0.0,false,{}
+electricity,Energy,moving-average,500,3,0.718,0.564,717.4348,558.2471,1366.5888,1163.8284,57.2529,0.002,false,{}

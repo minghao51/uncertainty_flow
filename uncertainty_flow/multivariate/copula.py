@@ -116,7 +116,7 @@ class GaussianCopula(BaseCopula):
                 return -np.inf
             mvn = stats.multivariate_normal(cov=cov)
             ll = np.sum(mvn.logpdf(stats.norm.ppf(uniform)))
-        except Exception:
+        except (np.linalg.LinAlgError, ValueError):
             ll = -np.inf
 
         return float(ll)
@@ -163,7 +163,7 @@ class GaussianCopula(BaseCopula):
                 cov=cov,
             )
             normal_samples = mvn.rvs(size=n_samples)
-        except Exception:
+        except (np.linalg.LinAlgError, ValueError):
             # Fallback for singular correlation matrices
             cov = self.correlation_matrix_
             if cov is None:
@@ -256,7 +256,7 @@ class ClaytonCopula(BaseCopula):
                 if not np.isfinite(ll).all():
                     return 1e10
                 return -np.sum(ll)
-            except Exception:
+            except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 
         from scipy.optimize import minimize_scalar
@@ -297,7 +297,7 @@ class ClaytonCopula(BaseCopula):
                 - np.log(h)
             )
             return float(np.sum(ll))
-        except Exception:
+        except (ValueError, OverflowError, ZeroDivisionError):
             return -np.inf
 
     def sample(
@@ -411,7 +411,7 @@ class GumbelCopula(BaseCopula):
                 if not np.isfinite(ll).all():
                     return 1e10
                 return -np.sum(ll)
-            except Exception:
+            except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 
         from scipy.optimize import minimize_scalar
@@ -450,7 +450,7 @@ class GumbelCopula(BaseCopula):
             psi = -np.log(-np.log(u)) - np.log(-np.log(v))
             ll = t ** (1 / theta) + psi - np.log(h)
             return float(np.sum(ll))
-        except Exception:
+        except (ValueError, OverflowError, ZeroDivisionError):
             return -np.inf
 
     def sample(
@@ -577,7 +577,7 @@ class FrankCopula(BaseCopula):
                 if not np.isfinite(ll).all():
                     return 1e10
                 return -np.sum(ll)
-            except Exception:
+            except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 
         from scipy.optimize import minimize_scalar
@@ -625,7 +625,7 @@ class FrankCopula(BaseCopula):
                 + theta * h
             )
             return float(np.sum(ll))
-        except Exception:
+        except (ValueError, OverflowError, ZeroDivisionError):
             return -np.inf
 
     def sample(
@@ -744,7 +744,7 @@ def auto_select_copula(
                 best_bic = bic
                 best_family = family_name
 
-        except Exception:
+        except (ValueError, OverflowError, np.linalg.LinAlgError):
             continue
 
     return best_family

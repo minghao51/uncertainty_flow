@@ -23,6 +23,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         calibration_method: str = "holdout", # "holdout" | "cross"
         calibration_size: float = 0.2,       # Fraction for holdout
         coverage_target: float = 0.9,        # Default interval width
+        auto_tune: bool = True,              # Tune supported params before final fit
         uncertainty_features: list[str] | None = None,  # User hint for heteroscedasticity
         random_state: int | None = None,
     ): ...
@@ -101,6 +102,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         lags: int | list[int] = 1,           # Lag features auto-generated
         calibration_method: str = "holdout", # "holdout" | "cross"
         calibration_size: float = 0.2,       # Always takes LAST n% (temporal)
+        auto_tune: bool = True,              # Tune supported params before final fit
         uncertainty_features: list[str] | None = None,
         random_state: int | None = None,
     ): ...
@@ -148,6 +150,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         min_samples_leaf: int = 5,            # Controls distribution richness per leaf
         target_correlation: str = "auto",
         calibration_size: float = 0.2,
+        auto_tune: bool = True,
         uncertainty_features: list[str] | None = None,
         random_state: int | None = None,
     ): ...

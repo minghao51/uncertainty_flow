@@ -18,6 +18,7 @@ class TestTransformerForecasterInit:
         assert model.horizon == 24
         assert model.model_name == get_config().default_chronos_model
         assert model.calibration_size == 0.2
+        assert model.auto_tune is True
         assert model.device == "auto"
         assert model.random_state is None
 
@@ -30,6 +31,7 @@ class TestTransformerForecasterInit:
             horizon=48,
             model_name="chronos-2",
             calibration_size=0.3,
+            auto_tune=False,
             device="cpu",
             random_state=42,
         )
@@ -37,6 +39,7 @@ class TestTransformerForecasterInit:
         assert model.horizon == 48
         assert model.model_name == "chronos-2"
         assert model.calibration_size == 0.3
+        assert model.auto_tune is False
         assert model.device == "cpu"
         assert model.random_state == 42
 

@@ -49,6 +49,7 @@ class TestConformalRegressorInit:
         assert model.calibration_method == "holdout"
         assert model.calibration_size == 0.2
         assert model.coverage_target == 0.9
+        assert model.auto_tune is True
         assert model.random_state is None
 
     def test_init_custom_params(self):
@@ -58,12 +59,14 @@ class TestConformalRegressorInit:
             calibration_method="cross",
             calibration_size=0.3,
             coverage_target=0.95,
+            auto_tune=False,
             uncertainty_features=["x1"],
             random_state=42,
         )
         assert model.calibration_method == "cross"
         assert model.calibration_size == 0.3
         assert model.coverage_target == 0.95
+        assert model.auto_tune is False
         assert model.uncertainty_features == ["x1"]
         assert model.random_state == 42
 

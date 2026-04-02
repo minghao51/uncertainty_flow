@@ -50,12 +50,24 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         """
         self.hidden_layer_sizes = hidden_layer_sizes
         self.quantile_levels = quantile_levels or DEFAULT_QUANTILES
-        self.random_state = random_state
+        self.random_state = self._validate_random_state(random_state)
 
         # Fitted attributes
         self._fitted = False
         self._scaler_: StandardScaler
         self._feature_cols_: list[str] | None
+
+    @staticmethod
+    def _validate_random_state(random_state: int | None) -> int | None:
+        """Validate random_state parameter."""
+        if random_state is not None:
+            if not isinstance(random_state, int):
+                error_invalid_data(
+                    f"random_state must be an integer or None, got {type(random_state).__name__}"
+                )
+            if random_state < 0:
+                error_invalid_data(f"random_state must be non-negative, got {random_state}")
+        return random_state
 
     def fit(  # type: ignore[override]
         self,
@@ -113,14 +125,17 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         # Backend-specific prediction
         quantile_matrix = self._predict_backend(x_scaled)
 
-        # Ensure monotonicity
+        # Ensure monotonicity (sorts each row)
         quantile_matrix = self._ensure_monotonicity(quantile_matrix)
 
-        # Sort by quantile levels
+        # Sort columns by quantile levels (only needed if levels aren't already sorted)
         sorted_levels = np.array(self.quantile_levels)
         sorted_indices = np.argsort(sorted_levels)
-        quantile_matrix = quantile_matrix[:, sorted_indices]
-        sorted_levels_list = [self.quantile_levels[i] for i in sorted_indices]
+        if not np.array_equal(sorted_indices, np.arange(len(sorted_indices))):
+            quantile_matrix = quantile_matrix[:, sorted_indices]
+            sorted_levels_list = [self.quantile_levels[i] for i in sorted_indices]
+        else:
+            sorted_levels_list = self.quantile_levels
 
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,
@@ -190,18 +205,15 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         """
         Ensure quantile monotonicity by post-sorting each prediction.
 
+        Uses vectorized np.sort instead of row-by-row loop.
+
         Args:
             quantile_matrix: Raw quantile predictions (n_samples, n_quantiles).
 
         Returns:
             Monotonic quantile matrix.
         """
-        n_samples = len(quantile_matrix)
-        for i in range(n_samples):
-            sorted_indices = np.argsort(quantile_matrix[i, :])
-            quantile_matrix[i, :] = quantile_matrix[i, sorted_indices]
-
-        return quantile_matrix
+        return np.sort(quantile_matrix, axis=1)
 
     @abstractmethod
     def _fit_backend(

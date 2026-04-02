@@ -126,16 +126,14 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         """
         trunk_features = self._extract_trunk_features(x)
 
-        n_samples = len(x)
-        n_quantiles = len(self.quantile_levels)
-        quantile_matrix = np.zeros((n_samples, n_quantiles))
+        # Vectorized: stack all head coefficients into a matrix
+        # trunk_features: (n_samples, n_features)
+        # coef_matrix: (n_features, n_quantiles)
+        coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])
+        intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
 
-        for q_idx, q in enumerate(self.quantile_levels):
-            coef = self._head_coefs_[q]
-            intercept = self._head_intercepts_[q]
-            quantile_matrix[:, q_idx] = trunk_features @ coef + intercept
-
-        return quantile_matrix
+        # Single matrix multiplication instead of loop
+        return trunk_features @ coef_matrix + intercepts
 
     def _extract_trunk_features(self, x: np.ndarray) -> np.ndarray:
         """
@@ -148,8 +146,8 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
             Hidden layer activations.
         """
         activations = x
-        for i in range(len(self._trunk_.coefs_) - 1):
-            activations = np.dot(activations, self._trunk_.coefs_[i]) + self._trunk_.intercepts_[i]
+        for coef, intercept in zip(self._trunk_.coefs_[:-1], self._trunk_.intercepts_[:-1]):
+            activations = np.dot(activations, coef) + intercept
             activations = self._relu(activations)
         return activations
 

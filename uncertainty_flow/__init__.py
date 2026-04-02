@@ -36,6 +36,20 @@ from .utils import (
 # Wrappers
 from .wrappers import ConformalForecaster, ConformalRegressor
 
+# Bayesian module (optional - requires numpyro)
+try:
+    from .bayesian import BayesianQuantileRegressor  # noqa: F401
+
+    _numpyro_available = True
+except ImportError:
+    _numpyro_available = False
+
+# Causal module (no extra deps)
+from .causal import CausalUncertaintyEstimator
+
+# Multi-modal module (no extra deps)
+from .multimodal import CrossModalAggregator
+
 __all__ = [
     # Core
     "BaseUncertaintyModel",
@@ -55,7 +69,14 @@ __all__ = [
     # Models
     "DeepQuantileNet",
     "QuantileForestForecaster",
+    # Causal
+    "CausalUncertaintyEstimator",
+    # Multi-Modal
+    "CrossModalAggregator",
 ]
 
 if _torch_available:
     __all__.append("DeepQuantileNetTorch")
+
+if _numpyro_available:
+    __all__.append("BayesianQuantileRegressor")

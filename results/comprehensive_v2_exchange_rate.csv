@@ -1,0 +1,10 @@
+dataset,domain,model,n_samples,horizon,coverage_90,coverage_80,sharpness_90,sharpness_80,winkler_90,winkler_80,pinball_loss,train_time_sec,was_tuned,tuned_params
+exchange_rate,Finance,quantile-forest,500,3,0.778,0.728,0.0681,0.0548,0.6894,0.3802,0.03,0.03,false,{}
+exchange_rate,Finance,conformal-regressor,500,3,0.958,0.862,0.5986,0.5239,0.6145,0.5568,0.0505,0.029,false,{}
+exchange_rate,Finance,conformal-forecaster,498,3,0.8795,0.753,0.3262,0.2974,0.3613,0.3328,0.0281,0.029,false,{}
+exchange_rate,Finance,linear-regression,500,3,0.492,0.42,0.3522,0.3054,0.9911,0.6909,0.0335,0.004,false,{}
+exchange_rate,Finance,ridge-regression,500,3,0.54,0.464,0.3833,0.336,0.9315,0.6826,0.0356,0.004,false,{}
+exchange_rate,Finance,random-forest,500,3,0.982,0.96,0.5559,0.4605,0.5665,0.4819,0.0441,0.055,false,{}
+exchange_rate,Finance,gradient-boosting,500,3,0.958,0.862,0.5986,0.5239,0.6145,0.5568,0.0505,0.028,false,{}
+exchange_rate,Finance,naive-forecast,500,3,0.038,0.038,0.1779,0.1384,8.1133,4.296,0.0572,0.0,false,{}
+exchange_rate,Finance,moving-average,500,3,0.038,0.038,0.1411,0.1098,8.3211,4.3504,0.0548,0.002,false,{}

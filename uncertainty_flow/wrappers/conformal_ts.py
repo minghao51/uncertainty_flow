@@ -1,5 +1,6 @@
 """ConformalForecaster - time series forecasting with conformal prediction."""
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -10,6 +11,12 @@ from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
 from ..multivariate.copula import COPULA_FAMILIES, BaseCopula, auto_select_copula
+from ..utils.auto_tuning import (
+    candidate_values,
+    estimator_param_candidates,
+    score_distribution_prediction,
+    valid_calibration_candidates,
+)
 from ..utils.exceptions import error_invalid_data, error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 from ..utils.split import TemporalHoldoutSplit
@@ -53,6 +60,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         lags: int | list[int] = 1,
         calibration_method: str = "holdout",
         calibration_size: float = 0.2,
+        auto_tune: bool = True,
         uncertainty_features: list[str] | None = None,
         random_state: int | None = None,
     ):
@@ -70,6 +78,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             lags: Lag order(s) to generate
             calibration_method: "holdout" or "cross"
             calibration_size: Fraction for calibration (from END)
+            auto_tune: Whether to tune supported hyperparameters before final fit
             uncertainty_features: Optional hint for heteroscedastic features
             random_state: Random seed
         """
@@ -80,6 +89,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         self.lags = [lags] if isinstance(lags, int) else lags
         self.calibration_method = calibration_method
         self.calibration_size = calibration_size
+        self.auto_tune = auto_tune
         self.uncertainty_features = uncertainty_features
         self.random_state = random_state
 
@@ -90,6 +100,62 @@ class ConformalForecaster(BaseUncertaintyModel):
         self._quantiles_: dict[str, np.ndarray] = {}
         self._feature_cols_: dict[str, list[str]] = {}
         self._uncertainty_drivers_: pl.DataFrame | None = None
+        self.tuned_params_: dict[str, float | int] = {}
+
+    def _auto_tune(self, data: pl.DataFrame) -> None:
+        """Tune supported params using a temporal validation split."""
+        splitter = TemporalHoldoutSplit()
+        tune_train, tune_val = splitter.split(data, 0.2)
+
+        best_score = float("inf")
+        best_params: dict[str, float | int] = {}
+        best_model = clone(self.base_model)
+
+        for base_params in estimator_param_candidates(self.base_model):
+            tuned_base = clone(self.base_model)
+            if base_params:
+                tuned_base.set_params(**base_params)
+
+            for calib_size in valid_calibration_candidates(
+                len(tune_train), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
+            ):
+                for lags in candidate_values(self.lags[0], [1, 2, 3]):
+                    candidate = ConformalForecaster(
+                        base_model=tuned_base,
+                        horizon=self.horizon,
+                        targets=self.targets,
+                        copula_family=self.copula_family,
+                        lags=lags,
+                        calibration_method=self.calibration_method,
+                        calibration_size=calib_size,
+                        auto_tune=False,
+                        uncertainty_features=self.uncertainty_features,
+                        random_state=self.random_state,
+                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        candidate.fit(tune_train)
+                        pred = candidate.predict(tune_val)
+                    actuals = tune_val.select(self.targets)
+                    score = score_distribution_prediction(
+                        pred,
+                        actuals,
+                        self.targets,
+                        confidence=0.9,
+                    )
+                    if score < best_score:
+                        best_score = score
+                        best_model = clone(tuned_base)
+                        best_params = {
+                            **base_params,
+                            "calibration_size": calib_size,
+                            "lags": int(lags),
+                        }
+
+        self.base_model = best_model
+        self.calibration_size = float(best_params.get("calibration_size", self.calibration_size))
+        self.lags = [int(best_params.get("lags", self.lags[0]))]
+        self.tuned_params_ = best_params
 
     def _create_lag_features(
         self,
@@ -97,7 +163,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         target: str,
     ) -> pl.DataFrame:
         """Create lag features for a target."""
-        result = data.clone()
+        result = data
         for lag in self.lags:
             result = result.with_columns(pl.col(target).shift(lag).alias(f"{target}_lag_{lag}"))
         return result.drop_nulls()
@@ -123,8 +189,11 @@ class ConformalForecaster(BaseUncertaintyModel):
         if isinstance(data, pl.LazyFrame):
             data = data.collect()
 
+        if self.auto_tune:
+            self._auto_tune(data)
+
         # Create lag features for each target
-        data_with_lags = data.clone()
+        data_with_lags = data
         for target in self.targets:
             data_with_lags = self._create_lag_features(data_with_lags, target)
 
@@ -145,7 +214,8 @@ class ConformalForecaster(BaseUncertaintyModel):
             y_calib = to_numpy(calib, [target]).flatten()
 
             model = clone(self.base_model)
-            model.set_params(random_state=self.random_state)
+            if self.random_state is not None and "random_state" in model.get_params(deep=False):
+                model.set_params(random_state=self.random_state)
             model.fit(x_train, y_train)
             self._models_[target] = model
 
@@ -202,7 +272,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             data = data.collect()
 
         # Create lag features
-        data_with_lags = data.clone()
+        data_with_lags = data
         for target in self.targets:
             data_with_lags = self._create_lag_features(data_with_lags, target)
 

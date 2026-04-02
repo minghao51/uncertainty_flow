@@ -50,6 +50,7 @@ class TestQuantileForestForecasterInit:
         assert model.min_samples_leaf == 5
         assert model.copula_family == "auto"
         assert model.calibration_size == 0.2
+        assert model.auto_tune is True
 
     def test_init_custom_params(self):
         """Should initialize with custom parameters."""
@@ -61,6 +62,7 @@ class TestQuantileForestForecasterInit:
             max_depth=10,
             copula_family="gaussian",
             calibration_size=0.3,
+            auto_tune=False,
             uncertainty_features=["volume"],
             random_state=42,
         )
@@ -71,6 +73,7 @@ class TestQuantileForestForecasterInit:
         assert model.max_depth == 10
         assert model.copula_family == "gaussian"
         assert model.calibration_size == 0.3
+        assert model.auto_tune is False
         assert model.uncertainty_features == ["volume"]
         assert model.random_state == 42
 
@@ -140,7 +143,7 @@ class TestQuantileForestForecasterFit:
         )
         model.fit(univariate_time_series)
         assert "target" in model._leaf_distributions
-        assert len(model._leaf_distributions["target"]) == 10  # n_estimators
+        assert len(model._leaf_distributions["target"]) == model.n_estimators
 
     def test_fit_stores_feature_cols(self, univariate_time_series):
         """Should store feature column names per target."""

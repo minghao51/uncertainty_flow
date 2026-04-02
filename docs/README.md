@@ -1,67 +1,28 @@
 # uncertainty_flow Documentation
 
-Welcome to the documentation for `uncertainty_flow` — a probabilistic forecasting and uncertainty quantification library for Python.
+This folder holds the maintained documentation for `uncertainty_flow`.
 
-## Quick Navigation
+## Start Here
 
-- **[API Reference](./api/spec.md)** - Complete API specification and usage details
-- **[Architecture Overview](./architecture/overview.md)** - System design and internal architecture
-- **[Guides](./guides/)** - User guides and tutorials
-- **[Project](./project/)** - Project management and contribution info
+- [../README.md](../README.md) for installation and quickstart
+- [./api/spec.md](./api/spec.md) for API details
+- [./architecture/overview.md](./architecture/overview.md) for package structure and data flow
+- [./guides/distribution-approach.md](./guides/distribution-approach.md) for a narrative overview of the distribution-first workflow
+- [./guides/charting.md](./guides/charting.md) for plotting, intervals, samples, and chart-oriented usage
+- [./guides/models.md](./guides/models.md) for model selection and guarantee tradeoffs
+- [./guides/calibration.md](./guides/calibration.md) for calibration diagnostics and interpretation
+- [./guides/benchmarking.md](./guides/benchmarking.md) for benchmark datasets and CLI usage
 
----
+## Project Docs
 
-## Documentation Sections
+- [./project/contributing.md](./project/contributing.md) for developer workflow
+- [./project/changelog.md](./project/changelog.md) for release history
+- [./project/roadmap.md](./project/roadmap.md) for active priorities and future work
 
-### API Reference
+## Design Notes
 
-- **[API Specification](./api/spec.md)** - Complete API documentation including all classes, methods, and parameters
+- [./guides/design.md](./guides/design.md) for durable design decisions and principles
 
-### Architecture
+## Archive
 
-- **[Architecture Overview](./architecture/overview.md)** - High-level system design, core abstractions, and architectural decisions
-
-### Guides
-
-- **[Calibration Guide](./guides/calibration.md)** - Understanding and using calibration features
-- **Models Guide](./guides/models.md)** - Available forecasting models and their characteristics
-- **Design Guide](./guides/design.md)** - Design philosophy and principles behind the library
-
-### Project
-
-- **[Roadmap](./project/roadmap.md)** - Planned features and development timeline
-- **[Changelog](./project/changelog.md)** - Version history and changes
-- **[Contributing](./project/contributing.md)** - Development setup and contribution guidelines
-
----
-
-## Getting Started
-
-1. **Install** the package:
-   ```bash
-   pip install uncertainty-flow
-   # or, recommended:
-   uv add uncertainty-flow
-   ```
-
-2. **Check out** the [main README](../README.md) for quickstart examples
-
-3. **Explore** the guides section for in-depth usage information
-
----
-
-## For Developers
-
-If you're interested in contributing to `uncertainty_flow`, please read:
-
-1. [Contributing Guide](./project/contributing.md) - Development setup and workflow
-2. [Architecture Overview](./architecture/overview.md) - Understanding the codebase
-3. [API Specification](./api/spec.md) - API design principles
-
----
-
-## Need Help?
-
-- Check the [Guides](./guides/) section for common use cases
-- Review the [API Reference](./api/spec.md) for detailed method documentation
-- See [Contributing](./project/contributing.md) for how to report issues or contribute
+Older planning snapshots and merged guides live in [./archive/README.md](./archive/README.md). They are preserved for context, but they are not the source of truth for the current codebase.

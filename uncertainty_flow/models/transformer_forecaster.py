@@ -55,6 +55,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         model_name: str | None = None,
         calibration_method: str = "holdout",
         calibration_size: float = 0.2,
+        auto_tune: bool = True,
         device: str = "auto",
         random_state: int | None = None,
         uncertainty_features: list[str] | None = None,
@@ -70,6 +71,7 @@ class TransformerForecaster(BaseUncertaintyModel):
                         "chronos-2-tiny" (8M, fastest)
             calibration_method: "holdout" (temporal split from end)
             calibration_size: Fraction of data for calibration (0-1)
+            auto_tune: Whether to tune supported hyperparameters before final fit
             device: Device for model ("auto", "cpu", "cuda")
             random_state: Random seed for reproducibility
             uncertainty_features: Optional feature names for heteroscedastic analysis
@@ -88,6 +90,7 @@ class TransformerForecaster(BaseUncertaintyModel):
                 )
         self.calibration_method = calibration_method
         self.calibration_size = calibration_size
+        self.auto_tune = auto_tune
         self.device = device
         self.random_state = random_state
         self.uncertainty_features = uncertainty_features
@@ -97,6 +100,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         self._quantiles_: np.ndarray | None = None
         self._uncertainty_drivers_: pl.DataFrame | None = None
         self._feature_cols_: list[str] = []
+        self.tuned_params_: dict[str, float | int] = {}
 
     def fit(
         self,

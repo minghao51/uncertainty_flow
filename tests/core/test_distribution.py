@@ -329,6 +329,22 @@ class TestSampleMethod:
         result = dp.sample(n=10, random_state=42)
         assert len(result) == 20  # 2 rows * 10 samples
 
+    def test_sample_chunked_preserves_original_sample_ids(self):
+        """Chunked sampling should keep sample_id tied to the input row."""
+        matrix = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+
+        result = dp.sample(n=100001, random_state=42)
+
+        assert result["sample_id"].min() == 0
+        assert result["sample_id"].max() == 1
+        counts = result.group_by("sample_id").len().sort("sample_id")["len"].to_list()
+        assert counts == [100001, 100001]
+
     def test_sample_without_scipy(self, monkeypatch):
         """Should raise ImportError if scipy not available."""
         matrix = np.array([[1, 2, 3]])
@@ -372,3 +388,290 @@ class TestSampleMethod:
         )
         result = dp.sample(n=5, random_state=42)
         assert result["price"].dtype == pl.Float64
+
+
+class TestPosteriorMethods:
+    """Test Bayesian posterior extensions."""
+
+    def test_init_accepts_posterior(self):
+        matrix = np.array([[1, 2, 3]])
+        np.random.seed(42)
+        posterior = np.random.randn(100, 5)
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        assert dp._posterior is not None
+        assert dp._posterior.shape == (100, 5)
+
+    def test_posterior_defaults_to_none(self):
+        matrix = np.array([[1, 2, 3]])
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        assert dp._posterior is None
+
+    def test_posterior_samples_raises_without_posterior(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="posterior"):
+            dp.posterior_samples()
+
+    def test_posterior_samples_returns_array(self):
+        np.random.seed(42)
+        posterior = np.random.randn(100, 5)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        result = dp.posterior_samples()
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (100, 5)
+
+    def test_credible_interval_raises_without_posterior(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="posterior"):
+            dp.credible_interval(0.9)
+
+    def test_credible_interval_returns_dataframe(self):
+        np.random.seed(42)
+        posterior = np.random.randn(1000, 3)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        result = dp.credible_interval(0.9)
+        assert isinstance(result, pl.DataFrame)
+        assert "lower" in result.columns
+        assert "upper" in result.columns
+        assert result.height == 3
+
+    def test_rhat_raises_without_posterior(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="posterior"):
+            dp.rhat()
+
+    def test_rhat_returns_array(self):
+        np.random.seed(42)
+        posterior = np.random.randn(400, 5)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        result = dp.rhat()
+        assert isinstance(result, np.ndarray)
+
+    def test_posterior_summary_raises_without_posterior(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="posterior"):
+            dp.posterior_summary()
+
+    def test_posterior_summary_returns_dataframe(self):
+        np.random.seed(42)
+        posterior = np.random.randn(400, 5)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        result = dp.posterior_summary()
+        assert isinstance(result, pl.DataFrame)
+        assert "mean" in result.columns
+        assert "std" in result.columns
+        assert result.height == 5
+
+
+class TestOptionalAttributes:
+    """Test optional posterior, group, treatment attributes."""
+
+    def test_init_accepts_group_predictions(self):
+        group_pred = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            group_predictions={"demo": group_pred},
+        )
+        assert "demo" in dp._group_predictions
+
+    def test_init_accepts_treatment_info(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            treatment_info={"cate": np.array([1.0, 2.0])},
+        )
+        assert "cate" in dp._treatment_info
+
+    def test_all_optionals_default_none(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        assert dp._posterior is None
+        assert dp._group_predictions is None
+        assert dp._treatment_info is None
+
+
+class TestGroupMethods:
+    """Test multi-modal group uncertainty methods."""
+
+    @pytest.fixture
+    def dp_with_groups(self):
+        group_a = DistributionPrediction(
+            quantile_matrix=np.array([[0.8, 1.0, 1.2]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        group_b = DistributionPrediction(
+            quantile_matrix=np.array([[0.9, 1.1, 1.3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        return DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            group_predictions={"demo": group_a, "temporal": group_b},
+        )
+
+    def test_group_uncertainty_raises_without_groups(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="group"):
+            dp.group_uncertainty()
+
+    def test_group_uncertainty_returns_dict(self, dp_with_groups):
+        result = dp_with_groups.group_uncertainty()
+        assert isinstance(result, dict)
+        assert "demo" in result
+        assert "temporal" in result
+
+    def test_group_intervals_raises_without_groups(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="group"):
+            dp.group_intervals(0.9)
+
+    def test_group_intervals_returns_dict_of_dataframes(self, dp_with_groups):
+        result = dp_with_groups.group_intervals(0.9)
+        assert isinstance(result, dict)
+        for df in result.values():
+            assert isinstance(df, pl.DataFrame)
+            assert "lower" in df.columns
+            assert "upper" in df.columns
+
+    def test_cross_group_correlation_raises_without_groups(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+        )
+        with pytest.raises(ValueError, match="group"):
+            dp.cross_group_correlation()
+
+    def test_cross_group_correlation_returns_array(self, dp_with_groups):
+        result = dp_with_groups.cross_group_correlation()
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2, 2)
+
+
+class TestTreatmentMethods:
+    """Test causal treatment effect methods."""
+
+    @pytest.fixture
+    def dp_with_treatment(self):
+        return DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3], [4, 5, 6]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["outcome"],
+            treatment_info={
+                "cate": np.array([0.5, 1.2]),
+                "treatment_col": "intervention",
+                "ate": 0.85,
+                "ate_ci": (0.3, 1.4),
+            },
+        )
+
+    def test_treatment_effect_raises_without_info(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["outcome"],
+        )
+        with pytest.raises(ValueError, match="treatment"):
+            dp.treatment_effect()
+
+    def test_treatment_effect_returns_array(self, dp_with_treatment):
+        result = dp_with_treatment.treatment_effect()
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (2,)
+
+    def test_average_treatment_effect_returns_dict(self, dp_with_treatment):
+        result = dp_with_treatment.average_treatment_effect()
+        assert isinstance(result, dict)
+        assert result["ate"] == 0.85
+        assert "ci" in result
+
+    def test_heterogeneity_score_raises_without_info(self):
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["outcome"],
+        )
+        with pytest.raises(ValueError, match="treatment"):
+            dp.heterogeneity_score()
+
+    def test_heterogeneity_score_returns_float(self, dp_with_treatment):
+        result = dp_with_treatment.heterogeneity_score()
+        assert isinstance(result, float)
+        assert result >= 0
+
+    def test_repr_with_posterior(self):
+        np.random.seed(42)
+        posterior = np.random.randn(100, 5)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        repr_str = repr(dp)
+        assert "posterior" in repr_str

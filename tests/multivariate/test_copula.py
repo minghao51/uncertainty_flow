@@ -61,6 +61,17 @@ class TestGaussianCopula:
 
         assert samples.shape == (100, 2)
 
+    def test_sample_falls_back_for_singular_covariance(self):
+        """Should use the NumPy fallback when scipy rejects a singular covariance."""
+        copula = GaussianCopula()
+        copula.fitted_ = True
+        copula.correlation_matrix_ = np.array([[1.0, 1.0], [1.0, 1.0]])
+
+        marginals = np.array([[[0.0, 0.5, 1.0], [10.0, 20.0, 30.0]]])
+        samples = copula.sample(marginals, n_samples=10)
+
+        assert samples.shape == (10, 2)
+
     def test_repr(self, bivariate_residuals):
         """Should return meaningful repr."""
         copula = GaussianCopula()

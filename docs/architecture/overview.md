@@ -1,250 +1,111 @@
-# ARCHITECTURE.md — Package Structure & Data Flow
+# Architecture Overview
 
----
+This document is the source of truth for how the package is organized and how predictions flow through the system.
 
 ## Package Structure
 
-```
+```text
 uncertainty_flow/
-│
-├── core/
-│   ├── base.py                  # BaseUncertaintyModel ABC
-│   ├── distribution.py          # DistributionPrediction class
-│   └── types.py                 # Shared type aliases and enums
-│
-├── models/
-│   ├── __init__.py
-│   ├── quantile_forest.py       # QuantileForestForecaster
-│   └── deep_quantile.py         # DeepQuantileNet (sklearn-compatible MLP)
-│
-├── wrappers/
-│   ├── __init__.py
-│   ├── conformal.py             # ConformalRegressor (tabular)
-│   └── conformal_ts.py          # ConformalForecaster (time series, temporal split)
-│
-├── multivariate/
-│   ├── __init__.py
-│   ├── marginal.py              # Per-target marginal CDF fitting
-│   └── copula.py                # Gaussian copula for joint intervals
-│
-├── calibration/
-│   ├── __init__.py
-│   ├── report.py                # calibration_report() → Polars DataFrame
-│   ├── plot.py                  # Fan charts, coverage plots
-│   └── residual_analysis.py     # uncertainty_drivers_ computation
-│
-├── metrics/
-│   ├── __init__.py
-│   ├── pinball.py               # Pinball / quantile loss
-│   ├── winkler.py               # Winkler interval score
-│   └── coverage.py              # Empirical coverage checks
-│
-├── utils/
-│   ├── __init__.py
-│   ├── polars_bridge.py         # Polars → NumPy conversion, LazyFrame handling
-│   ├── split.py                 # Calibration set splitting strategies
-│   └── warnings.py              # Standardised warning messages
-│
-└── __init__.py                  # Public API surface
+├── benchmarking/              # Benchmark datasets, runner, auto-tuning
+├── calibration/               # Calibration reports, residual analysis, SHAP helpers
+├── core/                      # Base classes, config, DistributionPrediction, shared types
+├── metrics/                   # Pinball, Winkler, coverage
+├── models/                    # Native models
+├── multivariate/              # Copula families and multivariate support
+├── utils/                     # Polars bridge, split strategies, exceptions, helpers
+├── wrappers/                  # Conformal wrappers around estimators
+└── cli.py                     # Project CLI entrypoint
 ```
 
----
+## Model Families
+
+`uncertainty_flow` has two top-level model shapes:
+
+- Wrappers: `ConformalRegressor` and `ConformalForecaster` adapt existing estimators and add calibrated uncertainty.
+- Native models: `QuantileForestForecaster`, `DeepQuantileNet`, optional `DeepQuantileNetTorch`, and optional `TransformerForecaster`.
+
+All of them return a `DistributionPrediction` object so downstream code can use the same access pattern regardless of the training backend.
 
 ## Data Flow
 
-```
-User Input (Polars DataFrame / LazyFrame)
-        │
-        ▼
-┌─────────────────────┐
-│   polars_bridge.py  │  ← LazyFrame.collect() if needed
-│   Polars → NumPy    │    Column validation, dtype checks
-└─────────┬───────────┘
-          │  np.ndarray (X), np.ndarray (y)
-          ▼
-┌─────────────────────┐
-│  BaseUncertaintyModel│  ← .fit(), .predict()
-│  (ABC)              │    Dispatches to model/wrapper
-└─────────┬───────────┘
-          │
-    ┌─────┴──────────────────────────────┐
-    │                                    │
-    ▼                                    ▼
-ConformalRegressor               QuantileForestForecaster
-(sklearn wrapper)                (native quantile model)
-    │                                    │
-    └──────────────┬─────────────────────┘
-                   │  raw quantile arrays (np.ndarray)
-                   ▼
-        ┌─────────────────────┐
-        │ DistributionPrediction│  ← wraps raw arrays
-        │  .quantile()          │    converts outputs back to Polars
-        │  .interval()          │
-        │  .mean()              │
-        │  .plot()              │
-        └─────────────────────┘
-                   │
-                   ▼
-        User Output (Polars Series / DataFrame)
+```text
+Polars DataFrame / LazyFrame
+        |
+        v
+utils/polars_bridge.py
+  - validate columns
+  - materialize LazyFrame only when needed
+  - convert to NumPy for computation
+        |
+        v
+BaseUncertaintyModel / model-specific fit-predict logic
+        |
+        v
+Optional calibration + multivariate dependence modeling
+        |
+        v
+DistributionPrediction
+  - quantile()
+  - interval()
+  - mean()
+  - sample()
+  - plot()
+        |
+        v
+Polars outputs for callers
 ```
 
----
+## Core Contracts
 
-## Core Classes
+### `BaseUncertaintyModel`
 
-### `BaseUncertaintyModel` (ABC)
-
-All models inherit from this. Enforces the contract:
-
-```python
-class BaseUncertaintyModel(ABC):
-
-    @abstractmethod
-    def fit(self, data, target: str | list[str], **kwargs) -> "BaseUncertaintyModel":
-        """Accepts Polars DataFrame or LazyFrame."""
-        ...
-
-    @abstractmethod
-    def predict(self, data) -> "DistributionPrediction":
-        """Returns a DistributionPrediction object."""
-        ...
-
-    def calibration_report(self, data, target: str | list[str]) -> pl.DataFrame:
-        """Runs calibration diagnostics. Returns Polars DataFrame."""
-        ...
-
-    @property
-    def uncertainty_drivers_(self) -> pl.DataFrame | None:
-        """Set post-fit. Returns feature-residual correlation table or None."""
-        ...
-```
-
----
+All public models implement a common `fit()` / `predict()` interface and expose calibration helpers through the same base contract.
 
 ### `DistributionPrediction`
 
-The core output object. Stores predicted quantile arrays internally; exposes a clean interface.
+`DistributionPrediction` is the unifying output layer. It stores quantile predictions internally and exposes:
 
-```python
-class DistributionPrediction:
-    """
-    Holds predicted distributions for N samples.
-    All outputs are returned as Polars Series or DataFrames.
-    """
+- `quantile()` for extracting one or more quantile columns
+- `interval()` for symmetric prediction intervals
+- `mean()` for the median-style point estimate
+- `sample()` for Monte Carlo-style downstream simulation
+- `plot()` for visual inspection of predictive spread
 
-    def __init__(
-        self,
-        quantile_matrix: np.ndarray,   # shape (N, Q) — N samples, Q quantile levels
-        quantile_levels: list[float],  # e.g. [0.05, 0.1, ..., 0.95]
-        target_names: list[str],       # for multivariate: one DP per target, or stacked
-        index: pl.Series | None = None # original row index from input
-    ): ...
+This distribution-first contract replaces model-specific output types and keeps downstream consumers simple.
 
-    def quantile(self, q: float | list[float]) -> pl.DataFrame:
-        """Extract one or more quantile levels. Returns Polars DataFrame."""
-        ...
+### Polars Boundary
 
-    def interval(self, confidence: float = 0.9) -> pl.DataFrame:
-        """
-        Returns DataFrame with columns: lower, upper.
-        Derives symmetric interval: (1-confidence)/2 and (1+confidence)/2 quantiles.
-        """
-        ...
+The Polars to NumPy seam is intentionally centralized in `utils/polars_bridge.py`. User-facing APIs remain Polars-native, while internal compute stays compatible with NumPy, SciPy, and scikit-learn style backends.
 
-    def mean(self) -> pl.Series:
-        """Returns the 0.5 quantile (median) as a Polars Series."""
-        ...
+## Calibration and Splits
 
-    def sample(self, n: int, random_state: int | None = None) -> pl.DataFrame:
-        """
-        Draw n samples per input row via spline-interpolated inverse CDF.
-        Returns DataFrame with (n * n_samples) rows and columns: sample_id, plus one column per target.
-        """
-        ...
+The package supports distinct split strategies depending on the problem shape:
 
-    def plot(self, actuals: pl.Series | None = None) -> None:
-        """
-        Fan chart of quantile bands.
-        If actuals provided, overlays calibration coverage.
-        """
-        ...
-```
+- `RandomHoldoutSplit` for i.i.d. tabular problems
+- `TemporalHoldoutSplit` for ordered forecasting data
+- cross-conformal style workflows where supported
 
----
+Small calibration sets are guarded explicitly so models fail loudly when interval estimates would be unreliable.
 
-### Polars Bridge
+## Multivariate Uncertainty
 
-The single seam where Polars meets NumPy. All conversions happen here and nowhere else.
+For multi-target forecasting, the package combines per-target marginals with a copula layer to approximate joint behavior. The current multivariate module supports:
 
-```python
-# utils/polars_bridge.py
+- `GaussianCopula` for general correlation structure
+- `ClaytonCopula` for lower-tail dependence
+- `GumbelCopula` for upper-tail dependence
+- `FrankCopula` for symmetric non-tail dependence
+- auto-selection paths where the model supports choosing the family programmatically
 
-def to_numpy(data: pl.DataFrame | pl.LazyFrame, columns: list[str]) -> np.ndarray:
-    """
-    Accepts DataFrame or LazyFrame.
-    Materialises LazyFrame only when necessary (.collect()).
-    Returns np.ndarray with float64 dtype.
-    """
-    if isinstance(data, pl.LazyFrame):
-        data = data.select(columns).collect()
-    return data.select(columns).to_numpy(allow_copy=False)
+That separation keeps marginal prediction logic independent from joint dependence modeling.
 
+## Benchmarking Layer
 
-def to_polars(array: np.ndarray, columns: list[str], index: pl.Series | None = None) -> pl.DataFrame:
-    """Converts NumPy array back to Polars DataFrame, restoring index if provided."""
-    ...
-```
+The `benchmarking/` package and CLI support:
 
----
+- loading benchmark datasets
+- running comparable model evaluations
+- optional parameter tuning
+- exporting structured benchmark results
 
-## Calibration Split Strategies
-
-Managed by `utils/split.py`:
-
-| Strategy | Class | Default |
-|---|---|---|
-| Holdout (last n%) | `TemporalHoldoutSplit` | ✅ Time series default |
-| Holdout (random n%) | `RandomHoldoutSplit` | ✅ Tabular default |
-| Cross-conformal | `CrossConformalSplit` | Optional (`calibration_method='cross'`) |
-
-**Guards (enforced in all strategies):**
-- `n_calibration < 20` → `raise ValueError`
-- `n_calibration < 50` → `warnings.warn` (undercoverage risk)
-
----
-
-## Multivariate Flow (Gaussian Copula)
-
-When `targets` is a list and `target_correlation != 'independent'`:
-
-```
-Per-target marginal CDFs fitted independently
-        │
-        ▼
-Residuals extracted per target
-        │
-        ▼
-Gaussian copula fitted on residual correlation matrix
-        │
-        ▼
-Joint intervals derived from copula samples
-        │
-        ▼
-DistributionPrediction (multivariate) returned
-```
-
----
-
-## Dependency Map
-
-```
-uncertainty_flow
-    ├── polars            ← I/O layer
-    ├── numpy             ← internal compute spine
-    ├── scikit-learn      ← base model interface + conformal wrappers
-    ├── scipy             ← Gaussian copula, statistical tests
-    ├── matplotlib        ← plot() visualisations (optional, soft dep)
-    └── mapie             ← conformal prediction implementation (optional, soft dep)
-```
-
-`matplotlib` and `mapie` are optional soft dependencies — `uncertainty_flow` imports them lazily and raises a clear `ImportError` with install instructions if they are missing when needed.
+Those tools are intentionally separate from the model APIs so the library can stay usable both as a package and as an evaluation harness.

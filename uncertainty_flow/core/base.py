@@ -71,6 +71,8 @@ class BaseUncertaintyModel(ABC):
         Returns:
             Polars DataFrame with calibration metrics
         """
+        # Lazy import to avoid circular dependency:
+        # calibration_utils -> DistributionPrediction -> this module
         from ..utils.calibration_utils import calibration_report as _calibration_report
 
         # Collect lazyframe if needed

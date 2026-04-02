@@ -1,5 +1,6 @@
 """QuantileForestForecaster - Quantile Regression Forest for time series."""
 
+import warnings
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -9,6 +10,11 @@ from sklearn.ensemble import RandomForestRegressor
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
+from ..utils.auto_tuning import (
+    candidate_values,
+    score_distribution_prediction,
+    valid_calibration_candidates,
+)
 from ..utils.exceptions import error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 from ..utils.split import TemporalHoldoutSplit
@@ -53,6 +59,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         max_depth: int | None = None,
         copula_family: str = "auto",
         calibration_size: float = 0.2,
+        auto_tune: bool = True,
         uncertainty_features: list[str] | None = None,
         random_state: int | None = None,
     ):
@@ -70,6 +77,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
                 "Use "independent" for no inter-target correlation."
             )
             calibration_size: Fraction for calibration (from END)
+            auto_tune: Whether to tune supported hyperparameters before final fit
             uncertainty_features: Optional hint for heteroscedastic features
             random_state: Random seed
         """
@@ -80,6 +88,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         self.max_depth = max_depth
         self.copula_family = copula_family
         self.calibration_size = calibration_size
+        self.auto_tune = auto_tune
         self.uncertainty_features = uncertainty_features
         self.random_state = random_state
 
@@ -89,6 +98,49 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         self._leaf_distributions: dict[str, list] = {}
         self._feature_cols_: dict[str, list[str]] = {}
         self._uncertainty_drivers_: pl.DataFrame | None = None
+        self.tuned_params_: dict[str, float | int] = {}
+
+    def _auto_tune(self, data: pl.DataFrame) -> None:
+        """Tune supported params using a temporal validation split."""
+        splitter = TemporalHoldoutSplit()
+        tune_train, tune_val = splitter.split(data, 0.2)
+        tune_calibration_size = valid_calibration_candidates(
+            len(tune_train), self.calibration_size, [0.25, 0.3]
+        )[0]
+
+        best_score = float("inf")
+        best_params: dict[str, float | int] = {}
+
+        for n_estimators in candidate_values(self.n_estimators, [20, 30, 50]):
+            for min_samples_leaf in candidate_values(self.min_samples_leaf, [3, 5, 10]):
+                candidate = QuantileForestForecaster(
+                    targets=self.targets,
+                    horizon=self.horizon,
+                    n_estimators=n_estimators,
+                    min_samples_leaf=min_samples_leaf,
+                    max_depth=self.max_depth,
+                    copula_family=self.copula_family,
+                    calibration_size=tune_calibration_size,
+                    auto_tune=False,
+                    uncertainty_features=self.uncertainty_features,
+                    random_state=self.random_state,
+                )
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    candidate.fit(tune_train)
+                    pred = candidate.predict(tune_val)
+                actuals = tune_val.select(self.targets)
+                score = score_distribution_prediction(pred, actuals, self.targets, confidence=0.9)
+                if score < best_score:
+                    best_score = score
+                    best_params = {
+                        "n_estimators": int(n_estimators),
+                        "min_samples_leaf": int(min_samples_leaf),
+                    }
+
+        self.n_estimators = int(best_params.get("n_estimators", self.n_estimators))
+        self.min_samples_leaf = int(best_params.get("min_samples_leaf", self.min_samples_leaf))
+        self.tuned_params_ = best_params
 
     def fit(
         self,
@@ -110,6 +162,9 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         # Materialize if needed
         if isinstance(data, pl.LazyFrame):
             data = data.collect()
+
+        if self.auto_tune:
+            self._auto_tune(data)
 
         # Temporal split
         splitter = TemporalHoldoutSplit()

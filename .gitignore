@@ -58,3 +58,7 @@ wheels/
 # Environments
 .env
 .venv
+
+.claude
+.mypy_cache/
+.planning/

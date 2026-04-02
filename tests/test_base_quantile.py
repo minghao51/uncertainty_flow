@@ -225,7 +225,7 @@ class TestBaseQuantileNeuralNet:
         pred = model.predict(df)
 
         # Quantile levels should be sorted
-        assert pred._levels == [0.1, 0.5, 0.9]
+        assert list(pred._levels) == [0.1, 0.5, 0.9]
 
 
 class TestAbstractMethods:

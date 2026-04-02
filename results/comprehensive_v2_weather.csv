@@ -1,0 +1,10 @@
+dataset,domain,model,n_samples,horizon,coverage_90,coverage_80,sharpness_90,sharpness_80,winkler_90,winkler_80,pinball_loss,train_time_sec,was_tuned,tuned_params
+weather,Climate,quantile-forest,500,3,0.764,0.718,0.0151,0.012,0.0809,0.0484,0.0036,0.049,false,{}
+weather,Climate,conformal-regressor,500,3,0.37,0.244,0.0322,0.0268,0.1025,0.0818,0.0031,0.059,false,{}
+weather,Climate,conformal-forecaster,498,3,0.5402,0.2952,0.0301,0.0257,0.0701,0.0657,0.0027,0.054,false,{}
+weather,Climate,linear-regression,500,3,0.934,0.904,0.0636,0.061,0.0685,0.0647,0.0045,0.007,false,{}
+weather,Climate,ridge-regression,500,3,0.816,0.75,0.0609,0.0585,0.0815,0.0725,0.0048,0.006,false,{}
+weather,Climate,random-forest,500,3,0.446,0.202,0.0374,0.032,0.0585,0.0668,0.0034,0.066,false,{}
+weather,Climate,gradient-boosting,500,3,0.37,0.244,0.0322,0.0268,0.1025,0.0818,0.0031,0.055,false,{}
+weather,Climate,naive-forecast,500,3,0.298,0.286,0.0314,0.0244,0.4382,0.2525,0.0048,0.0,false,{}
+weather,Climate,moving-average,500,3,0.28,0.222,0.0251,0.0195,0.4859,0.2709,0.0045,0.002,false,{}

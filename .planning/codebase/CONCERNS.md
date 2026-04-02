@@ -3,11 +3,75 @@
 ## Overview
 This document outlines technical debt, bugs, security issues, and performance concerns identified in the uncertainty_flow codebase as of 2026-03-22.
 
+**Last updated**: 2026-03-31 - Major refactoring completed (see Resolved Issues section)
+
 ## Priority Levels
 - 🔴 **CRITICAL**: Must address immediately
 - 🟡 **HIGH**: Should address soon
 - 🔵 **MEDIUM**: Address when possible
 - ⚪ **LOW**: Nice to have improvements
+- ✅ **RESOLVED**: Issue has been addressed
+
+---
+
+## Resolved Issues
+
+### ✅ Memory management in sampling
+**Status**: RESOLVED (2026-03-31)
+- Implemented chunked sampling with `MAX_SAMPLE_CHUNK_SIZE` (100K) and `MAX_TOTAL_SAMPLES` (10M) limits
+- Added input validation for `n` parameter in `DistributionPrediction.sample()`
+- Chunked sampling via `_sample_chunked()` method prevents memory exhaustion
+
+### ✅ LazyFrame materialization
+**Status**: RESOLVED (2026-03-31)
+- Minimized `.collect()` calls in `ConformalRegressor.fit()` - collects once at start
+- Optimized `polars_bridge.to_numpy()` to select and convert in single operation
+- All model fit/predict methods now collect LazyFrame once at entry point
+
+### ✅ Inefficient array operations
+**Status**: RESOLVED (2026-03-31)
+- Vectorized `DeepQuantileNet._predict_backend()` using matrix multiplication
+- Replaced manual loop with `trunk_features @ coef_matrix + intercepts`
+
+### ✅ Redundant sorting
+**Status**: RESOLVED (2026-03-31)
+- `BaseQuantileNeuralNet.predict()` now checks if sorting is needed before applying
+- `_ensure_monotonicity()` uses vectorized `np.sort()` instead of row-by-row loop
+
+### ✅ Circular dependency risk
+**Status**: RESOLVED (2026-03-31)
+- Added explicit documentation of circular dependency rationale in `base.py`
+- Lazy import pattern is intentional and documented
+
+### ✅ Exception swallowing
+**Status**: RESOLVED (2026-03-31)
+- Replaced all bare `except Exception:` with specific exception types:
+  - `copula.py`: `(ValueError, OverflowError, ZeroDivisionError, np.linalg.LinAlgError)`
+  - `shap_values.py`: `(ValueError, RuntimeError, np.linalg.LinAlgError)`
+
+### ✅ Pytest version conflicts
+**Status**: RESOLVED (2026-03-31)
+- Standardized on `pytest>=9.0.2` in both dependencies and dev
+
+### ✅ Input validation
+**Status**: RESOLVED (2026-03-31)
+- Added `random_state` validation in `BaseQuantileNeuralNet`
+- Added `n` parameter validation in `DistributionPrediction.sample()`
+- All public APIs now validate inputs with proper error messages
+
+### ✅ Multivariate plotting
+**Status**: RESOLVED (2026-03-31)
+- Fixed `DistributionPrediction.plot()` to handle multivariate input correctly
+- Properly extracts target-specific columns for multivariate cases
+
+### ✅ Magic numbers
+**Status**: RESOLVED (2026-03-31)
+- Extracted constants: `MAX_SAMPLE_CHUNK_SIZE`, `MAX_TOTAL_SAMPLES`, `PLOT_MAX_SAMPLES`
+- Defined at module level in `distribution.py`
+
+### ✅ LRU cache for quantile lookups
+**Status**: RESOLVED (2026-03-31)
+- Added `@lru_cache(maxsize=128)` to `_find_nearest_quantile_index()`
 
 ---
 

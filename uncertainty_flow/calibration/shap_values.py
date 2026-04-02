@@ -127,7 +127,7 @@ def uncertainty_shap(
                             ),
                         }
                     )
-            except Exception:
+            except (ValueError, RuntimeError, np.linalg.LinAlgError):
                 continue
 
     if not results:
