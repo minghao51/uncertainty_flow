@@ -306,11 +306,11 @@ class TestQuantileForestForecasterMean:
         )
         model.fit(univariate_time_series)
         pred = model.predict(univariate_time_series)
-        mean = pred.mean()
-        assert isinstance(mean, pl.Series)
+        median = pred.median()
+        assert isinstance(median, pl.Series)
 
-    def test_mean_returns_dataframe_multivariate(self, time_series_data):
-        """Should return DataFrame with per-target means for multivariate."""
+    def test_median_returns_dataframe_multivariate(self, time_series_data):
+        """Should return DataFrame with per-target medians for multivariate."""
         model = QuantileForestForecaster(
             targets=["price", "volume"],
             horizon=3,
@@ -319,10 +319,10 @@ class TestQuantileForestForecasterMean:
         )
         model.fit(time_series_data)
         pred = model.predict(time_series_data)
-        mean = pred.mean()
-        assert isinstance(mean, pl.DataFrame)
-        assert "price" in mean.columns
-        assert "volume" in mean.columns
+        median = pred.median()
+        assert isinstance(median, pl.DataFrame)
+        assert "price" in median.columns
+        assert "volume" in median.columns
 
 
 class TestQuantileForestForecasterCoverage:

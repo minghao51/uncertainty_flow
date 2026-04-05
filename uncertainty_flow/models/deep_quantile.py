@@ -133,7 +133,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
 
         # Single matrix multiplication instead of loop
-        return trunk_features @ coef_matrix + intercepts
+        return trunk_features @ coef_matrix + intercepts  # type: ignore[no-any-return]
 
     def _extract_trunk_features(self, x: np.ndarray) -> np.ndarray:
         """
@@ -153,7 +153,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
 
     def _relu(self, x: np.ndarray) -> np.ndarray:
         """ReLU activation function."""
-        return np.maximum(0, x)
+        return np.maximum(0, x)  # type: ignore[no-any-return]
 
 
 class LinearQuantileHead:

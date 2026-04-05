@@ -198,14 +198,14 @@ class TestDeepQuantileNetInterval:
 class TestDeepQuantileNetMean:
     """Test DeepQuantileNet mean (median) predictions."""
 
-    def test_mean_returns_series(self, sample_regression_data):
+    def test_median_returns_series(self, sample_regression_data):
         """Should return Series with median predictions."""
         model = DeepQuantileNet(random_state=42)
         model.fit(sample_regression_data, target="y")
         pred = model.predict(sample_regression_data)
-        mean = pred.mean()
-        assert isinstance(mean, pl.Series)
-        assert len(mean) == 100
+        median = pred.median()
+        assert isinstance(median, pl.Series)
+        assert len(median) == 100
 
 
 class TestDeepQuantileNetCoverage:

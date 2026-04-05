@@ -5,6 +5,8 @@ from pathlib import Path
 
 import polars as pl
 
+from uncertainty_flow.utils.exceptions import ConfigurationError, DataError
+
 DATASETS_DIR = Path(__file__).parent.parent.parent / "data"
 
 
@@ -432,7 +434,7 @@ def load_dataset(
     elif name in AVAILABLE_DATASETS:
         ds_info = AVAILABLE_DATASETS[name]
     else:
-        raise ValueError(
+        raise ConfigurationError(
             f"Dataset '{name}' not found. "
             f"Use 'uncertainty-flow list-datasets' to see available datasets."
         )
@@ -459,7 +461,7 @@ def load_dataset(
 
         numeric_cols = get_numeric_cols(df)
         if not numeric_cols:
-            raise ValueError(f"No numeric columns found in dataset '{name}'")
+            raise DataError(f"No numeric columns found in dataset '{name}'")
 
         df = df.select(numeric_cols)
 
@@ -469,7 +471,7 @@ def load_dataset(
         return df, ds_info
 
     except Exception as e:
-        raise ValueError(
+        raise DataError(
             f"Failed to load dataset '{name}': {e}. "
             "Make sure the dataset exists on HuggingFace and you have internet access."
         ) from e
@@ -506,13 +508,13 @@ def load_local_dataset(name: str, n_samples: int | None = None) -> tuple[pl.Data
         ValueError: If dataset not found locally
     """
     if name not in AVAILABLE_DATASETS:
-        raise ValueError(f"Dataset '{name}' not in available datasets registry.")
+        raise ConfigurationError(f"Dataset '{name}' not in available datasets registry.")
 
     ds_info = AVAILABLE_DATASETS[name]
     local_path = DATASETS_DIR / f"{ds_info.name}.parquet"
 
     if not local_path.exists():
-        raise ValueError(
+        raise ConfigurationError(
             f"Local dataset '{name}' not found at {local_path}. "
             f"Use 'uncertainty-flow download-dataset {name}' to download it."
         )

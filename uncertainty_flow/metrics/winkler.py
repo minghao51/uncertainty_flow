@@ -3,6 +3,8 @@
 import numpy as np
 import polars as pl
 
+from ..utils.exceptions import error_invalid_data, error_quantile_invalid
+
 
 def winkler_score(
     y_true: pl.Series | np.ndarray,
@@ -40,7 +42,7 @@ def winkler_score(
         1.0
     """
     if not (0 < confidence < 1):
-        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+        error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
 
     # Convert to numpy
     if isinstance(y_true, pl.Series):
@@ -52,7 +54,7 @@ def winkler_score(
 
     # Validate bounds
     if np.any(lower > upper):
-        raise ValueError("lower bound must be <= upper bound")
+        error_invalid_data("lower bound must be <= upper bound")
 
     alpha = 1 - confidence
 

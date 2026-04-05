@@ -239,9 +239,9 @@ class TestConformalRegressorMean:
         )
         model.fit(regression_data, target="target")
         pred = model.predict(regression_data)
-        mean = pred.mean()
-        assert isinstance(mean, pl.Series)
-        assert len(mean) == 100
+        median = pred.median()
+        assert isinstance(median, pl.Series)
+        assert len(median) == 100
 
 
 class TestConformalRegressorCoverage:

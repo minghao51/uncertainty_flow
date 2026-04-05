@@ -51,7 +51,7 @@ class QuantileNetTorch(nn.Module):
         return torch.cat(outputs, dim=1)
 
     def get_trunk_features(self, x: torch.Tensor) -> torch.Tensor:
-        return self.trunk(x)
+        return self.trunk(x)  # type: ignore[no-any-return]
 
 
 class PinballLoss(nn.Module):
@@ -299,7 +299,7 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
             all_preds.append(np.concatenate(preds_list, axis=0))
 
         ensemble_preds = np.mean(all_preds, axis=0)
-        return ensemble_preds
+        return ensemble_preds  # type: ignore[no-any-return]
 
     def pinball_scores(self, data: PolarsInput, target: str) -> dict[float, float]:
         """

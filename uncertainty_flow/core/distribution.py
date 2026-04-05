@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import InvalidDataError
+from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quantile_invalid
 
 if TYPE_CHECKING:
     pass
@@ -35,11 +35,17 @@ class DistributionPrediction:
         treatment_info: dict | None = None,
     ):
         # Validate inputs
+        if not np.all(np.isfinite(quantile_matrix)):
+            error_invalid_data("quantile_matrix contains NaN or Inf values")
+
         if quantile_matrix.ndim != 2:
-            raise ValueError(f"quantile_matrix must be 2D, got shape {quantile_matrix.shape}")
+            error_invalid_data(f"quantile_matrix must be 2D, got shape {quantile_matrix.shape}")
+
+        if quantile_matrix.shape[0] == 0:
+            error_invalid_data("quantile_matrix must have at least one row")
 
         if len(target_names) == 0:
-            raise ValueError("target_names cannot be empty")
+            error_invalid_data("target_names cannot be empty")
 
         # For multivariate: matrix has n_targets * n_quantiles columns
         # For univariate: matrix has n_quantiles columns
@@ -47,7 +53,7 @@ class DistributionPrediction:
         expected_cols = n_targets * len(quantile_levels)
 
         if quantile_matrix.shape[1] != expected_cols:
-            raise ValueError(
+            error_invalid_data(
                 f"quantile_matrix has {quantile_matrix.shape[1]} columns "
                 f"but expected {expected_cols} columns for {n_targets} target(s) "
                 f"with {len(quantile_levels)} quantile levels each"
@@ -116,7 +122,7 @@ class DistributionPrediction:
             Polars DataFrame with lower/upper bounds
         """
         if not (0 < confidence < 1):
-            raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
 
         alpha = (1 - confidence) / 2
         lower_idx = self._find_nearest_quantile_index(alpha)
@@ -148,7 +154,7 @@ class DistributionPrediction:
 
     def mean(self) -> pl.Series | pl.DataFrame:
         """
-        Return the 0.5 quantile (median).
+        Return the 0.5 quantile (median) as a point estimate.
 
         Returns:
             Polars Series for univariate, DataFrame for multivariate
@@ -167,6 +173,10 @@ class DistributionPrediction:
                 ]
             )
             return pl.DataFrame(data, schema=self._targets, orient="row")
+
+    def median(self) -> pl.Series | pl.DataFrame:
+        """Return the 0.5 quantile as a point estimate."""
+        return self.mean()
 
     def sample(self, n: int, random_state: int | None = None) -> pl.DataFrame:
         """
@@ -424,21 +434,23 @@ class DistributionPrediction:
     def posterior_samples(self) -> np.ndarray:
         """Return raw MCMC posterior samples."""
         if self._posterior is None:
-            raise ValueError(
+            error_invalid_data(
                 "posterior_samples() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
+        assert self._posterior is not None
         return self._posterior
 
     def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
         """Compute Bayesian credible interval from posterior."""
         if self._posterior is None:
-            raise ValueError(
+            error_invalid_data(
                 "credible_interval() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
+        assert self._posterior is not None
         if not (0 < confidence < 1):
-            raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
         alpha = (1 - confidence) / 2
         lower = np.quantile(self._posterior, alpha, axis=0)
         upper = np.quantile(self._posterior, 1 - alpha, axis=0)
@@ -447,10 +459,11 @@ class DistributionPrediction:
     def rhat(self, n_chains: int = 4) -> np.ndarray:
         """Compute Gelman-Rubin R-hat convergence diagnostic."""
         if self._posterior is None:
-            raise ValueError(
+            error_invalid_data(
                 "rhat() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
+        assert self._posterior is not None
         samples = self._posterior
         n_total = samples.shape[0]
         chain_len = n_total // n_chains
@@ -459,15 +472,16 @@ class DistributionPrediction:
         b = chain_len * np.var(chain_means, axis=0, ddof=1)
         w = np.mean(np.var(chains, axis=1, ddof=1), axis=0)
         var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
-        return np.sqrt(var_hat / (w + 1e-10))
+        return np.sqrt(var_hat / (w + 1e-10))  # type: ignore
 
     def posterior_summary(self) -> pl.DataFrame:
         """Return summary statistics of posterior samples."""
         if self._posterior is None:
-            raise ValueError(
+            error_invalid_data(
                 "posterior_summary() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
+        assert self._posterior is not None
         return pl.DataFrame(
             {
                 "param": [f"param_{i}" for i in range(self._posterior.shape[1])],
@@ -484,59 +498,64 @@ class DistributionPrediction:
     def group_uncertainty(self) -> dict[str, float]:
         """Return per-group uncertainty contribution (interval width)."""
         if self._group_predictions is None:
-            raise ValueError(
+            error_invalid_data(
                 "group_uncertainty() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
+        assert self._group_predictions is not None
         result = {}
         for name, pred in self._group_predictions.items():
             interval = pred.interval(0.9)
             width = (interval["upper"] - interval["lower"]).mean()
-            result[name] = float(width)
+            result[name] = float(width)  # type: ignore[arg-type]
         return result
 
     def group_intervals(self, confidence: float = 0.9) -> dict[str, pl.DataFrame]:
         """Return per-group prediction intervals."""
         if self._group_predictions is None:
-            raise ValueError(
+            error_invalid_data(
                 "group_intervals() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
+        assert self._group_predictions is not None
         return {name: pred.interval(confidence) for name, pred in self._group_predictions.items()}
 
     def cross_group_correlation(self) -> np.ndarray:
         """Return cross-group correlation matrix based on group median predictions."""
         if self._group_predictions is None:
-            raise ValueError(
+            error_invalid_data(
                 "cross_group_correlation() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
+        assert self._group_predictions is not None
         medians = np.column_stack(
             [
                 pred._quantiles[:, pred._find_nearest_quantile_index(0.5)]
                 for pred in self._group_predictions.values()
             ]
         )
-        return np.corrcoef(medians.T)
+        return np.corrcoef(medians.T)  # type: ignore
 
     # --- Causal treatment methods ---
 
     def treatment_effect(self) -> np.ndarray:
         """Return CATE point estimates."""
         if self._treatment_info is None:
-            raise ValueError(
+            error_invalid_data(
                 "treatment_effect() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
-        return self._treatment_info["cate"]
+        assert self._treatment_info is not None
+        return self._treatment_info["cate"]  # type: ignore
 
     def average_treatment_effect(self) -> dict:
         """Return ATE with confidence interval."""
         if self._treatment_info is None:
-            raise ValueError(
+            error_invalid_data(
                 "average_treatment_effect() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
+        assert self._treatment_info is not None
         return {
             "ate": self._treatment_info["ate"],
             "ci": self._treatment_info["ate_ci"],
@@ -545,8 +564,9 @@ class DistributionPrediction:
     def heterogeneity_score(self) -> float:
         """Return CATE variance as heterogeneity measure."""
         if self._treatment_info is None:
-            raise ValueError(
+            error_invalid_data(
                 "heterogeneity_score() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
+        assert self._treatment_info is not None
         return float(np.var(self._treatment_info["cate"]))

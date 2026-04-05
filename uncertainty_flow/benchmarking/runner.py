@@ -15,6 +15,11 @@ from sklearn.ensemble import GradientBoostingRegressor
 from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.metrics import coverage_score, pinball_loss, winkler_score
 from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.utils.exceptions import (
+    ConfigurationError,
+    DataError,
+    ModelNotFittedError,
+)
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
 from .datasets import DatasetInfo, load_dataset
@@ -142,7 +147,7 @@ class QuantileForestBenchmark:
 
     def predict(self, df: pl.DataFrame) -> DistributionPrediction:
         if self.model is None:
-            raise RuntimeError("Model not fitted")
+            raise ModelNotFittedError("BenchmarkModel")
         return self.model.predict(df)
 
 
@@ -174,7 +179,7 @@ class ConformalRegressorBenchmark:
 
     def predict(self, df: pl.DataFrame) -> DistributionPrediction:
         if self.model is None:
-            raise RuntimeError("Model not fitted")
+            raise ModelNotFittedError("BenchmarkModel")
         return self.model.predict(df)
 
 
@@ -210,7 +215,7 @@ class ConformalForecasterBenchmark:
 
     def predict(self, df: pl.DataFrame) -> DistributionPrediction:
         if self.model is None:
-            raise RuntimeError("Model not fitted")
+            raise ModelNotFittedError("BenchmarkModel")
         return self.model.predict(df)
 
 
@@ -253,7 +258,7 @@ class BenchmarkRunner:
             return {}
 
         if self.df is None:
-            raise RuntimeError("Data not loaded. Call load_data() first.")
+            raise DataError("Data not loaded. Call load_data() first.")
 
         print(f"    Auto-tuning {model_name}...")
         tune_config = TuningConfig(
@@ -276,12 +281,12 @@ class BenchmarkRunner:
     def run_model(self, model_name: str) -> ModelResult:
         """Run a single model benchmark with optional auto-tuning."""
         if model_name not in MODEL_REGISTRY:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Unknown model: {model_name}. Available: {list(MODEL_REGISTRY.keys())}"
             )
 
         if self.df is None:
-            raise RuntimeError("Data not loaded. Call load_data() first.")
+            raise DataError("Data not loaded. Call load_data() first.")
 
         tuned_params = self._get_tuned_params(model_name)
         was_tuned = bool(tuned_params)

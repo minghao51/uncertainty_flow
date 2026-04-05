@@ -9,7 +9,7 @@ from sklearn.linear_model import LogisticRegression
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
             ValueError: If method is not one of VALID_METHODS.
         """
         if method not in VALID_METHODS:
-            raise ValueError(f"Invalid method '{method}'. Must be one of {VALID_METHODS}")
+            raise ConfigurationError(f"Invalid method '{method}'. Must be one of {VALID_METHODS}")
         self.outcome_model = outcome_model
         self.propensity_model = propensity_model
         self.treatment_col = treatment_col
@@ -122,7 +122,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
             data = data.collect()
 
         if target is None:
-            raise ValueError("target is required for CausalUncertaintyEstimator")
+            raise ConfigurationError("target is required for CausalUncertaintyEstimator")
         target_str = target if isinstance(target, str) else target[0]
 
         # Feature columns = everything except target and treatment
@@ -179,7 +179,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         elif self.method == "t_learner":
             mu1, mu0 = self._predict_counterfactuals_tl(x)
         else:
-            raise ValueError(f"Unknown method: {self.method}")
+            raise ConfigurationError(f"Unknown method: {self.method}")
 
         cate = mu1 - mu0
 

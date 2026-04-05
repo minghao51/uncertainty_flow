@@ -9,6 +9,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow.metrics import coverage_score, winkler_score
 from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.utils.exceptions import ConfigurationError
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
 SEARCH_SPACE: dict[str, dict[str, list[Any]]] = {
@@ -205,7 +206,7 @@ def auto_tune_model(
 
     search_space = SEARCH_SPACE.get(model_name, {})
     if not search_space:
-        raise ValueError(f"Unknown model: {model_name}")
+        raise ConfigurationError(f"Unknown model: {model_name}")
 
     best_score = float("inf")
     best_params: dict[str, Any] = {}

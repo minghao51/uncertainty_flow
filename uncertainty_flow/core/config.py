@@ -5,6 +5,8 @@ from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from ..utils.exceptions import ConfigurationError, error_quantile_invalid
+
 CHRONOS_MODELS = {
     "chronos-2-small": "amazon/chronos-2-small",
     "chronos-2": "amazon/chronos-2",
@@ -86,11 +88,11 @@ class QuantileConfig(BaseSettings):
             ValueError: If quantiles are invalid
         """
         if not v:
-            raise ValueError("Quantile list cannot be empty")
+            error_quantile_invalid("Quantile list cannot be empty")
 
         for q in v:
             if not 0 < q < 1:
-                raise ValueError(f"Quantile {q} must be in (0, 1)")
+                error_quantile_invalid(f"Quantile {q} must be in (0, 1)")
 
         # Remove duplicates and sort
         unique_sorted = sorted(set(v))
@@ -118,7 +120,7 @@ class QuantileConfig(BaseSettings):
             Validated warning threshold
         """
         if "min_calibration_size" in info.data and v < info.data["min_calibration_size"]:
-            raise ValueError(
+            raise ConfigurationError(
                 f"warn_calibration_size ({v}) must be >= min_calibration_size "
                 f"({info.data['min_calibration_size']})"
             )

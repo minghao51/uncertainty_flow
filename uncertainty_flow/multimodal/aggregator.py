@@ -8,7 +8,7 @@ import polars as pl
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, error_model_not_fitted
 
 VALID_AGGREGATIONS = ("product", "copula", "independent")
 
@@ -38,11 +38,11 @@ class CrossModalAggregator(BaseUncertaintyModel):
         random_state: int | None = None,
     ):
         if aggregation not in VALID_AGGREGATIONS:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Invalid aggregation '{aggregation}'. Must be one of {VALID_AGGREGATIONS}"
             )
         if not feature_groups:
-            raise ValueError("feature_groups cannot be empty")
+            raise ConfigurationError("feature_groups cannot be empty")
 
         self.feature_groups = feature_groups
         self.aggregation = aggregation
@@ -84,9 +84,9 @@ class CrossModalAggregator(BaseUncertaintyModel):
             data = data.collect()
 
         if base_model is None:
-            raise ValueError("base_model is required for CrossModalAggregator.fit()")
+            raise ConfigurationError("base_model is required for CrossModalAggregator.fit()")
         if target is None:
-            raise ValueError("target is required for CrossModalAggregator.fit()")
+            raise ConfigurationError("target is required for CrossModalAggregator.fit()")
 
         target_str = target if isinstance(target, str) else target[0]
         self._target_name = target_str
@@ -125,6 +125,8 @@ class CrossModalAggregator(BaseUncertaintyModel):
         """
         if not self._fitted:
             error_model_not_fitted("CrossModalAggregator")
+
+        assert self._quantile_levels is not None
 
         if isinstance(data, pl.LazyFrame):
             data = data.collect()

@@ -3,6 +3,8 @@
 import numpy as np
 import polars as pl
 
+from ..utils.exceptions import error_invalid_data
+
 
 def coverage_score(
     y_true: pl.Series | np.ndarray,
@@ -41,7 +43,7 @@ def coverage_score(
 
     # Validate bounds
     if np.any(lower > upper):
-        raise ValueError("lower bound must be <= upper bound")
+        error_invalid_data("lower bound must be <= upper bound")
 
     # Count how many values are within the interval
     within_interval = (y_true >= lower) & (y_true <= upper)

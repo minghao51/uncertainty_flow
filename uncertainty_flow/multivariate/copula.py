@@ -44,7 +44,7 @@ class BaseCopula:
 
     def _compute_bic(self, log_likelihood: float, n_params: int, n_samples: int) -> float:
         """Compute BIC for model selection."""
-        return n_params * np.log(n_samples) - 2 * log_likelihood
+        return float(float(n_params) * np.log(n_samples) - 2 * log_likelihood)
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """
@@ -255,7 +255,7 @@ class ClaytonCopula(BaseCopula):
                 )
                 if not np.isfinite(ll).all():
                     return 1e10
-                return -np.sum(ll)
+                return float(-np.sum(ll))
             except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 
@@ -410,7 +410,7 @@ class GumbelCopula(BaseCopula):
                 ll = t ** (1 / theta) + psi - np.log(h)
                 if not np.isfinite(ll).all():
                     return 1e10
-                return -np.sum(ll)
+                return float(-np.sum(ll))
             except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 
@@ -560,23 +560,22 @@ class FrankCopula(BaseCopula):
             if theta == 0:
                 return 1e10
             try:
-                h = (
-                    -np.log(
-                        (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1) / (np.exp(-theta) - 1)
-                        + 1
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    exp_neg_theta_u = np.exp(-theta * u)
+                    exp_neg_theta_v = np.exp(-theta * v)
+                    exp_neg_theta = np.exp(-theta)
+                    numerator = (exp_neg_theta_u - 1) * (exp_neg_theta_v - 1)
+                    h = -np.log(numerator / (exp_neg_theta - 1) + 1) / theta
+                    ll = (
+                        theta * (u + v - 1)
+                        - np.log(exp_neg_theta_u - 1)
+                        - np.log(exp_neg_theta_v - 1)
+                        - np.log(exp_neg_theta - 1)
+                        + theta * h
                     )
-                    / theta
-                )
-                ll = (
-                    theta * (u + v - 1)
-                    - np.log(np.exp(-theta * u) - 1)
-                    - np.log(np.exp(-theta * v) - 1)
-                    - np.log(np.exp(-theta) - 1)
-                    + theta * h
-                )
-                if not np.isfinite(ll).all():
-                    return 1e10
-                return -np.sum(ll)
+                    if not np.isfinite(ll).all():
+                        return 1e10
+                    return float(-np.sum(ll))
             except (ValueError, OverflowError, ZeroDivisionError):
                 return 1e10
 

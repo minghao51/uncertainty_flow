@@ -91,6 +91,11 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         """
         x, y = self._prepare_data(data, target)
 
+        if not np.all(np.isfinite(x)):
+            error_invalid_data("Feature matrix contains NaN or Inf values")
+        if not np.all(np.isfinite(y)):
+            error_invalid_data("Target vector contains NaN or Inf values")
+
         # Fit scaler
         self._scaler_ = StandardScaler()
         x_scaled = self._scaler_.fit_transform(x)

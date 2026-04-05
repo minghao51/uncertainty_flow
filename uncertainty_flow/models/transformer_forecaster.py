@@ -12,7 +12,7 @@ from ..core.base import BaseUncertaintyModel
 from ..core.config import CHRONOS_MODELS, get_config
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, error_model_not_fitted
 from ..utils.split import TemporalHoldoutSplit
 
 if TYPE_CHECKING:
@@ -84,7 +84,7 @@ class TransformerForecaster(BaseUncertaintyModel):
             if self.model_name.startswith("amazon/"):
                 pass
             else:
-                raise ValueError(
+                raise ConfigurationError(
                     f"Unknown model_name: {self.model_name}. "
                     f"Valid options: {list(CHRONOS_MODELS.keys())}"
                 )

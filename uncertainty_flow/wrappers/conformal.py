@@ -16,7 +16,7 @@ from ..utils.auto_tuning import (
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 from ..utils.split import RandomHoldoutSplit
 
@@ -158,7 +158,7 @@ class ConformalRegressor(BaseUncertaintyModel):
 
         # Get feature columns
         if target is None:
-            raise ValueError("target is required for ConformalRegressor")
+            raise ConfigurationError("target is required for ConformalRegressor")
         target_str = target if isinstance(target, str) else target[0]
         self._target_col_ = target_str
 

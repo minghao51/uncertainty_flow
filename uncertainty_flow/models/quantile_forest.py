@@ -15,7 +15,7 @@ from ..utils.auto_tuning import (
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import error_model_not_fitted
+from ..utils.exceptions import error_invalid_data, error_model_not_fitted
 from ..utils.polars_bridge import to_numpy
 from ..utils.split import TemporalHoldoutSplit
 
@@ -72,10 +72,8 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             n_estimators: Number of trees in the forest
             min_samples_leaf: Minimum samples per leaf (controls distribution richness)
             max_depth: Maximum tree depth
-            copula_family: (
-                "auto" (BIC selection) or one of "gaussian", "clayton", "gumbel", "frank". "
-                "Use "independent" for no inter-target correlation."
-            )
+            copula_family: "auto" (BIC selection) or one of "gaussian", "clayton",
+                "gumbel", "frank". Use "independent" for no inter-target correlation.
             calibration_size: Fraction for calibration (from END)
             auto_tune: Whether to tune supported hyperparameters before final fit
             uncertainty_features: Optional hint for heteroscedastic features
@@ -178,6 +176,11 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
             x_train = to_numpy(train, feature_cols)
             y_train = to_numpy(train, [target]).flatten()
+
+            if not np.all(np.isfinite(x_train)):
+                error_invalid_data("Feature matrix contains NaN or Inf values")
+            if not np.all(np.isfinite(y_train)):
+                error_invalid_data("Target vector contains NaN or Inf values")
 
             rf = RandomForestRegressor(
                 n_estimators=self.n_estimators,

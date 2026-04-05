@@ -3,6 +3,8 @@
 import numpy as np
 import polars as pl
 
+from ..utils.exceptions import error_quantile_invalid
+
 
 def pinball_loss(
     y_true: pl.Series | np.ndarray,
@@ -34,7 +36,7 @@ def pinball_loss(
         0.4
     """
     if not (0 < quantile < 1):
-        raise ValueError(f"quantile must be in (0, 1), got {quantile}")
+        error_quantile_invalid(f"quantile must be in (0, 1), got {quantile}")
 
     # Convert to numpy
     if isinstance(y_true, pl.Series):
