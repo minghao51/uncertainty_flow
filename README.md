@@ -3,7 +3,7 @@
 > Probabilistic forecasting and uncertainty quantification — as easy as `fit` / `predict`.
 
 [![PyPI version](https://badge.fury.io/py/uncertainty-flow.svg)](https://badge.fury.io/py/uncertainty-flow)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ---
@@ -65,7 +65,7 @@ pred = model.predict(X_test)
 # Extract what you need
 pred.interval(confidence=0.9)       # (lower: Series, upper: Series)
 pred.quantile([0.05, 0.5, 0.95])    # Polars DataFrame of quantiles
-pred.mean()                         # point estimate
+pred.mean()                         # median (point estimate)
 pred.plot()                         # fan chart + calibration overlay
 ```
 

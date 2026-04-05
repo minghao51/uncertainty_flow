@@ -61,3 +61,19 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+filterwarnings = [
+    "ignore:Stochastic Optimizer",
+    "ignore:Degrees of freedom <= 0 for slice:RuntimeWarning",
+    "ignore:divide by zero encountered in divide:RuntimeWarning",
+    "ignore:invalid value encountered in multiply:RuntimeWarning",
+    "ignore:invalid value encountered in log:RuntimeWarning",
+    "ignore:An input array is constant",
+    "ignore::uncertainty_flow.utils.exceptions.UncertaintyFlowWarning",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
