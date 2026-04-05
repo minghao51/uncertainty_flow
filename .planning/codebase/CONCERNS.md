@@ -1,498 +1,133 @@
-# Codebase Concerns
-
-## Overview
-This document outlines technical debt, bugs, security issues, and performance concerns identified in the uncertainty_flow codebase as of 2026-03-22.
-
-**Last updated**: 2026-03-31 - Major refactoring completed (see Resolved Issues section)
-
-## Priority Levels
-- 🔴 **CRITICAL**: Must address immediately
-- 🟡 **HIGH**: Should address soon
-- 🔵 **MEDIUM**: Address when possible
-- ⚪ **LOW**: Nice to have improvements
-- ✅ **RESOLVED**: Issue has been addressed
-
----
-
-## Resolved Issues
-
-### ✅ Memory management in sampling
-**Status**: RESOLVED (2026-03-31)
-- Implemented chunked sampling with `MAX_SAMPLE_CHUNK_SIZE` (100K) and `MAX_TOTAL_SAMPLES` (10M) limits
-- Added input validation for `n` parameter in `DistributionPrediction.sample()`
-- Chunked sampling via `_sample_chunked()` method prevents memory exhaustion
+# Uncertainty Flow - Codebase Concerns
 
-### ✅ LazyFrame materialization
-**Status**: RESOLVED (2026-03-31)
-- Minimized `.collect()` calls in `ConformalRegressor.fit()` - collects once at start
-- Optimized `polars_bridge.to_numpy()` to select and convert in single operation
-- All model fit/predict methods now collect LazyFrame once at entry point
+## Tech Debt Items
 
-### ✅ Inefficient array operations
-**Status**: RESOLVED (2026-03-31)
-- Vectorized `DeepQuantileNet._predict_backend()` using matrix multiplication
-- Replaced manual loop with `trunk_features @ coef_matrix + intercepts`
+1. **Large Files**
+   - `uncertainty_flow/multivariate/copula.py` (768 lines) - Should be split into smaller modules
+   - `uncertainty_flow/core/distribution.py` (552 lines) - Core class but getting large
+   - `uncertainty_flow/cli.py` (506 lines) - CLI functionality should be modularized
+   - Multiple test files over 300 lines - Consider test utilities and fixtures
 
-### ✅ Redundant sorting
-**Status**: RESOLVED (2026-03-31)
-- `BaseQuantileNeuralNet.predict()` now checks if sorting is needed before applying
-- `_ensure_monotonicity()` uses vectorized `np.sort()` instead of row-by-row loop
+2. **Missing Type Hints**
+   - Many files lack comprehensive type hints
+   - Some files import `typing` inconsistently
+   - Dynamic typing in several modules could lead to runtime errors
 
-### ✅ Circular dependency risk
-**Status**: RESOLVED (2026-03-31)
-- Added explicit documentation of circular dependency rationale in `base.py`
-- Lazy import pattern is intentional and documented
+3. **Inconsistent Error Handling**
+   - Mix of custom exceptions and standard Python exceptions
+   - Inconsistent error message formats
+   - Some functions lack proper error handling
 
-### ✅ Exception swallowing
-**Status**: RESOLVED (2026-03-31)
-- Replaced all bare `except Exception:` with specific exception types:
-  - `copula.py`: `(ValueError, OverflowError, ZeroDivisionError, np.linalg.LinAlgError)`
-  - `shap_values.py`: `(ValueError, RuntimeError, np.linalg.LinAlgError)`
+## Potential Bugs or Issues
 
-### ✅ Pytest version conflicts
-**Status**: RESOLVED (2026-03-31)
-- Standardized on `pytest>=9.0.2` in both dependencies and dev
+1. **Uninitialized Variables**
+   - In `copula.py`, line 29: `theta_: float | None = None` could cause issues if not properly initialized before use
 
-### ✅ Input validation
-**Status**: RESOLVED (2026-03-31)
-- Added `random_state` validation in `BaseQuantileNeuralNet`
-- Added `n` parameter validation in `DistributionPrediction.sample()`
-- All public APIs now validate inputs with proper error messages
+2. **Potential Division by Zero**
+   - In distribution.py, line 46: Need to verify n_samples > 0 before division
+   - In copula.py, check for zero correlation matrices
 
-### ✅ Multivariate plotting
-**Status**: RESOLVED (2026-03-31)
-- Fixed `DistributionPrediction.plot()` to handle multivariate input correctly
-- Properly extracts target-specific columns for multivariate cases
+3. **Memory Management**
+   - Large NumPy arrays in DistributionPrediction may cause memory issues with large datasets
+   - No apparent garbage collection strategy for temporary arrays
 
-### ✅ Magic numbers
-**Status**: RESOLVED (2026-03-31)
-- Extracted constants: `MAX_SAMPLE_CHUNK_SIZE`, `MAX_TOTAL_SAMPLES`, `PLOT_MAX_SAMPLES`
-- Defined at module level in `distribution.py`
+4. **Race Conditions**
+   - Multiple ensemble models in `deep_quantile_torch.py` trained sequentially but no thread safety
 
-### ✅ LRU cache for quantile lookups
-**Status**: RESOLVED (2026-03-31)
-- Added `@lru_cache(maxsize=128)` to `_find_nearest_quantile_index()`
+## Security Concerns
 
----
+1. **Input Validation**
+   - Limited input sanitization in public APIs
+   - No protection against malicious data inputs
 
-## Security Issues
+2. **Code Injection**
+   - No `eval()` or `exec()` found, but dynamic model loading could be a risk vector
+   - String-based model selection in some areas
 
-### 🔴 CRITICAL
-**Status**: ✅ None identified
+3. **Data Privacy**
+   - No encryption or anonymization for data handling
+   - Logging may contain sensitive data
 
-**Good practices observed**:
-- No hardcoded secrets
-- No exposed API keys or credentials
-- No SQL injection vectors (Polars parameterized queries)
+## Performance Concerns
 
-### 🟡 MEDIUM
-**Input validation gaps**:
-- Several modules lack comprehensive input validation
-- No validation for malicious inputs in edge cases
-- Missing bounds checking for numerical parameters
+1. **Nested Loops**
+   - Multiple files contain nested loops that could be slow with large datasets
+   - Example: `deep_quantile_torch.py` has nested loops for training and prediction
 
-**Example locations**:
-- `DistributionPrediction.sample()` - No validation for large `n` values
-- `BaseSplit._validate_calibration_size()` - Only validates size, not data quality
+2. **Unnecessary Copies**
+   - Frequent conversions between Polars and NumPy arrays
+   - Temporary array creation in quantile extraction
 
-**Recommendation**: Add input validation to all public APIs
+3. **Memory Usage**
+   - Large quantile matrices stored in memory
+   - No apparent lazy loading for large datasets
 
-### 🟡 MEDIUM
-**No authentication/authorization framework**:
-- If web API is planned, no auth framework in place
-- No rate limiting or access control
+4. **GPU Memory**
+   - PyTorch models moved to GPU without explicit memory management
+   - No batch size optimization for GPU memory
 
-**Recommendation**: Plan for authentication if adding web interface
+## Code Quality Issues
 
----
+1. **Code Duplication**
+   - Similar model initialization patterns across different models
+   - Repeated data preprocessing code
+   - Duplicate test code across test files
 
-## Performance Issues
+2. **Inconsistent Patterns**
+   - Mix of class-based and functional approaches
+   - Inconsistent naming conventions in some areas
+   - Mixed use of underscore prefix for private methods
 
-### 🔴 CRITICAL
-**Memory management in sampling**:
-- `DistributionPrediction.sample()` method has no memory management
-- Large `n` values can cause memory exhaustion
-- No chunking or streaming for large samples
+3. **Missing Documentation**
+   - Some public methods lack docstrings
+   - Complex algorithms lack detailed explanations
+   - No architecture diagrams or design documents
 
-**Location**: `uncertainty_flow/core/distribution.py`
+4. **Testing Coverage**
+   - Some modules appear to have limited test coverage
+   - Integration testing may be insufficient
+   - No performance/benchmarking tests in core modules
 
-**Impact**: Can crash with large sample requests
+## Work in Progress / Incomplete Features
 
-**Recommendation**: Implement chunked sampling with memory limits
+Based on git status, the following files show recent modifications:
 
-### 🔴 CRITICAL
-**LazyFrame materialization**:
-- Multiple `.collect()` calls in `fit()` and `predict()` methods
-- Repeated materialization of same data
-- No caching of collected DataFrames
+1. **Deleted Planning Files**
+   - `.planning/codebase/` directory was deleted - indicates restructuring
+   - All architecture and convention documents removed
 
-**Locations**:
-- `ConformalRegressor.fit()` - Multiple collects
-- `DeepQuantileNet.predict()` - Repeated materialization
-
-**Impact**: Poor performance with large datasets
-
-**Recommendation**: Cache collected DataFrames, minimize collects
-
-### 🟡 HIGH
-**Inefficient array operations**:
-- Manual matrix multiplication loops in `DistributionPrediction._extract_trunk_features()`
-- Should use vectorized NumPy operations
-
-**Location**: `uncertainty_flow/core/distribution.py`
-
-**Impact**: Slower than necessary for large datasets
-
-**Recommendation**: Replace with NumPy vectorized operations
-
-### 🟡 HIGH
-**Redundant sorting**:
-- `DeepQuantileNet.predict()` sorts quantile_matrix twice
-- Unnecessary computational overhead
-
-**Location**: `uncertainty_flow/models/deep_quantile.py`
-
-**Impact**: 2x sorting overhead
-
-**Recommendation**: Remove redundant sort operation
-
-### 🔵 MEDIUM
-**No caching for quantile lookups**:
-- Repeated quantile level lookups not cached
-- Same quantiles computed multiple times
-
-**Recommendation**: Implement LRU cache for quantile computations
-
----
-
-## Technical Debt
-
-### 🟡 HIGH
-**Circular dependency risk**:
-- `BaseUncertaintyModel.calibration_report()` has comment: "# Import here to avoid circular dependency"
-- Lazy import of calibration module
-
-**Location**: `uncertainty_flow/core/base.py:74`
-
-**Impact**: Code smell, potential for actual circular dependencies
-
-**Recommendation**: Refactor to eliminate circular dependency
-
-### 🟡 HIGH
-**Mixed architecture patterns**:
-- sklearn backend models vs torch models without unified interface
-- Inconsistent patterns across backends
-
-**Locations**:
-- `DeepQuantileNet` (sklearn)
-- `DeepQuantileNetTorch` (torch)
-
-**Impact**: Inconsistent user experience, harder to maintain
-
-**Recommendation**: Define clear interface contract, enforce across backends
-
-### 🟡 HIGH
-**Hardcoded default quantiles**:
-- `DEFAULT_QUANTILES` defined in multiple files
-- No centralized configuration
-
-**Locations**:
-- `uncertainty_flow/core/types.py`
-- Various model files
-
-**Impact**: Inconsistency risk, hard to change defaults
-
-**Recommendation**: Single source of truth for defaults
-
-### 🟡 HIGH
-**Inconsistent error handling**:
-- Different patterns across modules
-- Some raise exceptions, others return None
-- No standard error types
-
-**Impact**: Unpredictable error behavior
-
-**Recommendation**: Define error handling standard, implement consistently
-
-### 🔵 MEDIUM
-**Documentation gaps**:
-- Missing type hints for some function parameters
-- Incomplete docstrings for private methods
-- No examples for some complex functions
-
-**Recommendation**: Complete type hints and docstrings
-
-### 🔵 MEDIUM
-**Test coverage gaps**:
-- Limited edge case testing for multivariate scenarios
-- No tests for wrappers (`conformal.py`, `conformal_ts.py`)
-- No tests for calibration module
-
-**Recommendation**: Increase test coverage to >80% across all modules
-
-### ⚪ LOW
-**Code duplication**:
-- Similar validation logic repeated across multiple classes
-- Duplicated DataFrame manipulation patterns
-
-**Recommendation**: Extract common utilities
-
----
-
-## Bugs & Issues
-
-### 🟡 HIGH
-**Index handling inconsistency**:
-- `DistributionPrediction.plot()` assumes single target
-- Doesn't handle multivariate input correctly
-
-**Location**: `uncertainty_flow/core/distribution.py`
-
-**Impact**: Plotting fails or produces incorrect output for multivariate
-
-**Recommendation**: Fix index handling for multivariate case
-
-### 🟡 HIGH
-**Exception swallowing**:
-- Bare `except Exception:` block in `ConformalRegressor` (line 161)
-- Catches and suppresses all exceptions
-
-**Location**: `uncertainty_flow/wrappers/conformal.py:161`
-
-**Impact**: Hides real errors, makes debugging impossible
-
-**Recommendation**: Catch specific exceptions only
-
-### 🟡 HIGH
-**Type inconsistency**:
-- Methods return different types (Series vs DataFrame) without clear documentation
-- Unclear what return type to expect
-
-**Impact**: Confusing API, potential type errors
-
-**Recommendation**: Document and standardize return types
-
-### 🔵 MEDIUM
-**Magic numbers**:
-- Hardcoded values like `500` samples for plotting without explanation
-- No constants defined for magic numbers
-
-**Example**: `DistributionPrediction.plot()` uses 500 samples
-
-**Impact**: Code is less maintainable
-
-**Recommendation**: Extract named constants with documentation
-
-### 🔵 MEDIUM
-**Import organization**:
-- Some files import after function definitions instead of at top
-- Inconsistent import ordering
-
-**Impact**: Code style inconsistency
-
-**Recommendation**: Enforce consistent import ordering via ruff
-
-### 🔵 MEDIUM
-**Missing validation**:
-- `random_state` not consistently validated across models
-- Some models accept any value, others require specific types
-
-**Impact**: Inconsistent behavior, potential runtime errors
-
-**Recommendation**: Standardize random_state validation
-
----
-
-## Architecture Concerns
-
-### 🔴 CRITICAL
-**Tight coupling**:
-- Models import metrics directly
-- Metrics depend on DistributionPrediction structure
-- Hard to change one without affecting other
-
-**Impact**: Difficult to evolve independently
-
-**Recommendation**: Introduce interfaces/protocols for decoupling
-
-### 🔴 CRITICAL
-**Missing abstraction for I/O formats**:
-- No abstraction layer for Polars, NumPy, Pandas
-- Direct conversions scattered throughout
-- Hard to support additional formats
-
-**Impact**: Difficult to add new data format support
-
-**Recommendation**: Create abstract data format interface
-
-### 🔴 CRITICAL
-**Single responsibility violation**:
-- `DistributionPrediction` handles storage, computation, AND visualization
-- Too many responsibilities in one class
-
-**Location**: `uncertainty_flow/core/distribution.py`
-
-**Impact**: Hard to test, maintain, and extend
-
-**Recommendation**: Split into separate classes for storage, computation, visualization
-
-### 🟡 HIGH
-**Version dependency conflicts**:
-- `pyproject.toml` shows conflicting pytest versions:
-  - `dependencies`: `pytest>=9.0.2`
-  - `dev`: `pytest>=7.4.0`
-
-**Location**: `pyproject.toml:12,18`
-
-**Impact**: Unresolved dependency version
-
-**Recommendation**: Resolve to single pytest version requirement
-
-### 🟡 HIGH
-**Package structure unclear**:
-- Unclear separation between core functionality and extensions
-- Hard to identify what's essential vs. optional
-
-**Impact**: Confusing for contributors
-
-**Recommendation**: Document package structure, clarify core vs. extensions
-
-### 🟡 HIGH
-**No centralized configuration**:
-- Configuration scattered across modules
-- No global settings mechanism
-
-**Impact**: Hard to configure behavior globally
-
-**Recommendation**: Implement configuration system
-
----
-
-## Recommended Actions
-
-### Priority 1 (Critical) - Address Immediately
-
-1. **Fix memory management** in sampling methods
-   - Implement chunked sampling
-   - Add memory limits
-
-2. **Address circular dependency** in calibration report
-   - Refactor import structure
-   - Eliminate lazy imports
-
-3. **Implement proper input validation** across all modules
-   - Validate all public API inputs
-   - Add comprehensive error messages
-
-4. **Resolve pytest version conflicts**
-   - Standardize on single pytest version
-   - Update pyproject.toml
-
-### Priority 2 (High) - Address Soon
-
-1. **Standardize error handling patterns**
-   - Define error type hierarchy
-   - Document error handling strategy
-   - Fix exception swallowing in ConformalRegressor
-
-2. **Remove duplicate sorting operations**
-   - Audit all sorting operations
-   - Remove redundant sorts
-
-3. **Fix index handling in multivariate plotting**
-   - Support multivariate plotting correctly
-   - Add tests for multivariate case
-
-4. **Consolidate quantile level configuration**
-   - Single source of truth
-   - Centralized configuration
-
-5. **Minimize LazyFrame materialization**
-   - Cache collected DataFrames
-   - Reduce redundant .collect() calls
-
-### Priority 3 (Medium) - Address When Possible
-
-1. **Add comprehensive type hints**
-   - Complete missing type annotations
-   - Run type checker (mypy)
-
-2. **Implement caching for repeated computations**
-   - Quantile level lookups
-   - Expensive computations
-
-3. **Improve documentation for return types**
-   - Document all return types
-   - Add examples
-
-4. **Increase test coverage**
-   - Add tests for wrappers
-   - Add tests for calibration
-   - Edge case coverage
-
-5. **Replace inefficient array operations**
-   - Vectorize with NumPy
-   - Profile and optimize hot paths
-
----
-
-## Files Requiring Immediate Attention
-
-### 🔴 Critical
-1. `uncertainty_flow/core/distribution.py` - Performance and memory issues
-2. `uncertainty_flow/models/deep_quantile.py` - Architecture coupling
-3. `uncertainty_flow/wrappers/conformal.py` - Exception handling (line 161)
-4. `pyproject.toml` - Dependency conflicts
-
-### 🟡 High Priority
-1. `uncertainty_flow/core/base.py` - Circular dependency
-2. `uncertainty_flow/models/deep_quantile_torch.py` - Inconsistent patterns
-3. `uncertainty_flow/core/types.py` - Default configuration
-
----
-
-## Monitoring Areas
-
-### Performance Metrics
-- **Memory usage** during sampling operations
-- **Execution time** for large datasets
-- **LazyFrame materialization** count
-- **Cache hit rates** (when caching implemented)
-
-### Code Quality Metrics
-- **Test coverage** per module
-- **Type coverage** (percentage of code with type hints)
-- **Code duplication** percentage
-- **Cyclomatic complexity** per function
-
-### Technical Debt Metrics
-- **Number of TODO/FIXME comments**
-- **Number of open issues**
-- **Code churn** in frequently modified files
-- **Bug fix frequency** per module
-
----
-
-## Debt Reduction Strategy
-
-### Short-term (1-2 weeks)
-1. Fix critical bugs and security issues
-2. Resolve dependency conflicts
-3. Add input validation to public APIs
-
-### Medium-term (1-2 months)
-1. Refactor circular dependencies
-2. Standardize error handling
-3. Improve test coverage to >80%
-
-### Long-term (3-6 months)
-1. Architectural refactoring for better separation of concerns
-2. Performance optimization
-3. Comprehensive documentation
-
----
-
-## Related Documentation
-- **ARCHITECTURE.md**: System architecture and design patterns
-- **CONVENTIONS.md**: Code style and development practices
-- **TESTING.md**: Testing strategy and coverage goals
+2. **Modified Core Files**
+   - `uncertainty_flow/core/distribution.py` - Major refactoring likely in progress
+   - `uncertainty_flow/models/quantile_forest.py` - Updates to quantile forest implementation
+   - Multiple test files updated - suggests active development
+
+3. **New Files**
+   - `.github/` directory added - GitHub workflows and actions
+   - `uncertainty_flow/py.typed` - Added type hints declaration
+
+4. **Uncommitted Changes**
+   - `README.md` and `pyproject.toml` modified - Documentation and package updates
+   - Test files for various models updated - active testing phase
+
+## Recommendations
+
+1. **Immediate Actions**
+   - Complete input validation and error handling
+   - Add comprehensive type hints throughout
+   - Split large files into smaller, focused modules
+
+2. **Medium-term Improvements**
+   - Implement proper memory management strategies
+   - Add more comprehensive testing
+   - Create consistent error handling patterns
+
+3. **Long-term Goals**
+   - Refactor to reduce code duplication
+   - Improve documentation and architecture documentation
+   - Consider performance optimizations for large datasets
+
+## Prioritization
+
+1. **High Priority** - Security and stability issues
+2. **Medium Priority** - Code quality and maintainability
+3. **Low Priority** - Performance optimizations (unless critical for use cases)

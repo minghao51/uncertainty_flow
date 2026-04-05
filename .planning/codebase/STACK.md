@@ -1,93 +1,50 @@
-# Tech Stack
+# Stack
 
-## Overview
-Uncertainty Flow is a Python library for probabilistic forecasting and uncertainty quantification, built with a focus on Polars-native data handling and scikit-learn compatibility.
-
-## Core Language & Runtime
-
-**Python**: 3.11+
-- Requires Python >=3.11
-- Type hints used throughout with `from __future__ import annotations`
-- Modern Python patterns (ABC, abstractmethod, TYPE_CHECKING)
-
-## Key Dependencies
-
-### Data Processing
-- **polars** (>=0.20.0) - Primary data frame library
-  - Used for all I/O operations
-  - LazyFrame support for lazy evaluation
-  - Native integration throughout the codebase
-
-- **numpy** (>=1.24.0) - Numerical computing
-  - Array operations and numerical routines
-  - Statistical computations
-  - Backend for some model operations
-
-### Machine Learning
-- **scikit-learn** (>=1.3.0) - ML framework
-  - Base model interfaces (RegressorMixin)
-  - Preprocessing (StandardScaler)
-  - Model evaluation utilities
-
-- **scipy** (>=1.11.0) - Scientific computing
-  - Optimization routines
-  - Statistical distributions
-  - Numerical algorithms
-
-### Optional Dependencies
-
-**Development** (dev extra):
-- **pytest** (>=7.4.0, >=9.0.2) - Testing framework
-- **pytest-cov** (>=4.1.0, >=7.0.0) - Coverage reporting
-- **ruff** (>=0.1.0) - Fast Python linter
-- **matplotlib** (>=3.7.0) - Plotting library
-
-**PyTorch** (torch extra):
-- **torch** (>=2.0.0) - Deep learning framework
-  - Alternative backend for DeepQuantileNetTorch
-  - GPU acceleration support
+## Language
+- **Python 3.11+** (required minimum)
 
 ## Build System
+- **hatchling** — build backend
+- **uv** — package manager (per project conventions)
+- Standard `pyproject.toml` configuration
 
-- **hatchling** - Build backend
-  - Modern Python packaging tool
-  - Specified in pyproject.toml
+## Core Dependencies
+| Package | Version | Purpose |
+|---------|---------|---------|
+| polars | >=0.20.0 | DataFrame operations |
+| numpy | >=1.24.0 | Numerical computing |
+| scikit-learn | >=1.3.0 | ML models, metrics |
+| scipy | >=1.11.0 | Statistical functions |
+| click | >=8.0.0 | CLI framework |
+| pydantic | >=2.0.0 | Data validation |
+| pydantic-settings | >=2.13.1 | Settings management |
 
-## Development Tools
+## Optional Dependencies
+| Extra | Package | Purpose |
+|-------|---------|---------|
+| torch | torch>=2.0.0 | Deep learning quantile models |
+| transformers | chronos-forecasting>=2.0 | Time series transformer models |
+| shap | shap>=0.44.0 | Model explainability |
+| bench | datasets>=2.0.0 | HuggingFace benchmark datasets |
+| numpyro | numpyro>=0.14.0, jax>=0.4.0 | Bayesian modeling |
 
-### Linting & Formatting
-- **ruff** - Fast Python linter/formatter
-  - Line length: 100 characters
-  - Target version: Python 3.11
-  - Enabled rules: E (errors), F (pyflakes), I (import sorting), N (naming), W (warnings)
-  - No rules ignored
+## Dev Dependencies
+| Package | Version | Purpose |
+|---------|---------|---------|
+| pytest | >=9.0.2 | Testing framework |
+| pytest-cov | >=4.1.0 | Coverage reporting |
+| ruff | >=0.1.0 | Linting + formatting |
+| matplotlib | >=3.7.0 | Visualization |
 
-### Testing
-- **pytest** - Testing framework
-  - Test discovery in `tests/` directory
-  - Test files: `test_*.py`
-  - Test classes: `Test*`
-  - Test functions: `test_*`
+## Configuration Files
+| File | Tool | Notes |
+|------|------|-------|
+| pyproject.toml | hatch, ruff, pytest, mypy | Central config |
+| uncertainty_flow/py.typed | PEP 561 | Marks package as typed |
 
-## Version Control
+## CLI Entry Point
+- `uncertainty-flow` → `uncertainty_flow.cli:main` (via Click)
 
-- **Git** - Version control system
-- **uv** - Package manager (recommended for dependency management)
-
-## Documentation
-
-- Markdown-based documentation in `docs/` directory
-- README.md as main entry point
-- Inline docstrings (Google-style format preferred)
-
-## Platform Support
-
-- Cross-platform (macOS, Linux, Windows)
-- Developed primarily on macOS (Darwin 25.3.0)
-
-## Dependency Philosophy
-
-- Minimal dependencies for core functionality
-- Optional extras for extended features (torch, dev tools)
-- Polars-first approach for data handling
-- Scikit-learn compatibility for model interoperability
+## Type Checking
+- **mypy** configured (py311, warn_return_any, warn_unused_configs)
+- PEP 561 typed package marker present

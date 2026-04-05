@@ -1,311 +1,159 @@
-# Architecture
+# Uncertainty Flow Architecture
 
-## Overview
-Uncertainty Flow follows a **distribution-first architecture** where all models return probabilistic predictions rather than point estimates. The design emphasizes Polars-native data handling, modular components, and clear separation of concerns.
+## Overall Pattern
 
-## Core Architectural Pattern
+The uncertainty_flow library follows a **layered architecture** with a clear separation of concerns. It's designed as a probabilistic forecasting and uncertainty quantification library with extensibility in mind.
 
-### Distribution-First Design
-The central architectural principle is that every model returns a `DistributionPrediction` object, not a scalar value. This enforces uncertainty quantification as a first-class concern.
+### Architecture Layers
 
-```python
-# All models follow this pattern:
-model.fit(data, target="y")
-prediction = model.predict(new_data)  # Returns DistributionPrediction
-prediction.interval(confidence=0.9)   # Extract uncertainty intervals
-prediction.quantile([0.1, 0.5, 0.9]) # Extract quantiles
+1. **Core Layer** (`core/`)
+   - Base abstractions and interfaces
+   - Type system and configuration management
+   - Core data structures (DistributionPrediction)
+
+2. **Implementation Layer** 
+   - `models/`: Native uncertainty quantification models
+   - `wrappers/`: Adapters for existing models (conformal prediction)
+   - `bayesian/`: Bayesian approaches (optional - requires NumPyro)
+   - `causal/`: Causal inference with uncertainty
+   - `multimodal/`: Multi-modal uncertainty aggregation
+   - `multivariate/`: Multivariate uncertainty handling
+
+3. **Support Layer**
+   - `metrics/`: Evaluation metrics (coverage, pinball loss, Winkler score)
+   - `calibration/`: Calibration utilities
+   - `utils/`: Common utilities and helpers
+   - `benchmarking/`: Benchmarking framework and datasets
+
+4. **Entry Points**
+   - `__init__.py`: Public API surface
+   - `cli.py`: Command-line interface for benchmarking
+
+## Module Responsibilities
+
+### Core Module (`core/`)
+- **BaseUncertaintyModel**: Abstract base class defining the interface
+- **DistributionPrediction**: Core output object with quantile predictions
+- **Configuration**: Centralized configuration system
+- **Type System**: Type aliases and constants
+
+### Models Module (`models/`)
+- **DeepQuantileNet**: Neural network-based quantile regression
+- **QuantileForestForecaster**: Random forest-based quantile regression
+- **DeepQuantileNetTorch**: PyTorch version (optional)
+- **TransformerForecaster**: Transformer-based forecaster (optional)
+
+### Wrappers Module (`wrappers/`)
+- **ConformalRegressor**: Conformal prediction wrapper for regression
+- **ConformalForecaster**: Conformal prediction wrapper for time series
+
+### Bayesian Module (`bayesian/`)
+- **BayesianQuantileRegressor**: Bayesian quantile regression with MCMC
+- Provides posterior sampling and uncertainty intervals
+
+### Causal Module (`causal/`)
+- **CausalUncertaintyEstimator**: Treatment effect estimation with uncertainty
+- Handles heterogeneity and average treatment effects
+
+### Multi-Modal Module (`multimodal/`)
+- **CrossModalAggregator**: Aggregates predictions across multiple modalities
+- Handles cross-modal correlations
+
+### Multivariate Module (`multivariate/`)
+- **Copula**: Copula-based multivariate distributions
+- Models dependencies between multiple targets
+
+### Metrics Module (`metrics/`)
+- **Coverage Score**: Measures prediction interval coverage
+- **Pinball Loss**: Quantile regression loss function
+- **Winkler Score**: Sharpness-aware coverage metric
+
+## Data Flow Between Components
+
+```
+Input Data → BaseUncertaintyModel.fit() → Model Training
+                        ↓
+Model.predict() → DistributionPrediction → Post-processing
+                        ↓
+Metrics evaluation (calibration, coverage, sharpness)
 ```
 
-## Architectural Layers
+### Key Abstractions
 
-### 1. Base Layer (`core/`)
+1. **BaseUncertaintyModel**
+   - Abstract base class defining `fit()` and `predict()` methods
+   - Provides default `calibration_report()` implementation
+   - Enables method chaining across models
 
-**BaseUncertaintyModel** - Abstract interface
-- All models inherit from this base class
-- Enforces `fit()` and `predict()` methods
-- Provides default `calibration_report()` implementation
-- Defines contract for uncertainty quantification models
+2. **DistributionPrediction**
+   - Core output object holding quantile predictions
+   - Supports univariate and multivariate cases
+   - Provides methods for:
+     - Extracting quantiles and intervals
+     - Sampling from predicted distributions
+     - Plotting fan charts
+     - Bayesian posterior analysis
+     - Multi-modal aggregation
+     - Causal treatment effects
 
-**DistributionPrediction** - Result container
-- Immutable container for probabilistic predictions
-- Methods: `quantile()`, `interval()`, `mean()`, `sample()`, `plot()`
-- Handles both univariate and multivariate predictions
-- Stores quantile matrix internally
+3. **Configuration System**
+   - Centralized configuration via `get_config()`, `set_config()`
+   - Default quantiles and model parameters
+   - Type-safe configuration with Pydantic
 
-**Configuration System** - Pydantic-based settings
-- `QuantileConfig`: Centralized configuration for quantile levels and thresholds
-- Environment variable support via `UNCERTAINTY_FLOW_*` prefix
-- Validation for quantile ranges and calibration sizes
-- Single source of truth for `DEFAULT_QUANTILES`
+## Entry Points and Public API
 
-**Type System** - Type definitions
-- `PolarsInput`: DataFrame | LazyFrame
-- `TargetSpec`: str | list[str] (single or multiple targets)
-- Strong typing throughout with TYPE_CHECKING
+### Main Entry Points
+1. **Package-level** (`__init__.py`)
+   - Exports core classes: `BaseUncertaintyModel`, `DistributionPrediction`
+   - Exports metrics: `pinball_loss`, `coverage_score`, `winkler_score`
+   - Exports models: `DeepQuantileNet`, `QuantileForestForecaster`
+   - Exports utilities: `RandomHoldoutSplit`, `TemporalHoldoutSplit`
+   - Exports wrappers: `ConformalRegressor`, `ConformalForecaster`
+   - Optional modules (lazy import): Bayesian, Causal, Multi-Modal
 
-### 2. Model Layer (`models/`)
+2. **Command Line Interface** (`cli.py`)
+   - `uncertainty-flow benchmark`: Run benchmarks on datasets
+   - `uncertainty-flow tune`: Auto-tune hyperparameters
+   - `uncertainty-flow list-datasets`: List available datasets
+   - `uncertainty-flow download-dataset`: Download datasets
 
-**BaseQuantileNeuralNet** - Abstract base for neural quantile models
-- Provides common functionality for neural quantile regression
-- Data preparation (Polars and numpy support)
-- Feature scaling with StandardScaler
-- Monotonicity enforcement
-- Consistent fit/predict interface
-- Abstract methods: `_fit_backend()`, `_predict_backend()`
-
-**Concrete Implementations**:
-- `DeepQuantileNet`: sklearn-based neural network
-- `DeepQuantileNetTorch`: PyTorch-based neural network
-- `QuantileForestForecaster`: Time series forecasting
-
-**Pattern**: Neural models inherit from BaseQuantileNeuralNet
-- Shared trunk architecture for quantile models
-- Post-prediction sorting to ensure non-crossing quantiles
-- Backend-specific implementations via abstract methods
-- Both sklearn and torch backends have identical interfaces
-
-### 3. Wrapper Layer (`wrappers/`)
-
-**ConformalRegressor** - Conformal prediction wrapper
-- Wraps any sklearn regressor
-- Adds statistical coverage guarantees
-- Split-conformal or cross-conformal strategies
-- Calibration set splitting strategies
-
-**ConformalForecaster** - Time series conformal wrapper
-- Temporal adaptation of conformal prediction
-- Handles time series cross-validation
-- Corrects for exchangeability violations
-
-### 4. Metrics Layer (`metrics/`)
-
-**Evaluation Functions**:
-- `pinball_loss()`: Quantile loss
-- `coverage_score()`: Empirical coverage
-- `winkler_score()`: Interval scoring
-
-**Pattern**: Stateless functions taking predictions + true values
-- Compatible with DistributionPrediction objects
-- Return scalar or Polars DataFrame results
-
-### 5. Calibration Layer (`calibration/`)
-
-**Report Generation**:
-- `calibration_report()`: Comprehensive calibration metrics
-- `residual_analysis()`: Feature-residual correlations
-- Returns Polars DataFrame for easy analysis
-
-**Uncertainty Driver Detection**:
-- Automatic correlation analysis
-- Identifies which features drive prediction uncertainty
-- Accessible via `model.uncertainty_drivers_` property
-
-### 6. Utilities Layer (`utils/`)
-
-**Exception Hierarchy**: Custom error types
-- `UncertaintyFlowError`: Base error class
-- `ModelNotFittedError`: Model methods called before fitting
-- `InvalidDataError`: Invalid input data
-- `CalibrationSizeError`: Calibration set too small
-- `QuantileError`: Invalid quantile configuration
-- Helper functions: `error_model_not_fitted()`, `error_invalid_data()`, etc.
-
-**Calibration Utilities**: Shared calibration functions
-- `calibration_report()`: Extracted to avoid circular dependencies
-- Re-exported from `calibration/report.py` for backward compatibility
-
-**Polars Bridge**: Convert between Polars and NumPy
-**Split Strategies**: Random and temporal holdout splits
-**Warnings**: Custom warning classes
-
-## Data Flow
-
-### Training Flow
-```
-Polars DataFrame → Model.fit() → Internal State
-                 ↓
-            Calibration Set
-                 ↓
-         Quantile Estimation
-                 ↓
-         Trained Model
-```
-
-### Prediction Flow
-```
-Polars DataFrame → Model.predict() → DistributionPrediction
-                                      ↓
-                              quantile_matrix
-                                      ↓
-                        interval() / quantile() / mean()
-```
-
-### Calibration Flow
-```
-Model + Validation Data → calibration_report() → Metrics DataFrame
-                                                    ↓
-                                         Coverage, Sharpness, Scores
-```
-
-## Key Design Patterns
-
-### 1. Abstract Base Class Pattern
-- `BaseUncertaintyModel` defines interface
-- All models implement fit/predict
-- Enforces consistency across implementations
-
-### 2. Immutable Result Container
-- `DistributionPrediction` is immutable
-- Prevents accidental modification
-- Clear separation between model and predictions
-
-### 3. Strategy Pattern
-- Calibration split strategies: `BaseSplit` hierarchy
-- Random holdout vs temporal holdout
-- Pluggable strategies for different use cases
-
-### 4. Wrapper Pattern
-- `ConformalRegressor` wraps any sklearn estimator
-- Adds uncertainty quantification to point predictors
-- Enables conformal prediction for existing models
-
-### 5. Bridge Pattern
-- `to_numpy()` bridges Polars and NumPy ecosystems
-- Maintains Polars-first approach while enabling sklearn compatibility
-
-## Abstractions
-
-### Model Abstraction
-All models expose:
-- `fit(data, target, **kwargs)`: Training interface
-- `predict(data)`: Prediction interface
-- `calibration_report(data, target)`: Evaluation interface
-- `uncertainty_drivers_`: Feature importance (optional)
-
-### Prediction Abstraction
-`DistributionPrediction` provides:
-- `quantile(q)`: Quantile extraction
-- `interval(confidence)`: Prediction intervals
-- `mean()`: Point estimate
-- `sample(n)`: Monte Carlo samples
-- `plot()`: Visualization
-
-### Data Abstraction
-- `PolarsInput`: Accepts DataFrame or LazyFrame
-- Lazy evaluation supported throughout
-- Materialization only when necessary
-
-## Entry Points
-
-### Public API (`__init__.py`)
+### Public API Surface
 ```python
 # Core
-from uncertainty_flow import BaseUncertaintyModel, DistributionPrediction
-
-# Models
-from uncertainty_flow import DeepQuantertaintyNet, QuantileForestForecaster
-
-# Wrappers
-from uncertainty_flow import ConformalRegressor, ConformalForecaster
+BaseUncertaintyModel
+DistributionPrediction
 
 # Metrics
-from uncertainty_flow import pinball_loss, coverage_score, winkler_score
+pinball_loss
+coverage_score
+winkler_score
+
+# Models
+DeepQuantileNet
+QuantileForestForecaster
+DeepQuantileNetTorch  # optional
+TransformerForecaster  # optional
+
+# Wrappers
+ConformalRegressor
+ConformalForecaster
 
 # Utilities
-from uncertainty_flow import RandomHoldoutSplit, TemporalHoldoutSplit, to_numpy
+RandomHoldoutSplit
+TemporalHoldoutSplit
+
+# Optional modules (conditional import)
+BayesianQuantileRegressor
+CausalUncertaintyEstimator
+CrossModalAggregator
 ```
 
-### CLI Entry Points
-Currently none - library-only package
+## Design Principles
 
-## Coupling & Cohesion
-
-### High Cohesion
-- Each module has single, well-defined responsibility
-- `core/`: Base classes and types
-- `models/`: Concrete model implementations
-- `metrics/`: Evaluation functions
-- `calibration/`: Calibration and analysis
-
-### Low Coupling
-- Models don't depend on each other
-- Metrics are standalone functions
-- Wrappers depend only on sklearn, not on internal models
-- Polars used throughout for consistent data interface
-
-### Known Coupling Issues
-- ~~**Circular dependency**: `BaseUncertaintyModel.calibration_report()` imports calibration module lazily~~ **RESOLVED**: `calibration_report()` moved to `utils/calibration_utils.py`
-- **Metric imports**: Some models import metrics directly (tight coupling)
-- **Type checking**: Uses TYPE_CHECKING to avoid circular imports
-
-## Multivariate Architecture
-
-### Marginal Approach
-- Each target gets marginal CDF
-- Quantiles computed independently per target
-- Simple but ignores correlations
-
-### Copula Approach (Roadmap)
-- Gaussian copula for joint distributions
-- Captures cross-target correlations
-- Implemented in `multivariate/copula.py`
-
-## Time Series Architecture
-
-### Horizon-Based Forecasting
-- Models predict multiple steps ahead
-- `QuantileForestForecaster`: Direct multi-step forecasting
-- `ConformalForecaster`: Conformal prediction for time series
-
-### Temporal Splitting
-- `TemporalHoldoutSplit`: Time-aware cross-validation
-- Respects temporal ordering
-- Prevents look-ahead bias
-
-## Performance Considerations
-
-### Lazy Evaluation
-- LazyFrame support throughout
-- Materialization only when needed
-- `.collect()` called strategically
-
-### Memory Management
-- Potential issue: Large sample generation
-- Multiple `.collect()` calls in fit/predict
-- Room for optimization in sampling methods
-
-### Computational Efficiency
-- Vectorized operations via Polars
-- NumPy bridge for sklearn compatibility
-- Post-prediction sorting (not during optimization)
-
-## Extension Points
-
-### Adding New Models
-1. **For neural quantile models**: Inherit from `BaseQuantileNeuralNet`
-   - Implement `_fit_backend(x, y)` for training logic
-   - Implement `_predict_backend(x)` for prediction logic
-   - Data preparation and scaling handled by base class
-2. **For other models**: Inherit from `BaseUncertaintyModel`
-   - Implement `fit()` and `predict()` methods
-   - Return `DistributionPrediction` from predict
-3. Optionally override `calibration_report()`
-
-### Adding New Metrics
-1. Create function in `metrics/`
-2. Accept DistributionPrediction + true values
-3. Return scalar or Polars DataFrame
-4. Export in `metrics/__init__.py`
-
-### Adding New Split Strategies
-1. Inherit from `BaseSplit` in `utils/split.py`
-2. Implement `split()` method
-3. Validate calibration size requirements using `error_calibration_too_small()`
-4. Export in utils module
-
-### Adding New Exception Types
-1. Add to `utils/exceptions.py` hierarchy
-2. Inherit from appropriate base class (`ModelError`, `DataError`, etc.)
-3. Add error code (e.g., "UF-E005")
-4. Create helper function if commonly used
-5. Export in `utils/__init__.py`
+1. **Extensibility**: Easy to add new models by inheriting from BaseUncertaintyModel
+2. **Modularity**: Optional dependencies (torch, transformers, numpyro)
+3. **Type Safety**: Strong typing with Polars integration
+4. **Performance**: Efficient NumPy backend with Polars interface
+5. **Usability**: Rich API with calibration reports and diagnostics
+6. **Benchmarking**: Built-in benchmarking framework with real datasets
