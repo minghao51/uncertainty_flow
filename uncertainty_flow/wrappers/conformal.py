@@ -17,7 +17,7 @@ from ..utils.auto_tuning import (
     valid_calibration_candidates,
 )
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import RandomHoldoutSplit
 
 if TYPE_CHECKING:
@@ -153,8 +153,7 @@ class ConformalRegressor(BaseUncertaintyModel):
             self (for method chaining)
         """
         # Materialize LazyFrame once at the start
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         # Get feature columns
         if target is None:
@@ -209,8 +208,7 @@ class ConformalRegressor(BaseUncertaintyModel):
             error_model_not_fitted("ConformalRegressor")
 
         # Materialize LazyFrame if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         # Get predictions
         x = to_numpy(data, self._feature_cols_)

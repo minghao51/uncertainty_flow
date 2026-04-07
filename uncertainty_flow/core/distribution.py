@@ -34,7 +34,6 @@ class DistributionPrediction:
         group_predictions: dict[str, "DistributionPrediction"] | None = None,
         treatment_info: dict | None = None,
     ):
-        # Validate inputs
         if not np.all(np.isfinite(quantile_matrix)):
             error_invalid_data("quantile_matrix contains NaN or Inf values")
 
@@ -47,8 +46,6 @@ class DistributionPrediction:
         if len(target_names) == 0:
             error_invalid_data("target_names cannot be empty")
 
-        # For multivariate: matrix has n_targets * n_quantiles columns
-        # For univariate: matrix has n_quantiles columns
         n_targets = len(target_names)
         expected_cols = n_targets * len(quantile_levels)
 
@@ -59,7 +56,6 @@ class DistributionPrediction:
                 f"with {len(quantile_levels)} quantile levels each"
             )
 
-        # Store internally as NumPy
         self._quantiles = quantile_matrix
         self._levels = np.array(quantile_levels)
         self._targets = target_names
@@ -84,17 +80,14 @@ class DistributionPrediction:
         if isinstance(q, (int, float)):
             q = [q]
 
-        # Find closest quantile levels
         indices = [self._find_nearest_quantile_index(level) for level in q]
 
-        # Build column names and data
         if len(self._targets) == 1:
             # Univariate
             columns = [f"q_{level:.3f}" for level in q]
             data = self._quantiles[:, indices]
         else:
-            # Multivariate - quantile_matrix is (n_samples, n_targets * n_quantiles)
-            # We need to extract per target
+            # Multivariate
             columns = []
             data_parts = []
 

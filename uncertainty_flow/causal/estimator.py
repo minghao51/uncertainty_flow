@@ -3,14 +3,13 @@
 from typing import TYPE_CHECKING
 
 import numpy as np
-import polars as pl
 from sklearn.linear_model import LogisticRegression
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 
 if TYPE_CHECKING:
     pass
@@ -118,8 +117,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         Returns:
             self (for method chaining).
         """
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         if target is None:
             raise ConfigurationError("target is required for CausalUncertaintyEstimator")
@@ -164,8 +162,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         if not self._fitted:
             error_model_not_fitted("CausalUncertaintyEstimator")
 
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         feature_cols = self._feature_cols_
         t = data[self.treatment_col].to_numpy().astype(float)

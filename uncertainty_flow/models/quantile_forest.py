@@ -16,7 +16,7 @@ from ..utils.auto_tuning import (
     valid_calibration_candidates,
 )
 from ..utils.exceptions import error_invalid_data, error_model_not_fitted
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import TemporalHoldoutSplit
 
 if TYPE_CHECKING:
@@ -158,8 +158,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             self (for method chaining)
         """
         # Materialize if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         if self.auto_tune:
             self._auto_tune(data)
@@ -168,9 +167,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         splitter = TemporalHoldoutSplit()
         train, calib = splitter.split(data, self.calibration_size)
 
-        # Fit per target
         for target in self.targets:
-            # Get feature columns
             feature_cols = [col for col in train.columns if col != target]
             self._feature_cols_[target] = feature_cols
 
@@ -261,11 +258,9 @@ class QuantileForestForecaster(BaseUncertaintyModel):
                 leaf_id = int(leaf_ids[i])
                 if leaf_id in tree_dist:
                     leaf_values = tree_dist[leaf_id]
-                    # Compute quantiles for this leaf
                     for q_idx, q in enumerate(quantile_levels):
                         predictions[i, q_idx] += np.quantile(leaf_values, q)
 
-        # Average across trees
         predictions /= len(rf.estimators_)
 
         return predictions
@@ -284,10 +279,8 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             error_model_not_fitted("QuantileForestForecaster")
 
         # Materialize if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
-        # Get predictions for each target
         all_quantiles = []
 
         for target in self.targets:
@@ -299,7 +292,6 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
             all_quantiles.append(quantile_matrix)
 
-        # Stack for multivariate
         if len(self.targets) == 1:
             final_matrix = all_quantiles[0]
         else:

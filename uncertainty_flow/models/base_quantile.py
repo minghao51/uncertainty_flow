@@ -6,14 +6,13 @@ from abc import abstractmethod
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import polars as pl
 from sklearn.preprocessing import StandardScaler
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput
 from ..utils.exceptions import error_invalid_data
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 
 if TYPE_CHECKING:
     pass
@@ -173,8 +172,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
             y = target.flatten() if isinstance(target, np.ndarray) else target
             self._feature_cols_ = None
         else:
-            if isinstance(data, pl.LazyFrame):
-                data = data.collect()
+            data = materialize_lazyframe(data)
             if isinstance(target, np.ndarray):
                 error_invalid_data("If data is Polars, target must be string column name")
             target_str = str(target)  # type: ignore[arg-type]  # target is str here
@@ -198,8 +196,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         if isinstance(data, np.ndarray):
             x = data
         else:
-            if isinstance(data, pl.LazyFrame):
-                data = data.collect()
+            data = materialize_lazyframe(data)
             if self._feature_cols_ is None:
                 error_invalid_data("Feature columns not set. Call fit() first.")
             x = to_numpy(data, self._feature_cols_)  # type: ignore[arg-type]

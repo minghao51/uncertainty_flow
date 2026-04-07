@@ -3,12 +3,12 @@
 import copy
 
 import numpy as np
-import polars as pl
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.polars_bridge import materialize_lazyframe
 
 VALID_AGGREGATIONS = ("product", "copula", "independent")
 
@@ -80,8 +80,7 @@ class CrossModalAggregator(BaseUncertaintyModel):
         Raises:
             ValueError: If base_model is not provided or target is missing.
         """
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         if base_model is None:
             raise ConfigurationError("base_model is required for CrossModalAggregator.fit()")
@@ -128,8 +127,7 @@ class CrossModalAggregator(BaseUncertaintyModel):
 
         assert self._quantile_levels is not None
 
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         group_preds: dict[str, DistributionPrediction] = {}
         for group_name, feature_cols in self.feature_groups.items():

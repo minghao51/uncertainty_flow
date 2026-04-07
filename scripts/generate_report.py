@@ -56,7 +56,7 @@ def create_comparison_table(results: dict) -> pl.DataFrame:
 def rank_models(df: pl.DataFrame, metric: str = "winkler_90") -> pl.DataFrame:
     """Rank models by a specific metric."""
     return (
-        df.sort("dataset", by=metric)
+        df.sort("dataset", metric)
         .with_columns(pl.col(metric).rank(method="dense").over("dataset").alias(f"{metric}_rank"))
         .select(
             "dataset",

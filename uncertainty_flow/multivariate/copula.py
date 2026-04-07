@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, ClassVar
+from enum import Enum
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 import numpy as np
 from scipy import stats
@@ -14,7 +15,19 @@ if TYPE_CHECKING:
     pass
 
 
-CopulaFamily = str | type["BaseCopula"]
+class CopulaFamily(str, Enum):
+    """Copula family options."""
+
+    GAUSSIAN = "gaussian"
+    CLAYTON = "clayton"
+    GUMBEL = "gumbel"
+    FRANK = "frank"
+    AUTO = "auto"
+
+
+# Backward compatibility
+CopulaFamilyLiteral = Literal["gaussian", "clayton", "gumbel", "frank", "auto"]
+CopulaFamilyUnion = str | type["BaseCopula"]
 
 
 class BaseCopula:

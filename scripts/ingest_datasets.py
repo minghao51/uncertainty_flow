@@ -2,6 +2,7 @@
 """Ingest sample datasets from Hugging Face and convert to Parquet."""
 
 from pathlib import Path
+from typing import cast
 
 import polars as pl
 from datasets import load_dataset
@@ -16,7 +17,7 @@ def ingest_weather(output_dir: Path) -> None:
     """Download and convert weather dataset."""
     print("Downloading weather dataset...")
     ds = load_dataset("ts-arena/weather", split="train")
-    df = pl.from_arrow(ds.data.table)
+    df = cast(pl.DataFrame, pl.from_arrow(ds.data.table))
 
     numeric_cols = get_numeric_cols(df)
     df = df.select(numeric_cols)
@@ -30,7 +31,7 @@ def ingest_exchange_rate(output_dir: Path) -> None:
     """Download and convert exchange rate dataset."""
     print("Downloading exchange_rate dataset...")
     ds = load_dataset("ts-arena/exchange_rate", split="train")
-    df = pl.from_arrow(ds.data.table)
+    df = cast(pl.DataFrame, pl.from_arrow(ds.data.table))
 
     numeric_cols = get_numeric_cols(df)
     df = df.select(numeric_cols)
@@ -44,7 +45,7 @@ def ingest_electricity(output_dir: Path) -> None:
     """Download and convert electricity dataset."""
     print("Downloading electricity dataset...")
     ds = load_dataset("lalababa/Time-Series-Library", "electricity", split="train")
-    df = pl.from_arrow(ds.data.table)
+    df = cast(pl.DataFrame, pl.from_arrow(ds.data.table))
 
     numeric_cols = get_numeric_cols(df)
     df = df.select(numeric_cols)

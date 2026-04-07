@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import polars as pl
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
 from ..core.types import PolarsInput
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from .base_quantile import BaseQuantileNeuralNet
 
 if TYPE_CHECKING:
@@ -312,8 +311,7 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
         Returns:
             Dictionary mapping quantile levels to pinball loss values.
         """
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         y = to_numpy(data, [target]).flatten()
 

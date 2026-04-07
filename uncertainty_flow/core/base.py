@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 
 import polars as pl
 
+from ..utils.polars_bridge import materialize_lazyframe
 from .types import PolarsInput, TargetSpec
 
 if TYPE_CHECKING:
@@ -76,8 +77,7 @@ class BaseUncertaintyModel(ABC):
         from ..utils.calibration_utils import calibration_report as _calibration_report
 
         # Collect lazyframe if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         return _calibration_report(self, data, target, quantile_levels)  # type: ignore[arg-type]
 

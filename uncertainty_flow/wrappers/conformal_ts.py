@@ -18,7 +18,7 @@ from ..utils.auto_tuning import (
     valid_calibration_candidates,
 )
 from ..utils.exceptions import error_invalid_data, error_model_not_fitted
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import TemporalHoldoutSplit
 
 if TYPE_CHECKING:
@@ -186,8 +186,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             self (for method chaining)
         """
         # Materialize if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         if self.auto_tune:
             self._auto_tune(data)
@@ -268,8 +267,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         steps = steps or self.horizon
 
         # Materialize if needed
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         # Create lag features
         data_with_lags = data

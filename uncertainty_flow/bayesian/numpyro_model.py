@@ -5,7 +5,6 @@ from __future__ import annotations
 import numpy as np
 import numpyro
 import numpyro.distributions as dist
-import polars as pl
 from jax import random
 from numpyro.infer import MCMC, NUTS
 
@@ -13,7 +12,7 @@ from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 
 
 class BayesianQuantileRegressor(BaseUncertaintyModel):
@@ -100,8 +99,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
             ValueError: If target is not specified.
         """
         # Materialize LazyFrame
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         if target is None:
             raise ConfigurationError("target must be specified for BayesianQuantileRegressor")
@@ -158,8 +156,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         assert self._posterior_samples_ is not None
 
         # Materialize LazyFrame
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         # Convert features to numpy
         x = to_numpy(data, self._feature_cols_)

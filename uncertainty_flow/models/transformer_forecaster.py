@@ -13,6 +13,7 @@ from ..core.config import CHRONOS_MODELS, get_config
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.polars_bridge import materialize_lazyframe
 from ..utils.split import TemporalHoldoutSplit
 
 if TYPE_CHECKING:
@@ -127,8 +128,7 @@ class TransformerForecaster(BaseUncertaintyModel):
                 "Install with: pip install 'uncertainty-flow[transformers]'"
             )
 
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         self._feature_cols_ = [col for col in data.columns if col != self.target]
 
@@ -209,8 +209,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         if not self._fitted:
             error_model_not_fitted("TransformerForecaster")
 
-        if isinstance(data, pl.LazyFrame):
-            data = data.collect()
+        data = materialize_lazyframe(data)
 
         steps = steps or self.horizon
 

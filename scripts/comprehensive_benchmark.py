@@ -180,13 +180,11 @@ class NaiveForecastBenchmark:
 
         self.train_time = time.time() - start
 
-    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+    def predict(self, df: pl.DataFrame) -> "SimpleDistributionPrediction":
         if self.last_value is None or self.residual_std is None:
             raise RuntimeError("Model not fitted")
 
         n = len(df)
-        # Create prediction intervals based on normal distribution assumption
-        # 90% interval: ±1.645 std, 80% interval: ±1.28 std
         z_90 = 1.645
         z_80 = 1.28
 
@@ -195,7 +193,6 @@ class NaiveForecastBenchmark:
         lower_80 = np.full(n, self.last_value - z_80 * self.residual_std)
         upper_80 = np.full(n, self.last_value + z_80 * self.residual_std)
 
-        # Create a simple DistributionPrediction-like object
         return SimpleDistributionPrediction(
             lower_90=lower_90,
             upper_90=upper_90,
@@ -237,7 +234,7 @@ class MovingAverageBenchmark:
 
         self.train_time = time.time() - start
 
-    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+    def predict(self, df: pl.DataFrame) -> "SimpleDistributionPrediction":
         if self.ma_value is None or self.residual_std is None:
             raise RuntimeError("Model not fitted")
 
@@ -246,7 +243,7 @@ class MovingAverageBenchmark:
         z_80 = 1.28
 
         lower_90 = np.full(n, self.ma_value - z_90 * self.residual_std)
-        upper_90 = np.full(n, self.ma_value + z_90 * self.residual_std)
+        upper_90 = np.full(n, self.ma_value + z_80 * self.residual_std)
         lower_80 = np.full(n, self.ma_value - z_80 * self.residual_std)
         upper_80 = np.full(n, self.ma_value + z_80 * self.residual_std)
 

@@ -11,6 +11,36 @@ if TYPE_CHECKING:
 from .exceptions import error_invalid_data
 
 
+def materialize_lazyframe(data: pl.DataFrame | pl.LazyFrame) -> pl.DataFrame:
+    """
+    Materialize LazyFrame if needed, return DataFrame as-is.
+
+    Args:
+        data: Polars DataFrame or LazyFrame
+
+    Returns:
+        Polars DataFrame (materialized if input was LazyFrame)
+
+    Examples:
+        >>> import polars as pl
+        >>> lazy_df = pl.DataFrame({"a": [1, 2, 3]}).lazy()
+        >>> materialize_lazyframe(lazy_df)
+        shape: (3, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 1   │
+        │ 2   │
+        │ 3   │
+        └─────┘
+    """
+    if isinstance(data, pl.LazyFrame):
+        data = data.collect()
+    return data  # type: ignore[return-value]
+
+
 def to_numpy(
     data: pl.DataFrame | pl.LazyFrame,
     columns: list[str],
@@ -37,8 +67,7 @@ def to_numpy(
                [3., 6.]])
     """
     # Materialize LazyFrame if needed
-    if isinstance(data, pl.LazyFrame):
-        data = data.collect()
+    data = materialize_lazyframe(data)
 
     # Validate all columns exist
     missing = [col for col in columns if col not in data.columns]
