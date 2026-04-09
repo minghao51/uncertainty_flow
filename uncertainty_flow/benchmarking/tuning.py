@@ -10,6 +10,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from uncertainty_flow.metrics import coverage_score, winkler_score
 from uncertainty_flow.models import QuantileForestForecaster
 from uncertainty_flow.utils.exceptions import ConfigurationError
+from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
 SEARCH_SPACE: dict[str, dict[str, list[Any]]] = {
@@ -96,9 +97,9 @@ def tune_quantile_forest(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = df[target].to_numpy()[-n_pred:]
-    lower = interval_90["lower"].to_numpy()
-    upper = interval_90["upper"].to_numpy()
+    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    lower = to_numpy_series_zero_copy(interval_90["lower"])
+    upper = to_numpy_series_zero_copy(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))
@@ -131,9 +132,9 @@ def tune_conformal_regressor(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = df[target].to_numpy()[-n_pred:]
-    lower = interval_90["lower"].to_numpy()
-    upper = interval_90["upper"].to_numpy()
+    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    lower = to_numpy_series_zero_copy(interval_90["lower"])
+    upper = to_numpy_series_zero_copy(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))
@@ -171,9 +172,9 @@ def tune_conformal_forecaster(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = df[target].to_numpy()[-n_pred:]
-    lower = interval_90["lower"].to_numpy()
-    upper = interval_90["upper"].to_numpy()
+    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    lower = to_numpy_series_zero_copy(interval_90["lower"])
+    upper = to_numpy_series_zero_copy(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))

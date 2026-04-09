@@ -65,6 +65,7 @@ class TestGaussianCopula:
         """Should use the NumPy fallback when scipy rejects a singular covariance."""
         copula = GaussianCopula()
         copula.fitted_ = True
+        copula.theta_ = 0.0
         copula.correlation_matrix_ = np.array([[1.0, 1.0], [1.0, 1.0]])
 
         marginals = np.array([[[0.0, 0.5, 1.0], [10.0, 20.0, 30.0]]])

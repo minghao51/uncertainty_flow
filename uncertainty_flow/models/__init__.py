@@ -9,6 +9,7 @@ try:
 
     _torch_available = True
 except ImportError:
+    DeepQuantileNetTorch = None  # type: ignore[assignment]
     _torch_available = False
 
 # Transformer models are optional - only import if chronos is available

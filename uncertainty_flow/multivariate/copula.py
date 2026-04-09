@@ -41,6 +41,16 @@ class BaseCopula:
         self.theta_: float | None = None
         self.fitted_ = False
 
+    def _validate_fitted(self) -> None:
+        """
+        Ensure model is fitted before accessing parameters.
+
+        Raises:
+            ModelNotFittedError: If the model has not been fitted yet.
+        """
+        if not self.fitted_ or self.theta_ is None:
+            error_model_not_fitted(self.__class__.__name__)
+
     @abstractmethod
     def fit(self, residuals: np.ndarray) -> "BaseCopula":
         """Fit copula on residual matrix."""
@@ -111,6 +121,22 @@ class GaussianCopula(BaseCopula):
             error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
 
         self.correlation_matrix_ = np.corrcoef(residuals.T)
+
+        # Check for singular correlation matrix
+        try:
+            eigenvals = np.linalg.eigvals(self.correlation_matrix_)
+            if np.any(eigenvals < 1e-10):
+                error_invalid_data(
+                    f"Correlation matrix is singular or near-singular. "
+                    f"This may indicate perfectly correlated targets. "
+                    f"Minimum eigenvalue: {np.min(eigenvals):.2e}"
+                )
+        except np.linalg.LinAlgError as e:
+            error_invalid_data(
+                f"Failed to validate correlation matrix: {e}. "
+                f"Check for linear dependencies in your data."
+            )
+
         self.fitted_ = True
         self.theta_ = 0.0
 
@@ -118,8 +144,7 @@ class GaussianCopula(BaseCopula):
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
-        if not self.fitted_:
-            error_model_not_fitted("GaussianCopula")
+        self._validate_fitted()
 
         uniform = self._to_copula_space(residuals)
 
@@ -162,8 +187,7 @@ class GaussianCopula(BaseCopula):
         Returns:
             Joint samples shape (n_samples, n_targets)
         """
-        if not self.fitted_:
-            error_model_not_fitted("GaussianCopula")
+        self._validate_fitted()
 
         n_samples_input, n_targets, n_quantiles = marginals.shape
 
@@ -294,8 +318,7 @@ class ClaytonCopula(BaseCopula):
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
-        if not self.fitted_:
-            error_model_not_fitted("ClaytonCopula")
+        self._validate_fitted()
 
         uniform = self._to_copula_space(residuals)
         u, v = uniform[:, 0], uniform[:, 1]
@@ -329,8 +352,7 @@ class ClaytonCopula(BaseCopula):
         Returns:
             Joint samples shape (n_samples, n_targets)
         """
-        if not self.fitted_:
-            error_model_not_fitted("ClaytonCopula")
+        self._validate_fitted()
 
         if marginals.shape[1] != 2:
             error_invalid_data(
@@ -449,8 +471,7 @@ class GumbelCopula(BaseCopula):
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
-        if not self.fitted_:
-            error_model_not_fitted("GumbelCopula")
+        self._validate_fitted()
 
         uniform = self._to_copula_space(residuals)
         u, v = uniform[:, 0], uniform[:, 1]
@@ -482,8 +503,7 @@ class GumbelCopula(BaseCopula):
         Returns:
             Joint samples shape (n_samples, n_targets)
         """
-        if not self.fitted_:
-            error_model_not_fitted("GumbelCopula")
+        self._validate_fitted()
 
         if marginals.shape[1] != 2:
             error_invalid_data(
@@ -614,8 +634,7 @@ class FrankCopula(BaseCopula):
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
-        if not self.fitted_:
-            error_model_not_fitted("FrankCopula")
+        self._validate_fitted()
 
         uniform = self._to_copula_space(residuals)
         u, v = uniform[:, 0], uniform[:, 1]
@@ -656,8 +675,7 @@ class FrankCopula(BaseCopula):
         Returns:
             Joint samples shape (n_samples, n_targets)
         """
-        if not self.fitted_:
-            error_model_not_fitted("FrankCopula")
+        self._validate_fitted()
 
         if marginals.shape[1] != 2:
             error_invalid_data(

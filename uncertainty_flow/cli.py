@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """CLI for uncertainty_flow benchmarking."""
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -16,6 +18,9 @@ from uncertainty_flow.benchmarking import (
     auto_tune,
 )
 from uncertainty_flow.benchmarking.datasets import download_dataset
+
+if TYPE_CHECKING:
+    pass
 
 
 @click.group()

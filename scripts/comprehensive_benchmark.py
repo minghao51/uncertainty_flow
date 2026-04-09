@@ -243,7 +243,7 @@ class MovingAverageBenchmark:
         z_80 = 1.28
 
         lower_90 = np.full(n, self.ma_value - z_90 * self.residual_std)
-        upper_90 = np.full(n, self.ma_value + z_80 * self.residual_std)
+        upper_90 = np.full(n, self.ma_value + z_90 * self.residual_std)
         lower_80 = np.full(n, self.ma_value - z_80 * self.residual_std)
         upper_80 = np.full(n, self.ma_value + z_80 * self.residual_std)
 

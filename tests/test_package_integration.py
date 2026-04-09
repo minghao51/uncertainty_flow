@@ -7,6 +7,7 @@ import polars as pl
 from sklearn.ensemble import GradientBoostingRegressor
 
 import uncertainty_flow as uf
+import uncertainty_flow.models as uf_models
 from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.wrappers.conformal import ConformalRegressor
 
@@ -40,6 +41,25 @@ class TestPackageImports:
     def test_top_level_imports_work(self):
         assert uf.CausalUncertaintyEstimator is not None
         assert uf.CrossModalAggregator is not None
+
+    def test_torch_model_export_matches_models_package(self):
+        """Torch model export should stay aligned across package entrypoints."""
+        assert hasattr(uf, "DeepQuantileNetTorch")
+        assert hasattr(uf_models, "DeepQuantileNetTorch")
+
+        torch_model_available = (
+            uf.DeepQuantileNetTorch is not None and uf_models.DeepQuantileNetTorch is not None
+        )
+
+        if torch_model_available:
+            assert uf.DeepQuantileNetTorch is uf_models.DeepQuantileNetTorch
+            assert "DeepQuantileNetTorch" in uf.__all__
+            assert "DeepQuantileNetTorch" in uf_models.__all__
+        else:
+            assert uf.DeepQuantileNetTorch is None
+            assert uf_models.DeepQuantileNetTorch is None
+            assert "DeepQuantileNetTorch" not in uf.__all__
+            assert "DeepQuantileNetTorch" not in uf_models.__all__
 
 
 class TestIntegrationSmoke:

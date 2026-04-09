@@ -1,10 +1,16 @@
 """Calibration set splitting strategies."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
 import polars as pl
 
 from .exceptions import error_calibration_too_small, warn_calibration_size
+
+if TYPE_CHECKING:
+    pass
 
 
 class BaseSplit(ABC):

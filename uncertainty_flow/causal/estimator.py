@@ -9,7 +9,7 @@ from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import materialize_lazyframe, to_numpy
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy, to_numpy_series_zero_copy
 
 if TYPE_CHECKING:
     pass
@@ -130,8 +130,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         ]
 
         feature_cols = self._feature_cols_
-        t = data[self.treatment_col].to_numpy().astype(float)
-        y = data[target_str].to_numpy().astype(float)
+        t = to_numpy_series_zero_copy(data[self.treatment_col]).astype(float)
+        y = to_numpy_series_zero_copy(data[target_str]).astype(float)
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":
@@ -165,8 +165,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         data = materialize_lazyframe(data)
 
         feature_cols = self._feature_cols_
-        t = data[self.treatment_col].to_numpy().astype(float)
-        y = data[self._target_col_].to_numpy().astype(float)
+        t = to_numpy_series_zero_copy(data[self.treatment_col]).astype(float)
+        y = to_numpy_series_zero_copy(data[self._target_col_]).astype(float)
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":

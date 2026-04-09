@@ -17,7 +17,11 @@ from ..utils.auto_tuning import (
     valid_calibration_candidates,
 )
 from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import materialize_lazyframe, to_numpy
+from ..utils.polars_bridge import (
+    materialize_lazyframe,
+    to_numpy_series_zero_copy,
+    to_numpy_zero_copy,
+)
 from ..utils.split import RandomHoldoutSplit
 
 if TYPE_CHECKING:
@@ -172,10 +176,10 @@ class ConformalRegressor(BaseUncertaintyModel):
         train, calib = splitter.split(data, self.calibration_size)
 
         # Convert to numpy - single collect already done above
-        x_train = train.select(feature_cols).to_numpy()
-        y_train = train.select(target_str).to_numpy().flatten()
-        x_calib = calib.select(feature_cols).to_numpy()
-        y_calib = calib.select(target_str).to_numpy().flatten()
+        x_train = to_numpy_zero_copy(train, feature_cols)
+        y_train = to_numpy_series_zero_copy(train[target_str]).flatten()
+        x_calib = to_numpy_zero_copy(calib, feature_cols)
+        y_calib = to_numpy_series_zero_copy(calib[target_str]).flatten()
 
         # Fit base model
         self.base_model.fit(x_train, y_train)
@@ -211,7 +215,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         data = materialize_lazyframe(data)
 
         # Get predictions
-        x = to_numpy(data, self._feature_cols_)
+        x = to_numpy_zero_copy(data, self._feature_cols_)
         point_preds = self.base_model.predict(x)
 
         # Add conformal quantiles

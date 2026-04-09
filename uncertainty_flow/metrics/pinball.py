@@ -4,6 +4,7 @@ import numpy as np
 import polars as pl
 
 from ..utils.exceptions import error_quantile_invalid
+from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 
 def pinball_loss(
@@ -40,9 +41,9 @@ def pinball_loss(
 
     # Convert to numpy
     if isinstance(y_true, pl.Series):
-        y_true = y_true.to_numpy()
+        y_true = to_numpy_series_zero_copy(y_true)
     if isinstance(y_pred, pl.Series):
-        y_pred = y_pred.to_numpy()
+        y_pred = to_numpy_series_zero_copy(y_pred)
 
     # Compute pinball loss
     error = y_true - y_pred

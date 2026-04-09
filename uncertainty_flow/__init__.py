@@ -22,8 +22,9 @@ from .models import DeepQuantileNet, QuantileForestForecaster
 try:
     from .models import DeepQuantileNetTorch  # noqa: F401
 
-    _torch_available = True
+    _torch_available = DeepQuantileNetTorch is not None
 except ImportError:
+    DeepQuantileNetTorch = None  # type: ignore[assignment]
     _torch_available = False
 
 # Utilities

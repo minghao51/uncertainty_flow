@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 from ..metrics import coverage_score, winkler_score
 from ..utils.exceptions import warn_coverage_gap
+from .polars_bridge import to_numpy_series_zero_copy
 
 
 def calibration_report(
@@ -75,7 +76,7 @@ def calibration_report(
                 upper = intervals[f"{t}_upper"]
 
             achieved = coverage_score(actuals, lower, upper)
-            sharpness_values = (upper - lower).to_numpy()
+            sharpness_values = to_numpy_series_zero_copy(upper - lower)
             sharpness = float(np.mean(sharpness_values))
             winkler = winkler_score(actuals, lower, upper, level)
 

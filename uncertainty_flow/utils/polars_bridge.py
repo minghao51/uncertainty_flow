@@ -1,5 +1,7 @@
 """Polars bridge - conversion between Polars and NumPy."""
 
+from __future__ import annotations
+
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -76,6 +78,111 @@ def to_numpy(
 
     # Select and convert in a single operation
     return data.select(columns).to_numpy()
+
+
+def to_numpy_series_zero_copy(series: pl.Series) -> np.ndarray:
+    """
+    Convert Polars Series to NumPy array with zero-copy when possible.
+
+    Falls back to regular conversion if zero-copy isn't possible
+    (e.g., due to nulls or multiple chunks).
+
+    Args:
+        series: Polars Series
+
+    Returns:
+        NumPy array view of the series data (or copy if zero-copy not possible)
+
+    Raises:
+        ValueError: If input is not a pl.Series
+
+    Examples:
+        >>> import polars as pl
+        >>> s = pl.Series("a", [1, 2, 3])
+        >>> to_numpy_series_zero_copy(s)  # May be zero-copy
+        array([1, 2, 3])
+    """
+    if not isinstance(series, pl.Series):
+        error_invalid_data(
+            f"Expected pl.Series, got {type(series).__name__}. "
+            "Use DataFrame[column] to select a Series."
+        )
+    try:
+        # Try zero-copy conversion (allow_copy=False is the modern API)
+        return series.to_numpy(allow_copy=False)
+    except (ValueError, RuntimeError):
+        # Fall back to regular conversion if zero-copy not possible
+        return series.to_numpy()
+
+
+def to_numpy_zero_copy(
+    data: pl.DataFrame | pl.LazyFrame,
+    columns: list[str],
+) -> np.ndarray:
+    """
+    Convert Polars DataFrame or LazyFrame columns to NumPy array.
+
+    Note: For DataFrames, zero-copy is only possible when columns are
+    contiguous and have compatible dtypes. This function attempts
+    zero-copy but may create a copy when necessary.
+
+    Args:
+        data: Polars DataFrame or LazyFrame
+        columns: List of column names to extract
+
+    Returns:
+        NumPy array (zero-copy when possible, otherwise a copy)
+
+    Raises:
+        ValueError: If any column is missing from the data
+
+    Examples:
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> to_numpy_zero_copy(df, ["a", "b"])
+        array([[1., 4.],
+               [2., 5.],
+               [3., 6.]])
+    """
+    # Materialize LazyFrame if needed
+    data = materialize_lazyframe(data)
+
+    # Validate all columns exist
+    missing = [col for col in columns if col not in data.columns]
+    if missing:
+        error_invalid_data(f"Columns not found: {missing}")
+
+    # Select columns and convert
+    selected = data.select(columns)
+    return selected.to_numpy()
+
+
+def to_numpy_zero_copy_frame(data: pl.DataFrame | pl.LazyFrame) -> np.ndarray:
+    """
+    Convert entire Polars DataFrame or LazyFrame to NumPy array.
+
+    Note: For DataFrames, zero-copy is only possible when columns are
+    contiguous and have compatible dtypes. This function attempts
+    zero-copy but may create a copy when necessary.
+
+    Args:
+        data: Polars DataFrame or LazyFrame
+
+    Returns:
+        NumPy array (zero-copy when possible, otherwise a copy)
+
+    Examples:
+        >>> import polars as pl
+        >>> df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+        >>> to_numpy_zero_copy_frame(df)
+        array([[1., 4.],
+               [2., 5.],
+               [3., 6.]])
+    """
+    # Materialize LazyFrame if needed
+    data = materialize_lazyframe(data)
+
+    return data.to_numpy()
 
 
 def to_polars(

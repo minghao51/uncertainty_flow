@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
+from ..utils.polars_bridge import to_numpy_zero_copy_frame
+
 if TYPE_CHECKING:
     pass
 
@@ -71,8 +73,8 @@ def uncertainty_shap(
     if background is None:
         background = X.head(100)
 
-    background_np = background.to_numpy()
-    x_np = X.to_numpy()
+    background_np = to_numpy_zero_copy_frame(background)
+    x_np = to_numpy_zero_copy_frame(X)
     feature_names = X.columns
 
     pred = model.predict(X.head(1))

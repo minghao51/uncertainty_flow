@@ -4,6 +4,7 @@ import numpy as np
 import polars as pl
 
 from ..utils.exceptions import error_invalid_data, error_quantile_invalid
+from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 
 def winkler_score(
@@ -46,11 +47,11 @@ def winkler_score(
 
     # Convert to numpy
     if isinstance(y_true, pl.Series):
-        y_true = y_true.to_numpy()
+        y_true = to_numpy_series_zero_copy(y_true)
     if isinstance(lower, pl.Series):
-        lower = lower.to_numpy()
+        lower = to_numpy_series_zero_copy(lower)
     if isinstance(upper, pl.Series):
-        upper = upper.to_numpy()
+        upper = to_numpy_series_zero_copy(upper)
 
     # Validate bounds
     if np.any(lower > upper):

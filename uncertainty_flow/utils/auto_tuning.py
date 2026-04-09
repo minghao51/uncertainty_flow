@@ -10,6 +10,7 @@ import polars as pl
 from sklearn.base import BaseEstimator
 
 from ..metrics import coverage_score, winkler_score
+from .polars_bridge import to_numpy_series_zero_copy
 
 
 def candidate_values(current: Any, defaults: list[Any]) -> list[Any]:
@@ -76,18 +77,18 @@ def score_distribution_prediction(
     scores = []
     for target in target_names:
         if isinstance(actuals, pl.DataFrame):
-            y_true = actuals[target].to_numpy()
+            y_true = to_numpy_series_zero_copy(actuals[target])
         else:
             y_true = actuals.to_numpy()
 
         if isinstance(mean_pred, pl.DataFrame):
-            median = mean_pred[target].to_numpy()
-            lower = interval[f"{target}_lower"].to_numpy()
-            upper = interval[f"{target}_upper"].to_numpy()
+            median = to_numpy_series_zero_copy(mean_pred[target])
+            lower = to_numpy_series_zero_copy(interval[f"{target}_lower"])
+            upper = to_numpy_series_zero_copy(interval[f"{target}_upper"])
         else:
             median = mean_pred.to_numpy()
-            lower = interval["lower"].to_numpy()
-            upper = interval["upper"].to_numpy()
+            lower = to_numpy_series_zero_copy(interval["lower"])
+            upper = to_numpy_series_zero_copy(interval["upper"])
 
         n = min(len(y_true), len(median))
         y_true = y_true[-n:]

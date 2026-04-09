@@ -1,12 +1,14 @@
 """Benchmark runner for uncertainty_flow models with auto-tuning."""
 
+from __future__ import annotations
+
 import json
 import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import numpy as np
 import polars as pl
@@ -20,10 +22,14 @@ from uncertainty_flow.utils.exceptions import (
     DataError,
     ModelNotFittedError,
 )
+from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
 from .datasets import DatasetInfo, load_dataset
 from .tuning import TuningConfig, auto_tune_model
+
+if TYPE_CHECKING:
+    pass
 
 SEARCH_SPACE = {
     "quantile-forest": {
@@ -307,19 +313,27 @@ class BenchmarkRunner:
         interval_80 = pred.interval(0.8)
 
         n_pred = len(interval_90)
-        y_true = self.df[self.target].to_numpy()[-n_pred:]
-        lower_90 = interval_90[
-            "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
-        ].to_numpy()
-        upper_90 = interval_90[
-            "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
-        ].to_numpy()
-        lower_80 = interval_80[
-            "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
-        ].to_numpy()
-        upper_80 = interval_80[
-            "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
-        ].to_numpy()
+        y_true = to_numpy_series_zero_copy(self.df[self.target])[-n_pred:]
+        lower_90 = to_numpy_series_zero_copy(
+            interval_90[
+                "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
+            ]
+        )
+        upper_90 = to_numpy_series_zero_copy(
+            interval_90[
+                "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
+            ]
+        )
+        lower_80 = to_numpy_series_zero_copy(
+            interval_80[
+                "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
+            ]
+        )
+        upper_80 = to_numpy_series_zero_copy(
+            interval_80[
+                "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
+            ]
+        )
 
         cov_90 = coverage_score(y_true, lower_90, upper_90)
         cov_80 = coverage_score(y_true, lower_80, upper_80)

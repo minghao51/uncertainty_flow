@@ -7,6 +7,7 @@ import numpy as np
 import polars as pl
 
 from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quantile_invalid
+from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 if TYPE_CHECKING:
     pass
@@ -369,8 +370,8 @@ class DistributionPrediction:
             alpha = 0.1 + (1 - confidence) * 0.3
             ax.fill_between(
                 x_axis,
-                lower.to_numpy()[plot_indices],
-                upper.to_numpy()[plot_indices],
+                to_numpy_series_zero_copy(lower)[plot_indices],
+                to_numpy_series_zero_copy(upper)[plot_indices],
                 alpha=alpha,
                 label=f"{confidence * 100:.0f}% interval",
             )
@@ -382,7 +383,7 @@ class DistributionPrediction:
         else:
             mean_series = mean
 
-        ax.plot(mean_series.to_numpy()[plot_indices], label="Median", linewidth=2)
+        ax.plot(to_numpy_series_zero_copy(mean_series)[plot_indices], label="Median", linewidth=2)
 
         # Plot actuals if provided
         if actuals is not None:
@@ -392,7 +393,7 @@ class DistributionPrediction:
                 else:
                     actuals = actuals[self._targets[0]]
             ax.plot(
-                actuals.to_numpy()[plot_indices],
+                to_numpy_series_zero_copy(actuals)[plot_indices],
                 label="Actuals",
                 linewidth=1.5,
                 alpha=0.7,
@@ -464,8 +465,17 @@ class DistributionPrediction:
         chain_means = chains.mean(axis=1)
         b = chain_len * np.var(chain_means, axis=0, ddof=1)
         w = np.mean(np.var(chains, axis=1, ddof=1), axis=0)
+
+        # Check for near-zero within-chain variance
+        if np.any(w < 1e-10):
+            error_invalid_data(
+                f"Within-chain variance too close to zero for R-hat calculation. "
+                f"This may indicate chains have not mixed properly. "
+                f"Minimum w: {np.min(w):.2e}"
+            )
+
         var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
-        return np.sqrt(var_hat / (w + 1e-10))  # type: ignore
+        return np.sqrt(var_hat / w)
 
     def posterior_summary(self) -> pl.DataFrame:
         """Return summary statistics of posterior samples."""
