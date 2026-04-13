@@ -315,24 +315,16 @@ class BenchmarkRunner:
         n_pred = len(interval_90)
         y_true = to_numpy_series_zero_copy(self.df[self.target])[-n_pred:]
         lower_90 = to_numpy_series_zero_copy(
-            interval_90[
-                "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
-            ]
+            interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
         )
         upper_90 = to_numpy_series_zero_copy(
-            interval_90[
-                "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
-            ]
+            interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
         )
         lower_80 = to_numpy_series_zero_copy(
-            interval_80[
-                "lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"
-            ]
+            interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
         )
         upper_80 = to_numpy_series_zero_copy(
-            interval_80[
-                "upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"
-            ]
+            interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
         )
 
         cov_90 = coverage_score(y_true, lower_90, upper_90)

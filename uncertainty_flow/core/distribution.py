@@ -1,16 +1,12 @@
 """DistributionPrediction - core output object for all models."""
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
 
 from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quantile_invalid
 from ..utils.polars_bridge import to_numpy_series_zero_copy
-
-if TYPE_CHECKING:
-    pass
 
 # Constants
 MAX_SAMPLE_CHUNK_SIZE = 100_000
@@ -573,3 +569,66 @@ class DistributionPrediction:
             )
         assert self._treatment_info is not None
         return float(np.var(self._treatment_info["cate"]))
+
+    def uncertainty_decomposition(
+        self,
+        confidence: float = 0.9,
+    ) -> dict[str, float]:
+        """
+        Return a lightweight heuristic uncertainty decomposition.
+
+        Aleatoric uncertainty (data noise): Irreducible uncertainty inherent in the data.
+        Epistemic uncertainty (model uncertainty): Reducible uncertainty due to limited
+            data/knowledge.
+
+        This method does not refit or evaluate an ensemble of models. It is a cheap
+        summary derived from this single `DistributionPrediction` object:
+        - Aleatoric: Average width of prediction intervals (data uncertainty)
+        - Epistemic: Variance of interval widths across samples (model uncertainty)
+
+        For model-based decomposition with bootstrap refits, use
+        `uncertainty_flow.decomposition.EnsembleDecomposition`.
+
+        Args:
+            confidence: Confidence level for interval width calculation (default: 0.9)
+
+        Returns:
+            Dictionary with:
+                - aleatoric: Irreducible uncertainty (average interval width)
+                - epistemic: Heuristic uncertainty summary (variance of interval widths)
+                - total: Combined uncertainty
+
+        Examples
+        --------
+        >>> pred = model.predict(X_test)
+        >>> decomposition = pred.uncertainty_decomposition()
+        >>> print(f"Total: {decomposition['total']:.2f}")
+        >>> print(f"  Aleatoric: {decomposition['aleatoric']:.2f}")
+        >>> print(f"  Epistemic: {decomposition['epistemic']:.2f}")
+        """
+        interval = self.interval(confidence)
+
+        if len(self._targets) == 1:
+            lower_col, upper_col = "lower", "upper"
+        else:
+            first_target = self._targets[0]
+            lower_col = f"{first_target}_lower"
+            upper_col = f"{first_target}_upper"
+
+        lower = to_numpy_series_zero_copy(interval[lower_col])
+        upper = to_numpy_series_zero_copy(interval[upper_col])
+
+        # Interval width represents total uncertainty
+        widths = upper - lower
+
+        # Aleatoric: average width (inherent data uncertainty)
+        aleatoric = float(np.mean(widths))
+
+        # Epistemic: variance of widths (model uncertainty across samples)
+        epistemic = float(np.var(widths))
+
+        return {
+            "aleatoric": aleatoric,
+            "epistemic": epistemic,
+            "total": aleatoric + epistemic,
+        }

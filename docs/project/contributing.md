@@ -44,6 +44,12 @@ uv add --optional mapie
 # Run full test suite
 uv run pytest
 
+# Run only unit tests
+uv run pytest -m unit
+
+# Run integration tests but skip the expensive paths
+uv run pytest -m "integration and not slow and not optional"
+
 # Run with coverage report
 uv run pytest --cov=uncertainty_flow --cov-report=term-missing
 
@@ -55,6 +61,13 @@ uv run pytest -m "not slow"
 ```
 
 Tests are in `tests/`. Each module in `uncertainty_flow/` has a corresponding `tests/test_<module>.py`.
+
+Default marker taxonomy:
+
+- `unit`: fast, focused tests for one module or behavior
+- `integration`: multi-module or model-workflow tests
+- `slow`: heavier tests worth skipping during quick local iteration
+- `optional`: tests that depend on optional extras such as SHAP, Torch, or NumPyro
 
 ---
 

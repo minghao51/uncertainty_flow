@@ -168,7 +168,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         train, calib = splitter.split(data, self.calibration_size)
 
         for target in self.targets:
-            feature_cols = [col for col in train.columns if col != target]
+            feature_cols = [col for col in train.columns if col not in self.targets]
             self._feature_cols_[target] = feature_cols
 
             x_train = to_numpy(train, feature_cols)

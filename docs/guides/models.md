@@ -36,6 +36,12 @@ pred.sample(100)
 
 That shared surface was previously described in a separate guide and is intentionally consolidated here.
 
+For uncertainty decomposition, there are now two levels of fidelity:
+
+- `pred.uncertainty_decomposition(...)` is a lightweight heuristic computed from one prediction object.
+- `EnsembleDecomposition(model_factory=..., train_data=...)` performs bootstrap refits for a stronger epistemic estimate.
+- Multivariate feature leverage currently reports per-target attribution only; joint copula leverage is not part of the current surface.
+
 ## Model Notes
 
 ### `ConformalRegressor`

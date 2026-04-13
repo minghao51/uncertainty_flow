@@ -62,6 +62,12 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "unit: fast, focused tests for a single module or behavior",
+    "integration: tests covering multi-module workflows or heavier model interactions",
+    "slow: expensive tests that are useful to exclude during quick local iteration",
+    "optional: tests that rely on optional dependency stacks or non-core integrations",
+]
 filterwarnings = [
     "ignore:Stochastic Optimizer",
     "ignore:Degrees of freedom <= 0 for slice:RuntimeWarning",

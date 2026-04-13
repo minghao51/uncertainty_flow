@@ -46,10 +46,36 @@ except ImportError:
     _numpyro_available = False
 
 # Causal module (no extra deps)
+# Analysis module (no extra deps)
+from .analysis import FeatureLeverageAnalyzer
 from .causal import CausalUncertaintyEstimator
+
+# Counterfactual module (no extra deps)
+from .counterfactual import UncertaintyExplainer
+
+# Decomposition module (no extra deps)
+from .decomposition import EnsembleDecomposition
 
 # Multi-modal module (no extra deps)
 from .multimodal import CrossModalAggregator
+
+# Risk module (no extra deps)
+from .risk import (
+    ConformalRiskControl,
+    asymmetric_loss,
+    financial_var,
+    inventory_cost,
+    threshold_penalty,
+)
+
+# Visualization module (optional - requires streamlit)
+try:
+    from .viz import launch_dashboard
+
+    _viz_available = True
+except ImportError:
+    _viz_available = False
+    launch_dashboard = None  # type: ignore[assignment]
 
 __all__ = [
     # Core
@@ -74,7 +100,22 @@ __all__ = [
     "CausalUncertaintyEstimator",
     # Multi-Modal
     "CrossModalAggregator",
+    # Analysis
+    "FeatureLeverageAnalyzer",
+    # Decomposition
+    "EnsembleDecomposition",
+    # Risk
+    "ConformalRiskControl",
+    "asymmetric_loss",
+    "inventory_cost",
+    "financial_var",
+    "threshold_penalty",
+    # Counterfactual
+    "UncertaintyExplainer",
 ]
+
+if _viz_available:
+    __all__.append("launch_dashboard")
 
 if _torch_available:
     __all__.append("DeepQuantileNetTorch")

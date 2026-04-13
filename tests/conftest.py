@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 
 import numpy as np
 import polars as pl
@@ -44,6 +45,7 @@ def random_state():
 # ============================================================================
 # Extended Fixtures for Larger Test Suites
 # ============================================================================
+
 
 @pytest.fixture
 def time_series_data():
@@ -114,6 +116,7 @@ def quantile_levels():
 # ============================================================================
 # Parameterized Fixtures
 # ============================================================================
+
 
 @pytest.fixture(params=[0.8, 0.9, 0.95])
 def confidence_level(request):

@@ -151,6 +151,8 @@ model.metadata  # Training timestamp, sklearn/polars versions, data schema
 
 #### 1.3 Online Learning and Adaptive Calibration
 
+**Status: POSTPONED**
+
 **Priority: Medium | Effort: High | Impact: High**
 
 For streaming applications where data arrives continuously, the ability to update calibration without full retraining is essential. This feature enables coverage guarantees to adapt to gradual distribution shifts.
@@ -179,15 +181,17 @@ model.update_calibration(new_data_batch)
 
 #### 1.4 Performance Optimization
 
+**Status: PARTIALLY IMPLEMENTED** (Parallel Prediction POSTPONED)
+
 **Priority: Medium | Effort: Medium | Impact: Medium**
 
 Optimizing critical paths for production workloads, particularly batch prediction throughput and memory efficiency.
 
 **Key Optimizations:**
 
-1. **Lazy Evaluation Propagation**: Extend LazyFrame support through prediction pipeline, enabling prediction on datasets larger than memory.
+1. **Lazy Evaluation Propagation**: ✅ IMPLEMENTED - Extend LazyFrame support through prediction pipeline, enabling prediction on datasets larger than memory.
 
-2. **Parallel Prediction**: Multi-threaded prediction for independent samples using Ray or joblib backends.
+2. **Parallel Prediction**: ❌ POSTPONED - Multi-threaded prediction for independent samples using Ray or joblib backends.
 
 3. **Memory-Mapped Calibration**: For large calibration sets, memory-map the calibration residuals to reduce memory footprint.
 
@@ -674,7 +678,8 @@ Distributed training across multiple data sources without centralizing data, wit
 | Conformal Risk Control | Medium | Medium | High | **P1** |
 | Uncertainty Decomposition | High | Medium | High | **P1** |
 | Feature Leverage Analysis | High | Medium | High | **P1** |
-| Online Calibration | Medium | Medium | High | **P2** |
+| Online Calibration | Medium | Medium | High | **P2 (POSTPONED)** |
+| Parallel Prediction | Low | Medium | Medium | **P3 (POSTPONED)** |
 | Interactive Dashboard | Medium | High | Medium | **P2** |
 | MLflow Integration | Medium | High | Medium | **P2** |
 | AutoML Integration | Medium | Medium | Medium | **P3** |
@@ -760,8 +765,8 @@ For each new feature, provide:
 
 - Classification module achieves >95% coverage on benchmark datasets
 - Model serialization supports round-trip for all model types
-- Online calibration maintains coverage under simulated drift
-- Performance: 10x throughput improvement for batch predictions
+- ~~Online calibration maintains coverage under simulated drift~~ *POSTPONED*
+- ~~Performance: 10x throughput improvement for batch predictions~~ *POSTPONED (parallel prediction)*
 
 ### v4 Success Criteria
 
@@ -789,7 +794,7 @@ Key success factors include maintaining backward compatibility, rigorous testing
 
 ---
 
-*Document Version: 1.1*  
-*Generated: April 2026*  
-*Updated: Added Feature Leverage Analysis for multivariate uncertainty decomposition*  
+*Document Version: 1.2*
+*Generated: April 2026*
+*Updated: Marked Online Calibration and Parallel Prediction as POSTPONED; prioritizing v4 implementation*
 *For: uncertainty_flow Project Maintainers*
