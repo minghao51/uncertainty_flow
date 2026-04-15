@@ -6,6 +6,14 @@
 
 All public classes follow a consistent `fit` / `predict` interface. Inputs are Polars DataFrames or LazyFrames. Outputs are `DistributionPrediction` objects or Polars DataFrames.
 
+All uncertainty models also inherit:
+
+```python
+model.save("models/example.uf", include_metadata=True)
+loaded = ModelClass.load("models/example.uf")
+model.metadata  # dict for fitted or loaded models, else None
+```
+
 ---
 
 ## 1. `ConformalRegressor`
@@ -97,8 +105,8 @@ class ConformalForecaster(BaseUncertaintyModel):
         base_model,                          # Any sklearn-compatible estimator
         horizon: int,                        # Forecast horizon (steps ahead)
         targets: str | list[str],            # Single or multiple target columns
-        target_correlation: str = "auto",    # "auto" | "independent"
-                                             # "auto" fits Gaussian copula
+        copula_family: str = "auto",         # "auto" | "gaussian" | "clayton"
+                                             # | "gumbel" | "frank" | "independent"
         lags: int | list[int] = 1,           # Lag features auto-generated
         calibration_method: str = "holdout", # "holdout" | "cross"
         calibration_size: float = 0.2,       # Always takes LAST n% (temporal)
@@ -113,7 +121,7 @@ class ConformalForecaster(BaseUncertaintyModel):
     ) -> "ConformalForecaster":
         """
         Temporal holdout is always from the END of the series.
-        Fits Gaussian copula on residuals if target_correlation='auto' and
+        Fits a supported copula on residuals if copula_family='auto' and
         len(targets) > 1.
         """
         ...
@@ -148,7 +156,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         horizon: int,
         n_estimators: int = 200,
         min_samples_leaf: int = 5,            # Controls distribution richness per leaf
-        target_correlation: str = "auto",
+        copula_family: str = "auto",
         calibration_size: float = 0.2,
         auto_tune: bool = True,
         uncertainty_features: list[str] | None = None,
@@ -211,9 +219,9 @@ class DistributionPrediction:
         random_state: int | None = None,
     ) -> pl.DataFrame:
         """
-        Draw n samples per input row via spline-interpolated inverse CDF.
-        Uses scipy.interpolate.interp1d to build an inverse CDF from quantile matrix,
-        then draws uniform samples and maps through inverse CDF.
+        Draw n samples per input row via inverse-CDF sampling.
+        For multivariate predictions with attached copula state, sampling respects
+        the fitted copula rather than treating targets as independent.
         Returns Polars DataFrame with (n * n_samples) rows and columns: sample_id, plus one column per target.
         sample_id: index of original input row (0 to n_samples-1, repeated n times).
         """
@@ -282,6 +290,7 @@ coverage_score(
 | `UF-W003` | Warning | Coverage gap > 5% | "Requested {req} coverage but achieved {ach}. Model may be miscalibrated." |
 | `UF-W004` | Warning | No uncertainty drivers found | "Residual correlation analysis found no significant drivers. Intervals may be uniformly conservative." |
 | `UF-W005` | Warning | LazyFrame materialised early | "LazyFrame collected earlier than expected due to {reason}. Consider restructuring upstream pipeline." |
+| `UF-W006` | Warning | Copula auto-select with dim > 2 | "Auto-selecting copula for {n_dim}D data. Only Gaussian copula supports dimensions > 2." |
 
 ---
 
@@ -329,7 +338,7 @@ model = ConformalForecaster(
     base_model=GradientBoostingRegressor(),
     targets=["price", "volume"],
     horizon=14,
-    target_correlation="auto",
+    copula_family="auto",
 )
 model.fit(df_train)
 pred = model.predict(df_test)

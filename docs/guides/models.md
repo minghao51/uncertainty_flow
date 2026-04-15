@@ -32,6 +32,7 @@ pred.quantile([0.1, 0.5, 0.9])
 pred.interval(0.9)
 pred.mean()
 pred.sample(100)
+model.save("models/example.uf")
 ```
 
 That shared surface was previously described in a separate guide and is intentionally consolidated here.
@@ -50,11 +51,11 @@ Use this when you already have a scikit-learn compatible regressor and want cali
 
 ### `ConformalForecaster`
 
-Use this when forecasting data is ordered and interval calibration matters more than raw speed. It supports multi-target forecasting through the multivariate layer.
+Use this when forecasting data is ordered and interval calibration matters more than raw speed. It supports multi-target forecasting through the multivariate layer, and multivariate `sample()` calls respect the fitted copula after prediction.
 
 ### `QuantileForestForecaster`
 
-Use this when you want a solid non-deep-learning baseline with fast quantile retrieval and sensible behavior on moderate-sized datasets.
+Use this when you want a solid non-deep-learning baseline with fast quantile retrieval and sensible behavior on moderate-sized datasets. Its `copula_family` setting is active for multivariate targets and feeds copula-aware joint sampling.
 
 ### `DeepQuantileNet` and `DeepQuantileNetTorch`
 
@@ -67,6 +68,25 @@ Use this for pretrained time-series workflows when the optional dependency stack
 ## Multivariate Dependence
 
 Multi-target models rely on a copula layer rather than treating targets as independent. Depending on the workflow, this may use Gaussian, Clayton, Gumbel, or Frank families, with auto-selection in supported paths.
+
+## Persistence
+
+All current model classes inherit a shared persistence contract:
+
+```python
+model.save("models/example.uf")
+loaded = type(model).load("models/example.uf")
+```
+
+Saved archives preserve fitted model state, calibration artifacts, and multivariate copula state. In trusted environments this is the recommended way to move fitted models between sessions.
+
+## Verification
+
+For a focused persistence and copula round-trip check, run:
+
+```bash
+uv run pytest tests/core/test_persistence.py
+```
 
 ## Choosing Quickly
 

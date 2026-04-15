@@ -49,7 +49,7 @@ In practice, it means:
 Most real usage falls into three buckets:
 
 - interval extraction for decisions or reporting
-- sampling for simulation or scenario analysis
+- sampling for simulation or scenario analysis, including copula-aware joint draws for multivariate predictions
 - diagnostics to understand whether uncertainty quality is trustworthy
 
 That last part matters. Generating an interval is easy; understanding whether it is calibrated is the hard part. The docs around calibration and model guarantees are meant to be read together with this guide.
@@ -64,6 +64,18 @@ When predicting several targets together, independent intervals are often mislea
 - a copula layer for dependence structure
 
 This is why multivariate support is more than just returning several independent lower and upper bounds.
+
+## Persistence In The Workflow
+
+Because `predict()` returns a stable `DistributionPrediction` surface across model families, model persistence is also uniform:
+
+```python
+model.save("models/example.uf")
+loaded = type(model).load("models/example.uf")
+pred = loaded.predict(df_test)
+```
+
+That lets you persist a fitted calibrated or copula-backed model without changing downstream consumer code.
 
 ## A Typical Mental Model
 

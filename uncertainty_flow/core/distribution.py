@@ -1,12 +1,16 @@
 """DistributionPrediction - core output object for all models."""
 
 from functools import lru_cache
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
 
 from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quantile_invalid
 from ..utils.polars_bridge import to_numpy_series_zero_copy
+
+if TYPE_CHECKING:
+    from ..multivariate.copula import BaseCopula
 
 # Constants
 MAX_SAMPLE_CHUNK_SIZE = 100_000
@@ -30,6 +34,7 @@ class DistributionPrediction:
         posterior: np.ndarray | None = None,
         group_predictions: dict[str, "DistributionPrediction"] | None = None,
         treatment_info: dict | None = None,
+        copula: "BaseCopula | None" = None,
     ):
         if not np.all(np.isfinite(quantile_matrix)):
             error_invalid_data("quantile_matrix contains NaN or Inf values")
@@ -63,6 +68,7 @@ class DistributionPrediction:
         self._posterior = posterior
         self._group_predictions = group_predictions
         self._treatment_info = treatment_info
+        self._copula = copula
 
     def quantile(self, q: float | list[float]) -> pl.DataFrame:
         """
@@ -205,10 +211,59 @@ class DistributionPrediction:
 
         rng = np.random.default_rng(random_state)
 
+        if self._copula is not None and len(self._targets) > 1:
+            if n <= MAX_SAMPLE_CHUNK_SIZE:
+                return self._sample_joint_chunk(n, rng)
+            return self._sample_joint_chunked(n, rng)
+
         if n <= MAX_SAMPLE_CHUNK_SIZE:
             return self._sample_chunk(n, rng, interp1d)
 
         return self._sample_chunked(n, rng, interp1d)
+
+    def _marginal_quantiles(self) -> np.ndarray:
+        """Reshape the flat quantile matrix into [row, target, quantile]."""
+        return self._quantiles.reshape(self._n_samples, len(self._targets), self._n_quantiles)
+
+    def _sample_joint_chunk(
+        self,
+        n: int,
+        rng: np.random.Generator,
+    ) -> pl.DataFrame:
+        """Sample jointly using a fitted copula."""
+        joint_samples = self._copula.sample(
+            self._marginal_quantiles(),
+            n_samples=n,
+            quantile_levels=self._levels,
+            random_state=rng,
+        )
+
+        if joint_samples.ndim == 2:
+            sample_matrix = joint_samples
+        else:
+            sample_matrix = joint_samples.reshape(self._n_samples * n, len(self._targets))
+
+        sample_ids = np.repeat(np.arange(self._n_samples), n)
+        result = pl.DataFrame(sample_matrix, schema=self._targets, orient="row")
+        result.insert_column(0, pl.Series("sample_id", sample_ids))
+        return result
+
+    def _sample_joint_chunked(
+        self,
+        n: int,
+        rng: np.random.Generator,
+    ) -> pl.DataFrame:
+        """Sample jointly in chunks to keep memory bounded."""
+        chunks = []
+        remaining = n
+
+        while remaining > 0:
+            chunk_size = min(remaining, MAX_SAMPLE_CHUNK_SIZE)
+            chunk = self._sample_joint_chunk(chunk_size, rng)
+            chunks.append(chunk)
+            remaining -= chunk_size
+
+        return pl.concat(chunks)
 
     def _sample_chunk(
         self,
@@ -299,20 +354,22 @@ class DistributionPrediction:
         Returns:
             (n_samples, n) array of sampled values
         """
-        n_samples = quantile_values.shape[0]
-        n_draws = uniform_clipped.shape[1]
-        result = np.zeros((n_samples, n_draws))
+        del interp1d
 
-        for row_idx in range(n_samples):
-            cdf_inverse = interp1d(
-                levels,
-                quantile_values[row_idx],
-                kind="linear",
-                fill_value="extrapolate",
-            )
-            result[row_idx] = cdf_inverse(uniform_clipped[row_idx])
+        lower_idx = np.searchsorted(levels, uniform_clipped, side="right") - 1
+        lower_idx = np.clip(lower_idx, 0, len(levels) - 2)
+        upper_idx = lower_idx + 1
 
-        return result
+        row_idx = np.arange(quantile_values.shape[0])[:, None]
+        lower_x = levels[lower_idx]
+        upper_x = levels[upper_idx]
+        lower_y = quantile_values[row_idx, lower_idx]
+        upper_y = quantile_values[row_idx, upper_idx]
+
+        denom = upper_x - lower_x
+        denom[denom == 0] = 1.0
+        weight = (uniform_clipped - lower_x) / denom
+        return lower_y + weight * (upper_y - lower_y)
 
     def plot(
         self,

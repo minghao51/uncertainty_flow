@@ -61,6 +61,28 @@ class TestGaussianCopula:
 
         assert samples.shape == (100, 2)
 
+    def test_sample_uses_each_row_marginals(self, bivariate_residuals):
+        """Multi-row sampling should use the matching marginal grid for each input row."""
+        copula = GaussianCopula()
+        copula.fit(bivariate_residuals)
+
+        marginals = np.array(
+            [
+                [[0.0, 1.0, 2.0], [10.0, 11.0, 12.0]],
+                [[100.0, 101.0, 102.0], [200.0, 201.0, 202.0]],
+            ]
+        )
+        samples = copula.sample(
+            marginals,
+            n_samples=5,
+            quantile_levels=np.array([0.25, 0.5, 0.75]),
+            random_state=123,
+        )
+
+        assert samples.shape == (2, 5, 2)
+        assert np.all(samples[0, :, 0] < 10.0)
+        assert np.all(samples[1, :, 0] > 90.0)
+
     def test_sample_falls_back_for_singular_covariance(self):
         """Should use the NumPy fallback when scipy rejects a singular covariance."""
         copula = GaussianCopula()
@@ -69,7 +91,7 @@ class TestGaussianCopula:
         copula.correlation_matrix_ = np.array([[1.0, 1.0], [1.0, 1.0]])
 
         marginals = np.array([[[0.0, 0.5, 1.0], [10.0, 20.0, 30.0]]])
-        samples = copula.sample(marginals, n_samples=10)
+        samples = copula.sample(marginals, n_samples=10, random_state=123)
 
         assert samples.shape == (10, 2)
 

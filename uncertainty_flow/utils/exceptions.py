@@ -230,3 +230,18 @@ def warn_lazyframe_materialized(reason: str) -> None:
         UncertaintyFlowWarning,
         stacklevel=3,
     )
+
+
+def warn_copula_auto_selection_ndim(n_dim: int) -> None:
+    """
+    UF-W006: Copula auto-selection limited to Gaussian for high dimensions.
+
+    Args:
+        n_dim: Number of dimensions in residuals
+    """
+    warnings.warn(
+        f"Auto-selecting copula for {n_dim}D data. "
+        f"Only Gaussian copula supports dimensions > 2. [UF-W006]",
+        UncertaintyFlowWarning,
+        stacklevel=3,
+    )

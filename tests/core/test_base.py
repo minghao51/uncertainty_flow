@@ -66,3 +66,16 @@ class TestBaseUncertaintyModel:
 
         model = DummyModel()
         assert model.uncertainty_drivers_ is None
+
+    def test_metadata_default_none_for_unfitted_model(self):
+        """metadata should default to None before fitting or loading."""
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        assert model.metadata is None

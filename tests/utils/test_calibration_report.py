@@ -6,6 +6,7 @@ import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow import ConformalRegressor
+from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.utils.calibration_utils import calibration_report
 
 
@@ -147,6 +148,34 @@ class TestCalibrationReportMetrics:
         model.fit(train_data, target="target")
         report = calibration_report(model, val_data, target="target")
         assert (report["winkler_score"] >= 0).all()
+
+    def test_calls_predict_once_for_all_levels(self, train_data, val_data):
+        """Calibration should reuse a single prediction across all requested levels."""
+
+        class SpyModel:
+            def __init__(self):
+                self.calls = 0
+
+            def predict(self, data):
+                self.calls += 1
+                matrix = np.column_stack(
+                    [
+                        data["target"].to_numpy() - 1.0,
+                        data["target"].to_numpy(),
+                        data["target"].to_numpy() + 1.0,
+                    ]
+                )
+                return DistributionPrediction(
+                    quantile_matrix=matrix,
+                    quantile_levels=[0.05, 0.5, 0.95],
+                    target_names=["target"],
+                )
+
+        model = SpyModel()
+        report = calibration_report(model, val_data, target="target", quantile_levels=[0.8, 0.9])
+
+        assert report.height == 2
+        assert model.calls == 1
 
 
 class TestCalibrationReportSingleRow:

@@ -10,6 +10,7 @@ from sklearn.ensemble import RandomForestRegressor
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
+from ..multivariate.copula import COPULA_FAMILIES, BaseCopula, auto_select_copula
 from ..utils.auto_tuning import (
     candidate_values,
     score_distribution_prediction,
@@ -92,6 +93,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
         # Fitted attributes
         self._fitted = False
+        self._copula: BaseCopula | None = None
         self._models: dict[str, RandomForestRegressor] = {}
         self._leaf_distributions: dict[str, list] = {}
         self._feature_cols_: dict[str, list[str]] = {}
@@ -166,6 +168,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         # Temporal split
         splitter = TemporalHoldoutSplit()
         train, calib = splitter.split(data, self.calibration_size)
+        residual_matrix = []
 
         for target in self.targets:
             feature_cols = [col for col in train.columns if col not in self.targets]
@@ -173,6 +176,8 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
             x_train = to_numpy(train, feature_cols)
             y_train = to_numpy(train, [target]).flatten()
+            x_calib = to_numpy(calib, feature_cols)
+            y_calib = to_numpy(calib, [target]).flatten()
 
             if not np.all(np.isfinite(x_train)):
                 error_invalid_data("Feature matrix contains NaN or Inf values")
@@ -191,6 +196,24 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             self._leaf_distributions[target] = self._extract_leaf_distributions(
                 rf, x_train, y_train
             )
+            residual_matrix.append(y_calib - rf.predict(x_calib))
+
+        if len(self.targets) > 1 and self.copula_family != "independent":
+            stacked_residuals = np.column_stack(residual_matrix)
+
+            if self.copula_family == "auto":
+                selected = auto_select_copula(stacked_residuals)
+            elif self.copula_family in COPULA_FAMILIES:
+                selected = self.copula_family
+            else:
+                error_invalid_data(
+                    f"Unknown copula_family: {self.copula_family}. "
+                    f"Valid options: auto, gaussian, clayton, gumbel, frank, independent"
+                )
+
+            self._copula = COPULA_FAMILIES[selected]().fit(stacked_residuals)
+        else:
+            self._copula = None
 
         self._fitted = True
         return self
@@ -200,7 +223,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         rf: RandomForestRegressor,
         x: np.ndarray,
         y: np.ndarray,
-    ) -> list:
+    ) -> list[dict[str, np.ndarray]]:
         """
         Extract training values that fall into each leaf.
 
@@ -212,18 +235,23 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         Returns:
             List of dicts mapping leaf_id to leaf values
         """
-        distributions = []
+        distributions: list[dict[str, np.ndarray]] = []
 
         for tree in rf.estimators_:
             leaf_ids = tree.apply(x)
-            unique_leaves = np.unique(leaf_ids)
+            unique_leaves, inverse = np.unique(leaf_ids, return_inverse=True)
 
-            tree_dist = {}
-            for leaf_id in unique_leaves:
-                leaf_mask = leaf_ids == leaf_id
-                tree_dist[int(leaf_id)] = y[leaf_mask]
+            leaf_quantiles = np.zeros((len(unique_leaves), len(DEFAULT_QUANTILES)))
+            for leaf_idx in range(len(unique_leaves)):
+                leaf_values = y[inverse == leaf_idx]
+                leaf_quantiles[leaf_idx] = np.quantile(leaf_values, DEFAULT_QUANTILES)
 
-            distributions.append(tree_dist)
+            distributions.append(
+                {
+                    "leaf_ids": unique_leaves.astype(int),
+                    "quantiles": leaf_quantiles,
+                }
+            )
 
         return distributions
 
@@ -246,22 +274,25 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         Returns:
             Quantile predictions shape (n_samples, n_quantiles)
         """
-        n_samples = len(x)
-        n_quantiles = len(quantile_levels)
-        predictions = np.zeros((n_samples, n_quantiles))
+        predictions = np.zeros((len(x), len(quantile_levels)))
+        quantile_array = np.asarray(quantile_levels, dtype=float)
+        default_quantiles = np.asarray(DEFAULT_QUANTILES, dtype=float)
+        all_leaf_ids = rf.apply(x)
 
-        for tree_idx, tree in enumerate(rf.estimators_):
-            leaf_ids = tree.apply(x)
+        if np.array_equal(quantile_array, default_quantiles):
+            quantile_indices = np.arange(len(DEFAULT_QUANTILES))
+        else:
+            quantile_indices = np.array(
+                [DEFAULT_QUANTILES.index(float(level)) for level in quantile_levels],
+                dtype=int,
+            )
+
+        for tree_idx, tree_leaf_ids in enumerate(all_leaf_ids.T):
             tree_dist = leaf_dists[tree_idx]
+            positions = np.searchsorted(tree_dist["leaf_ids"], tree_leaf_ids)
+            predictions += tree_dist["quantiles"][positions][:, quantile_indices]
 
-            for i in range(n_samples):
-                leaf_id = int(leaf_ids[i])
-                if leaf_id in tree_dist:
-                    leaf_values = tree_dist[leaf_id]
-                    for q_idx, q in enumerate(quantile_levels):
-                        predictions[i, q_idx] += np.quantile(leaf_values, q)
-
-        predictions /= len(rf.estimators_)
+        predictions /= len(leaf_dists)
 
         return predictions
 
@@ -307,6 +338,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             quantile_matrix=final_matrix,
             quantile_levels=DEFAULT_QUANTILES,
             target_names=self.targets,
+            copula=self._copula,
         )
 
     @property

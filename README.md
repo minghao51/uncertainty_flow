@@ -20,10 +20,11 @@ Most forecasting libraries are optimised for point predictions. Real-world decis
 
 | Feature | Description |
 |---|---|
-| **Distribution-first API** | `model.predict()` returns a `DistributionPrediction` object with `.quantile()`, `.interval()`, `.mean()`, and `.plot()` |
+| **Distribution-first API** | `model.predict()` returns a `DistributionPrediction` object with `.quantile()`, `.interval()`, `.mean()`, `.sample()`, and `.plot()` |
 | **Polars-native I/O** | Pass Polars DataFrames or LazyFrames directly — including lazy evaluation support |
 | **Conformal wrappers** | Wrap any scikit-learn model with statistically rigorous coverage guarantees |
-| **Multivariate support** | Marginal CDFs per target, with Gaussian copula for joint intervals |
+| **Multivariate support** | Marginal CDFs per target, with copula-backed joint sampling for multivariate forecasts |
+| **Model persistence** | Save and load fitted models with `.save()` / `.load()` using `.uf` archives |
 | **Calibration reports** | `.calibration_report()` returns a Polars DataFrame — paste-ready for model cards |
 | **Uncertainty driver detection** | Automatic residual correlation analysis surfaces which features drive interval width |
 | **Time series ready** | Univariate and multivariate forecasting from day one |
@@ -77,12 +78,24 @@ from uncertainty_flow.models import QuantileForestForecaster
 model = QuantileForestForecaster(
     targets=["price", "volume"],
     horizon=14,
-    target_correlation="auto",   # learns Gaussian copula from data
+    copula_family="auto",        # learns a supported copula from data
 )
 model.fit(ts_train)
 
 pred = model.predict(ts_test)
-pred.interval(confidence=0.9)    # joint intervals across both targets
+pred.interval(confidence=0.9)    # marginal intervals across both targets
+pred.sample(100, random_state=42)  # copula-aware joint samples
+```
+
+### Persistence
+
+```python
+model = QuantileForestForecaster(targets="price", horizon=7, auto_tune=False)
+model.fit(ts_train)
+model.save("models/example.uf")
+
+loaded = QuantileForestForecaster.load("models/example.uf")
+pred = loaded.predict(ts_test)
 ```
 
 ### Calibration Report
@@ -116,7 +129,7 @@ Not all models are equal. See [Models Guide](./docs/guides/models.md) for the fu
 
 ## Roadmap
 
-See [Roadmap](./docs/project/roadmap.md) for planned features including `.sample()`, Quantile SHAP, PyTorch backend, and full joint copula support.
+See [Roadmap](./docs/project/roadmap.md) for remaining planned features such as faster SHAP explainers and broader multivariate scalability.
 
 ---
 

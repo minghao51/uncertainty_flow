@@ -304,6 +304,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             quantile_matrix=final_matrix,
             quantile_levels=DEFAULT_QUANTILES,
             target_names=self.targets,
+            copula=self._copula,
         )
 
     @property

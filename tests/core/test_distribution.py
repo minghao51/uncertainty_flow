@@ -7,6 +7,21 @@ import pytest
 from uncertainty_flow.core.distribution import DistributionPrediction
 
 
+class FakeCopula:
+    """Simple copula stub for joint-sampling tests."""
+
+    def sample(
+        self,
+        marginals: np.ndarray,
+        n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
+    ) -> np.ndarray:
+        del quantile_levels, random_state
+        centers = marginals[:, :, 1]
+        return np.repeat(centers[:, None, :], n_samples, axis=1)
+
+
 class TestDistributionPredictionInit:
     """Test DistributionPrediction initialization."""
 
@@ -388,6 +403,49 @@ class TestSampleMethod:
         )
         result = dp.sample(n=5, random_state=42)
         assert result["price"].dtype == pl.Float64
+
+    def test_sample_multivariate_with_copula_metadata(self):
+        """Joint sampling should use the attached copula for multivariate predictions."""
+        matrix = np.array(
+            [
+                [1.0, 2.0, 3.0, 10.0, 20.0, 30.0],
+                [4.0, 5.0, 6.0, 40.0, 50.0, 60.0],
+            ]
+        )
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price", "volume"],
+            copula=FakeCopula(),
+        )
+
+        result = dp.sample(n=3, random_state=42)
+
+        assert result["sample_id"].to_list() == [0, 0, 0, 1, 1, 1]
+        assert result["price"].to_list() == [2.0, 2.0, 2.0, 5.0, 5.0, 5.0]
+        assert result["volume"].to_list() == [20.0, 20.0, 20.0, 50.0, 50.0, 50.0]
+
+    def test_vectorized_inverse_cdf_matches_manual_linear_interpolation(self):
+        """Vectorized inverse CDF should match manual interpolation on a toy example."""
+        quantile_values = np.array([[1.0, 5.0, 9.0], [10.0, 20.0, 30.0]])
+        uniform = np.array([[0.25, 0.5, 0.75], [0.3, 0.6, 0.7]])
+        levels = np.array([0.1, 0.5, 0.9])
+
+        expected = np.array(
+            [
+                [2.5, 5.0, 7.5],
+                [15.0, 22.5, 25.0],
+            ]
+        )
+
+        result = DistributionPrediction._vectorized_inverse_cdf(
+            quantile_values,
+            uniform,
+            levels,
+            interp1d=None,
+        )
+
+        np.testing.assert_allclose(result, expected)
 
 
 class TestPosteriorMethods:

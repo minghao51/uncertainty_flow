@@ -9,7 +9,11 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import numpy as np
 from scipy import stats
 
-from ..utils.exceptions import error_invalid_data, error_model_not_fitted
+from ..utils.exceptions import (
+    error_invalid_data,
+    error_model_not_fitted,
+    warn_copula_auto_selection_ndim,
+)
 
 if TYPE_CHECKING:
     pass
@@ -61,6 +65,8 @@ class BaseCopula:
         self,
         marginals: np.ndarray,
         n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
         """Generate joint samples from copula."""
         ...
@@ -77,6 +83,51 @@ class BaseCopula:
         with proper implementation for accurate BIC calculation.
         """
         return -np.inf
+
+
+def _resolve_rng(
+    random_state: int | np.random.Generator | None,
+) -> np.random.Generator:
+    """Normalize supported random state inputs."""
+    if isinstance(random_state, np.random.Generator):
+        return random_state
+    return np.random.default_rng(random_state)
+
+
+def _inverse_from_marginals(
+    marginals: np.ndarray,
+    uniform_samples: np.ndarray,
+    quantile_levels: np.ndarray | None = None,
+) -> np.ndarray:
+    """Map copula uniforms to marginal samples for one or more input rows."""
+    n_rows, _, n_quantiles = marginals.shape
+    levels = (
+        np.asarray(quantile_levels, dtype=float)
+        if quantile_levels is not None
+        else np.linspace(0, 1, n_quantiles)
+    )
+    clipped = np.clip(uniform_samples, levels[0], levels[-1])
+
+    lower_idx = np.searchsorted(levels, clipped, side="right") - 1
+    lower_idx = np.clip(lower_idx, 0, n_quantiles - 2)
+    upper_idx = lower_idx + 1
+
+    row_idx = np.arange(n_rows)[:, None, None]
+    target_idx = np.arange(marginals.shape[1])[None, None, :]
+
+    lower_x = levels[lower_idx]
+    upper_x = levels[upper_idx]
+    lower_y = marginals[row_idx, target_idx, lower_idx]
+    upper_y = marginals[row_idx, target_idx, upper_idx]
+
+    denom = upper_x - lower_x
+    denom[denom == 0] = 1.0
+    weights = (clipped - lower_x) / denom
+    samples = lower_y + weights * (upper_y - lower_y)
+
+    if n_rows == 1:
+        return samples[0]
+    return samples
 
 
 class GaussianCopula(BaseCopula):
@@ -175,6 +226,8 @@ class GaussianCopula(BaseCopula):
         self,
         marginals: np.ndarray,
         n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
         """
         Generate joint samples from copula.
@@ -189,41 +242,34 @@ class GaussianCopula(BaseCopula):
         """
         self._validate_fitted()
 
-        n_samples_input, n_targets, n_quantiles = marginals.shape
+        n_samples_input, n_targets, _ = marginals.shape
+        rng = _resolve_rng(random_state)
 
         try:
             cov = self.correlation_matrix_
             if cov is None:
                 error_model_not_fitted("GaussianCopula")
-            mvn = stats.multivariate_normal(
+            normal_samples = stats.multivariate_normal.rvs(
                 mean=np.zeros(n_targets),
                 cov=cov,
+                size=n_samples_input * n_samples,
+                random_state=rng,
             )
-            normal_samples = mvn.rvs(size=n_samples)
         except (np.linalg.LinAlgError, ValueError):
             # Fallback for singular correlation matrices
             cov = self.correlation_matrix_
             if cov is None:
                 error_model_not_fitted("GaussianCopula")
             assert cov is not None
-            normal_samples = np.random.multivariate_normal(
+            normal_samples = rng.multivariate_normal(
                 mean=np.zeros(n_targets),
                 cov=cov,
-                size=n_samples,
+                size=n_samples_input * n_samples,
             )
 
+        normal_samples = np.asarray(normal_samples).reshape(n_samples_input, n_samples, n_targets)
         uniform_samples = stats.norm.cdf(normal_samples)
-
-        result = np.zeros((n_samples, n_targets))
-        for t in range(n_targets):
-            for i in range(n_samples):
-                result[i, t] = np.interp(
-                    uniform_samples[i, t],
-                    np.linspace(0, 1, n_quantiles),
-                    marginals[0, t, :],
-                )
-
-        return result
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
 
     def __repr__(self) -> str:
         if self.fitted_:
@@ -340,6 +386,8 @@ class ClaytonCopula(BaseCopula):
         self,
         marginals: np.ndarray,
         n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
         """
         Generate joint samples from Clayton copula.
@@ -359,28 +407,19 @@ class ClaytonCopula(BaseCopula):
                 f"ClaytonCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
-        n_samples_input, n_targets, n_quantiles = marginals.shape
+        n_samples_input, n_targets, _ = marginals.shape
         theta = self.theta_
         assert theta is not None
+        rng = _resolve_rng(random_state)
 
-        s1 = np.random.uniform(0, 1, n_samples)
-        s2 = np.random.uniform(0, 1, n_samples)
+        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
+        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
         u = s1 ** (1 / theta)
         v = s2 ** (1 / theta) * (1 - (1 - s1) ** (1 / theta)) ** (-1 / theta)
 
-        uniform_samples = np.column_stack([u, v])
-
-        result = np.zeros((n_samples, n_targets))
-        for t in range(n_targets):
-            for i in range(n_samples):
-                result[i, t] = np.interp(
-                    uniform_samples[i, t],
-                    np.linspace(0, 1, n_quantiles),
-                    marginals[0, t, :],
-                )
-
-        return result
+        uniform_samples = np.stack([u, v], axis=-1)
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
 
     def __repr__(self) -> str:
         if self.fitted_:
@@ -491,6 +530,8 @@ class GumbelCopula(BaseCopula):
         self,
         marginals: np.ndarray,
         n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
         """
         Generate joint samples from Gumbel copula.
@@ -510,12 +551,13 @@ class GumbelCopula(BaseCopula):
                 f"GumbelCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
-        n_samples_input, n_targets, n_quantiles = marginals.shape
+        n_samples_input, n_targets, _ = marginals.shape
         theta = self.theta_
         assert theta is not None
+        rng = _resolve_rng(random_state)
 
-        s1 = np.random.uniform(0, 1, n_samples)
-        s2 = np.random.uniform(0, 1, n_samples)
+        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
+        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
         u = np.exp(-(((-np.log(s1)) ** theta + (-np.log(s2)) ** theta) ** (-1 / theta)))
         v = np.exp(
@@ -523,18 +565,8 @@ class GumbelCopula(BaseCopula):
             * (np.log(s2) / np.log(s1))
         )
 
-        uniform_samples = np.column_stack([u, v])
-
-        result = np.zeros((n_samples, n_targets))
-        for t in range(n_targets):
-            for i in range(n_samples):
-                result[i, t] = np.interp(
-                    uniform_samples[i, t],
-                    np.linspace(0, 1, n_quantiles),
-                    marginals[0, t, :],
-                )
-
-        return result
+        uniform_samples = np.stack([u, v], axis=-1)
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
 
     def __repr__(self) -> str:
         if self.fitted_:
@@ -663,6 +695,8 @@ class FrankCopula(BaseCopula):
         self,
         marginals: np.ndarray,
         n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
         """
         Generate joint samples from Frank copula.
@@ -682,28 +716,19 @@ class FrankCopula(BaseCopula):
                 f"FrankCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
-        n_samples_input, n_targets, n_quantiles = marginals.shape
+        n_samples_input, n_targets, _ = marginals.shape
         theta = self.theta_
         assert theta is not None
+        rng = _resolve_rng(random_state)
 
-        s1 = np.random.uniform(0, 1, n_samples)
-        s2 = np.random.uniform(0, 1, n_samples)
+        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
+        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
         u = -np.log(1 - s1 * (1 - np.exp(-theta))) / theta
         v = -np.log(1 - s2 * (1 - np.exp(-theta))) / theta
 
-        uniform_samples = np.column_stack([u, v])
-
-        result = np.zeros((n_samples, n_targets))
-        for t in range(n_targets):
-            for i in range(n_samples):
-                result[i, t] = np.interp(
-                    uniform_samples[i, t],
-                    np.linspace(0, 1, n_quantiles),
-                    marginals[0, t, :],
-                )
-
-        return result
+        uniform_samples = np.stack([u, v], axis=-1)
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
 
     def __repr__(self) -> str:
         if self.fitted_:
@@ -751,6 +776,10 @@ def auto_select_copula(
     n_samples = residuals.shape[0]
     best_bic = np.inf
     best_family = "gaussian"
+
+    # Warn about dimension limitation
+    if residuals.shape[1] > 2:
+        warn_copula_auto_selection_ndim(residuals.shape[1])
 
     for family_name in families:
         copula_cls = COPULA_FAMILIES[family_name]

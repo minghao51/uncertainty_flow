@@ -26,6 +26,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Standalone metrics: `pinball_loss`, `winkler_score`, `coverage_score`
 - `uv`-based dev setup
 - Full test suite with pytest
+- Shared model persistence via `.save()` / `.load()` with `.uf` archives and portable metadata
+
+### Changed
+- `DistributionPrediction.sample()` now uses attached copula state for multivariate joint sampling
+- `QuantileForestForecaster` now honors `copula_family` for multivariate workflows
 
 ---
 

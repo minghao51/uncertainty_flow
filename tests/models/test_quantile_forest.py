@@ -168,6 +168,45 @@ class TestQuantileForestForecasterFit:
         model.fit(lazy_df)
         assert model._fitted is True
 
+    def test_fit_sets_copula_for_multivariate(self, time_series_data):
+        """Should fit a copula when multivariate targets request dependence modeling."""
+        model = QuantileForestForecaster(
+            targets=["price", "volume"],
+            horizon=3,
+            n_estimators=10,
+            copula_family="gaussian",
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(time_series_data)
+        assert model._copula is not None
+
+    def test_fit_skips_copula_for_independent_family(self, time_series_data):
+        """Should skip copula fitting when independence is requested."""
+        model = QuantileForestForecaster(
+            targets=["price", "volume"],
+            horizon=3,
+            n_estimators=10,
+            copula_family="independent",
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(time_series_data)
+        assert model._copula is None
+
+    def test_fit_invalid_copula_family_raises(self, time_series_data):
+        """Should reject unknown copula families."""
+        model = QuantileForestForecaster(
+            targets=["price", "volume"],
+            horizon=3,
+            n_estimators=10,
+            copula_family="invalid",
+            auto_tune=False,
+            random_state=42,
+        )
+        with pytest.raises(ValueError, match="Unknown copula_family"):
+            model.fit(time_series_data)
+
 
 class TestQuantileForestForecasterPredict:
     """Test QuantileForestForecaster predict method."""
@@ -243,6 +282,36 @@ class TestQuantileForestForecasterPredict:
         model.fit(univariate_time_series)
         pred = model.predict(univariate_time_series.lazy())
         assert isinstance(pred, DistributionPrediction)
+
+    def test_predict_matches_naive_leaf_quantiles(self, univariate_time_series):
+        """Vectorized prediction should match the original naive quantile aggregation."""
+        model = QuantileForestForecaster(
+            targets="target",
+            horizon=3,
+            n_estimators=8,
+            min_samples_leaf=3,
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(univariate_time_series)
+
+        x = univariate_time_series.select(model._feature_cols_["target"]).to_numpy()
+        rf = model._models["target"]
+        leaf_dists = model._leaf_distributions["target"]
+
+        naive = np.zeros((len(x), len(model.predict(univariate_time_series)._levels)))
+        for tree_idx, tree in enumerate(rf.estimators_):
+            tree_leaf_ids = tree.apply(x)
+            tree_dist = leaf_dists[tree_idx]
+            for row_idx, leaf_id in enumerate(tree_leaf_ids):
+                leaf_pos = np.searchsorted(tree_dist["leaf_ids"], leaf_id)
+                naive[row_idx] += tree_dist["quantiles"][leaf_pos]
+        naive /= len(rf.estimators_)
+
+        optimized = model._predict_quantiles(
+            rf, leaf_dists, x, model.predict(univariate_time_series)._levels.tolist()
+        )
+        np.testing.assert_allclose(optimized, naive)
 
 
 class TestQuantileForestForecasterInterval:

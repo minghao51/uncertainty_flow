@@ -54,10 +54,10 @@ def calibration_report(
         targets = target
 
     results = []
+    prediction = model.predict(data)
 
     for level in quantile_levels:
-        pred = model.predict(data)
-        intervals = pred.interval(confidence=level)
+        intervals = prediction.interval(confidence=level)
 
         # Get actuals and predictions
         row_results: dict[str, float] = {}
