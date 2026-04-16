@@ -10,6 +10,8 @@ This folder keeps superseded planning documents and merged guides for historical
 
 These files describe point-in-time implementation plans and completion claims. They are useful context, but they should not be treated as the current state of the project.
 
+- [./plans/20260416-technical-roadmap-v1.md](./plans/20260416-technical-roadmap-v1.md) — Superseded v3–v5 technical roadmap. Replaced by [../project/roadmap.md](../project/roadmap.md).
+
 ## Archived Merged Guides
 
 There are currently no archived merged guides. If a guide is retired again in the future, list it here with a short note about where its living replacement moved.

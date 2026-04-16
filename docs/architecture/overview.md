@@ -6,25 +6,41 @@ This document is the source of truth for how the package is organized and how pr
 
 ```text
 uncertainty_flow/
+├── analysis/                  # Feature leverage analysis for uncertainty attribution
+├── bayesian/                  # Bayesian quantile regression (NumPyro, optional)
 ├── benchmarking/              # Benchmark datasets, runner, auto-tuning
 ├── calibration/               # Calibration reports, residual analysis, SHAP helpers
-├── core/                      # Base classes, config, DistributionPrediction, shared types
+├── causal/                    # Treatment effect estimation with conformal uncertainty
+├── core/                      # Base classes, config, DistributionPrediction, persistence, shared types
+├── counterfactual/            # Counterfactual explanations for uncertainty reduction
+├── decomposition/             # Ensemble-based aleatoric/epistemic decomposition
 ├── metrics/                   # Pinball, Winkler, coverage
-├── models/                    # Native models
+├── models/                    # Native models (QuantileForest, DeepQuantile, Transformer)
+├── multimodal/                # Cross-feature group uncertainty aggregation
 ├── multivariate/              # Copula families and multivariate support
+├── risk/                      # Conformal risk control with user-defined risk functions
 ├── utils/                     # Polars bridge, split strategies, exceptions, helpers
+├── viz/                       # Interactive Streamlit dashboard (optional)
 ├── wrappers/                  # Conformal wrappers around estimators
 └── cli.py                     # Project CLI entrypoint
 ```
 
 ## Model Families
 
-`uncertainty_flow` has two top-level model shapes:
+`uncertainty_flow` has multiple model families:
 
-- Wrappers: `ConformalRegressor` and `ConformalForecaster` adapt existing estimators and add calibrated uncertainty.
-- Native models: `QuantileForestForecaster`, `DeepQuantileNet`, optional `DeepQuantileNetTorch`, and optional `TransformerForecaster`.
+- **Wrappers:** `ConformalRegressor` and `ConformalForecaster` adapt existing estimators and add calibrated uncertainty.
+- **Native models:** `QuantileForestForecaster`, `DeepQuantileNet`, optional `DeepQuantileNetTorch`, and optional `TransformerForecaster`.
+- **Bayesian:** `BayesianQuantileRegressor` provides posterior inference via NumPyro MCMC (optional dependency).
+- **Causal:** `CausalUncertaintyEstimator` estimates treatment effects with conformal uncertainty (doubly robust, S-learner, T-learner).
+- **Multi-modal:** `CrossModalAggregator` combines predictions from separate feature groups using product, copula, or independent aggregation.
+- **Risk control:** `ConformalRiskControl` wraps conformal prediction around user-defined risk functions (asymmetric loss, inventory cost, VaR, threshold penalty).
+- **Counterfactual:** `UncertaintyExplainer` finds minimal feature changes to reduce prediction interval width.
+- **Analysis:** `FeatureLeverageAnalyzer` scores features by their impact on interval width (aleatoric vs epistemic).
+- **Decomposition:** `EnsembleDecomposition` separates aleatoric from epistemic uncertainty via bootstrap refits.
+- **Visualization:** `launch_dashboard()` starts an interactive Streamlit dashboard for calibration exploration (optional dependency).
 
-All of them return a `DistributionPrediction` object so downstream code can use the same access pattern regardless of the training backend.
+All models return a `DistributionPrediction` object so downstream code can use the same access pattern regardless of the training backend.
 
 ## Data Flow
 
@@ -109,3 +125,18 @@ The `benchmarking/` package and CLI support:
 - exporting structured benchmark results
 
 Those tools are intentionally separate from the model APIs so the library can stay usable both as a package and as an evaluation harness.
+
+## Analysis, Decomposition, and Risk Layer
+
+Three post-hoc analysis modules sit between prediction and decision-making:
+
+- **FeatureLeverageAnalyzer** scores features by how much they influence interval width, separating aleatoric (irreducible) from epistemic (model-knowledge) contributions. Multivariate mode reports per-target scores.
+- **EnsembleDecomposition** refits a model on bootstrap samples and decomposes total interval width into aleatoric (average width) and epistemic (variance across refits).
+- **ConformalRiskControl** accepts a user-defined risk function and calibrates prediction intervals to control expected risk rather than just coverage.
+
+These modules consume a fitted model and optionally test data. They do not modify the model itself.
+
+## Causal and Counterfactual Modules
+
+- **CausalUncertaintyEstimator** wraps outcome and propensity models to produce treatment effect estimates (CATE) with conformal confidence intervals. Supports doubly-robust, S-learner, and T-learner methods.
+- **UncertaintyExplainer** searches for minimal feature perturbations that reduce interval width, using evolutionary search for tree models and gradient descent for differentiable models.

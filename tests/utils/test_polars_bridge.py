@@ -190,7 +190,10 @@ class TestToNumpyZeroCopy:
         df = pl.DataFrame({"a": [1, 2, 3]})
         with pytest.raises(
             ValueError,
-            match=r"Expected pl\.Series, got DataFrame\. Use DataFrame\[column\] to select a Series\.",
+            match=(
+                r"Expected pl\.Series, got DataFrame\. "
+                r"Use DataFrame\[column\] to select a Series\."
+            ),
         ):
             to_numpy_series_zero_copy(df)  # type: ignore[arg-type]
 

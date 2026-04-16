@@ -147,14 +147,7 @@ snapshots and quick-trial CSVs have been removed to avoid duplicate sources of t
 
 ## Metrics Explained
 
-| Metric | Description | Target |
-|--------|-------------|--------|
-| **Coverage @ 90%** | Fraction of true values within 90% prediction interval | ~0.90 |
-| **Coverage @ 80%** | Fraction of true values within 80% prediction interval | ~0.80 |
-| **Sharpness @ 90%** | Average width of 90% prediction intervals | Lower is better |
-| **Winkler @ 90%** | Combined score penalizing both poor coverage and wide intervals | Lower is better |
-| **Pinball Loss** | Quantile loss at α=0.1 | Lower is better |
-| **Train Time** | Model training time in seconds | Lower is better |
+For metric definitions (coverage, sharpness, Winkler score, pinball loss), see [../guides/calibration.md](../guides/calibration.md).
 
 ---
 

@@ -21,6 +21,10 @@ This document is the current guide to model selection and guarantee tradeoffs.
 | `DeepQuantileNet` | Native neural model | Empirical | Post-sort | Yes | Nonlinear patterns with larger datasets |
 | `DeepQuantileNetTorch` | Optional neural model | Empirical | Training-time support available | Yes | GPU-backed training and deeper experimentation |
 | `TransformerForecaster` | Optional foundation-model wrapper | Empirical or calibrated depending on workflow | Model-dependent | Yes | Pretrained forecasting workflows |
+| `BayesianQuantileRegressor` | Bayesian (optional NumPyro) | Posterior-based | Post-sort | No | Full posterior inference, small datasets, credible intervals |
+| `CausalUncertaintyEstimator` | Causal inference | Conformal on CATE | N/A | No | Treatment effect estimation with uncertainty |
+| `CrossModalAggregator` | Multi-modal ensemble | Inherited from base models | Inherited | Yes | Combine predictions from separate feature groups |
+| `ConformalRiskControl` | Risk control | Risk-bounded | Post-sort | No | Control expected loss instead of coverage |
 
 ## Shared Output Contract
 
@@ -65,6 +69,22 @@ Use these when the signal is nonlinear enough that tree models underfit. The tor
 
 Use this for pretrained time-series workflows when the optional dependency stack is available and the project favors foundation-model-style forecasting.
 
+### `BayesianQuantileRegressor`
+
+Use this when you need full posterior distributions rather than discrete quantiles. Provides credible intervals on quantiles themselves via MCMC (NUTS sampler). Best suited for smaller datasets where conformal methods may lack calibration data. Requires `numpyro` and `jax` (optional dependency).
+
+### `CausalUncertaintyEstimator`
+
+Use this to estimate treatment effects (CATE/ATE) with conformal confidence intervals. Supports doubly-robust, S-learner, and T-learner methods. Wraps outcome and propensity models built from existing `ConformalRegressor` instances. No extra dependencies.
+
+### `CrossModalAggregator`
+
+Use this when features naturally form groups (demographics, temporal, weather) and you want per-group uncertainty attribution alongside combined predictions. Aggregation strategies: product (assumes conditional independence), copula (models cross-group dependence), independent (simple average). No extra dependencies.
+
+### `ConformalRiskControl`
+
+Use this when prediction errors have asymmetric costs. Instead of controlling coverage, calibrates intervals to control expected risk for user-defined loss functions. Ships with built-in risk functions: `asymmetric_loss`, `threshold_penalty`, `inventory_cost`, `financial_var`. No extra dependencies.
+
 ## Multivariate Dependence
 
 Multi-target models rely on a copula layer rather than treating targets as independent. Depending on the workflow, this may use Gaussian, Clayton, Gumbel, or Frank families, with auto-selection in supported paths.
@@ -95,3 +115,10 @@ uv run pytest tests/core/test_persistence.py
 - Need fast empirical quantiles without deep learning: `QuantileForestForecaster`
 - Need higher-capacity nonlinear modeling: `DeepQuantileNet` or `DeepQuantileNetTorch`
 - Need optional pretrained forecasting workflows: `TransformerForecaster`
+- Need full posterior inference or credible intervals: `BayesianQuantileRegressor`
+- Need treatment effect estimates with uncertainty: `CausalUncertaintyEstimator`
+- Need to combine predictions from feature groups: `CrossModalAggregator`
+- Need to control expected loss instead of coverage: `ConformalRiskControl`
+- Need to find feature changes that reduce uncertainty: `UncertaintyExplainer` (see [./charting.md](./charting.md))
+- Need to decompose uncertainty into aleatoric vs epistemic: `EnsembleDecomposition` (see [./distribution-approach.md](./distribution-approach.md))
+- Need to score features by impact on interval width: `FeatureLeverageAnalyzer` (see [./distribution-approach.md](./distribution-approach.md))

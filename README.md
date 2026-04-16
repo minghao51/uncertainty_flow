@@ -133,6 +133,21 @@ See [Roadmap](./docs/project/roadmap.md) for remaining planned features such as 
 
 ---
 
+## Documentation
+
+| Doc | What it covers |
+|---|---|
+| [Architecture Overview](./docs/architecture/overview.md) | Package structure, data flow, module families |
+| [Models Guide](./docs/guides/models.md) | Model selection, guarantee tradeoffs, choosing quickly |
+| [Calibration Guide](./docs/guides/calibration.md) | Interpreting calibration reports, miscalibration response |
+| [Charting Guide](./docs/guides/charting.md) | Plotting, intervals, samples, visual inspection |
+| [Benchmarking Guide](./docs/guides/benchmarking.md) | CLI benchmarks, datasets, auto-tuning |
+| [API Reference](./docs/api/spec.md) | Full API specification for all public classes |
+| [Contributing](./docs/project/contributing.md) | Dev setup, testing conventions, adding new models |
+| [Changelog](./docs/project/changelog.md) | Release history |
+
+---
+
 ## Contributing
 
 See [Contributing Guide](./docs/project/contributing.md) for dev setup, testing conventions, and how to add a new model.

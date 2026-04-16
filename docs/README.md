@@ -23,6 +23,10 @@ This folder holds the maintained documentation for `uncertainty_flow`.
 
 - [./guides/design.md](./guides/design.md) for durable design decisions and principles
 
+## Benchmarks
+
+- [./benchmarks/README.md](./benchmarks/README.md) for benchmark results and reproduction
+
 ## Archive
 
 Older planning snapshots and merged guides live in [./archive/README.md](./archive/README.md). They are preserved for context, but they are not the source of truth for the current codebase.

@@ -347,3 +347,343 @@ pred = model.predict(df_test)
 joint = pred.interval(confidence=0.9)
 # Columns: price_lower, price_upper, volume_lower, volume_upper
 ```
+
+---
+
+## 8. `DeepQuantileNet`
+
+> Multi-quantile MLP with shared trunk (sklearn backend).
+> **Coverage guarantee: ⚠️ Empirical only**
+> **Non-crossing: ✅ (post-sort)**
+
+```python
+class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
+
+    def __init__(
+        self,
+        hidden_layer_sizes: tuple[int, ...] = (100, 50),
+        quantile_levels: list[float] | None = None,
+        trunk_alpha: float = 0.0001,
+        trunk_max_iter: int = 500,
+        head_solver: str = "pinball",
+        random_state: int | None = None,
+    ): ...
+```
+
+---
+
+## 9. `DeepQuantileNetTorch`
+
+> PyTorch-backed multi-quantile network with GPU support and optional monotonicity loss.
+> **Coverage guarantee: ⚠️ Empirical only**
+> **Non-crossing: ✅ (training-time support via monotonicity_weight)**
+> **Requires:** `torch` (optional dependency)
+
+```python
+class DeepQuantileNetTorch(BaseQuantileNeuralNet):
+
+    def __init__(
+        self,
+        hidden_layer_sizes: tuple[int, ...] = (100, 50),
+        quantile_levels: list[float] | None = None,
+        n_estimators: int = 1,
+        epochs: int = 100,
+        batch_size: int = 64,
+        learning_rate: float = 0.001,
+        weight_decay: float = 0.0,
+        monotonicity_weight: float = 0.0,
+        activation: str = "relu",
+        device: str = "auto",
+        random_state: int | None = None,
+        verbose: bool = False,
+    ): ...
+```
+
+---
+
+## 10. `TransformerForecaster`
+
+> Pretrained foundation-model forecasting wrapper (Chronos-2 integration).
+> **Coverage guarantee: ⚠️ Empirical or calibrated depending on workflow**
+> **Requires:** `chronos-forecasting` (optional dependency)
+
+```python
+class TransformerForecaster(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        target: str,
+        horizon: int = 24,
+        model_name: str | None = None,
+        calibration_method: str = "holdout",
+        calibration_size: float = 0.2,
+        auto_tune: bool = True,
+        device: str = "auto",
+        random_state: int | None = None,
+        uncertainty_features: list[str] | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        target: str | None = None,
+    ) -> "TransformerForecaster": ...
+
+    def predict(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        steps: int | None = None,
+    ) -> DistributionPrediction: ...
+
+    @property
+    def uncertainty_drivers_(self) -> pl.DataFrame | None: ...
+```
+
+---
+
+## 11. `BayesianQuantileRegressor`
+
+> Bayesian quantile regression via NumPyro MCMC with horseshoe priors.
+> **Coverage guarantee: Posterior-based (credible intervals, not frequentist coverage)**
+> **Requires:** `numpyro`, `jax` (optional dependency)
+
+```python
+class BayesianQuantileRegressor(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        quantiles: list[float] | None = None,
+        n_warmup: int = 500,
+        n_samples: int = 1000,
+        kernel: str = "nuts",
+        prior_width: float = 1.0,
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        target: str | None = None,
+    ) -> "BayesianQuantileRegressor": ...
+
+    def predict(self, data: pl.DataFrame | pl.LazyFrame) -> DistributionPrediction: ...
+```
+
+---
+
+## 12. `CausalUncertaintyEstimator`
+
+> Treatment effect estimation with conformal uncertainty. Supports doubly-robust, S-learner, and T-learner methods.
+> **Coverage guarantee: ✅ Conformal on CATE estimates**
+
+```python
+class CausalUncertaintyEstimator(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        outcome_model,                      # ConformalRegressor or similar
+        propensity_model=None,              # Optional, defaults to logistic
+        treatment_col: str = "treatment",
+        method: str = "doubly_robust",      # "doubly_robust" | "s_learner" | "t_learner"
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        target: str | None = None,
+    ) -> "CausalUncertaintyEstimator": ...
+
+    def predict(self, data: pl.DataFrame | pl.LazyFrame) -> DistributionPrediction: ...
+```
+
+---
+
+## 13. `CrossModalAggregator`
+
+> Combine predictions from multiple feature groups with per-group uncertainty attribution.
+
+```python
+class CrossModalAggregator(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        feature_groups: dict[str, list[str]],  # {"demographics": ["age", ...], ...}
+        aggregation: str = "product",           # "product" | "copula" | "independent"
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        target: str | None = None,
+        *,
+        base_model=None,                       # Base model for each group
+    ) -> "CrossModalAggregator": ...
+
+    def predict(self, data: pl.DataFrame | pl.LazyFrame) -> DistributionPrediction: ...
+```
+
+---
+
+## 14. `ConformalRiskControl`
+
+> Conformal risk control — calibrates intervals to control expected risk rather than coverage.
+
+```python
+class ConformalRiskControl:
+
+    def __init__(
+        self,
+        base_model: BaseUncertaintyModel,
+        risk_function: Callable,               # (y_true, y_pred) → risk scalar
+        target_risk: float = 0.1,
+        calibration_method: str = "quantile",
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame,
+        target: str,
+    ) -> "ConformalRiskControl": ...
+
+    def predict(self, data: pl.DataFrame) -> pl.DataFrame: ...
+
+    def risk_threshold(self) -> float: ...
+
+    def summary(self) -> dict: ...
+```
+
+### Built-in Risk Functions
+
+```python
+from uncertainty_flow.risk import asymmetric_loss, threshold_penalty, inventory_cost, financial_var
+
+# Asymmetric over/underprediction penalty
+asymmetric_loss(overprediction_penalty=1.0, underprediction_penalty=2.0)
+
+# Penalty above/below a threshold
+threshold_penalty(threshold=0.0, penalty_above=10.0, penalty_below=1.0)
+
+# Inventory holding vs stockout cost
+inventory_cost(holding_cost=1.0, stockout_cost=10.0)
+
+# Value-at-Risk style penalty
+financial_var(var_level=0.95)
+```
+
+---
+
+## 15. `UncertaintyExplainer`
+
+> Counterfactual explanations for uncertainty reduction. Finds minimal feature changes that reduce interval width.
+
+```python
+class UncertaintyExplainer:
+
+    def __init__(
+        self,
+        model: BaseUncertaintyModel,
+        confidence: float = 0.9,
+        method: str = "auto",                  # "auto" | "evolutionary" | "gradient"
+        random_state: int | None = None,
+    ): ...
+
+    def explain_uncertainty(
+        self,
+        data: pl.DataFrame,
+        target_reduction: float = 0.5,
+        feature_bounds: dict[str, tuple[float, float]] | None = None,
+        fixed_features: list[str] | None = None,
+    ) -> SearchResult: ...
+
+    def explain_batch(
+        self,
+        data: pl.DataFrame,
+        target_reduction: float = 0.5,
+        feature_bounds: dict[str, tuple[float, float]] | None = None,
+        fixed_features: list[str] | None = None,
+    ) -> list[SearchResult]: ...
+
+    def compare_features(
+        self,
+        data: pl.DataFrame,
+        features: list[str],
+        target_reduction: float = 0.5,
+        feature_bounds: dict[str, tuple[float, float]] | None = None,
+    ) -> pl.DataFrame: ...
+```
+
+---
+
+## 16. `EnsembleDecomposition`
+
+> Bootstrap-based aleatoric/epistemic uncertainty decomposition.
+
+```python
+class EnsembleDecomposition:
+
+    def __init__(
+        self,
+        model_factory: Callable[[], BaseUncertaintyModel],
+        train_data: pl.DataFrame | pl.LazyFrame,
+        target: str | None = None,
+        confidence: float = 0.9,
+        n_bootstrap: int = 5,
+        random_state: int | None = None,
+    ): ...
+
+    def decompose(self, data: pl.DataFrame) -> dict[str, float]:
+        """
+        Returns:
+            aleatoric: average interval width across ensemble
+            epistemic: variance of point estimates across ensemble
+            total: combined uncertainty
+        """
+
+    def decompose_by_sample(self, data: pl.DataFrame) -> pl.DataFrame:
+        """
+        Returns per-sample decomposition as Polars DataFrame.
+        Columns: aleatoric, epistemic, total
+        """
+
+    def summary(self) -> dict: ...
+```
+
+---
+
+## 17. `FeatureLeverageAnalyzer`
+
+> Scores features by their impact on prediction interval width, separating aleatoric from epistemic contributions.
+
+```python
+class FeatureLeverageAnalyzer:
+
+    def __init__(
+        self,
+        model: BaseUncertaintyModel,
+        confidence: float = 0.9,
+        n_perturbations: int = 100,
+        n_bins: int = 10,
+        leverage_threshold: float = 0.5,
+        random_state: int | None = None,
+    ): ...
+
+    def analyze(self, data: pl.DataFrame) -> pl.DataFrame:
+        """
+        Returns Polars DataFrame schema:
+        ┌──────────────┬─────────────────┬─────────────────┬──────────────┬────────────────┐
+        │ feature      │ aleatoric_score │ epistemic_score │ leverage_score│ recommendation │
+        │ str          │ f64             │ f64             │ f64          │ str            │
+        └──────────────┴─────────────────┴─────────────────┴──────────────┴────────────────┘
+        """
+
+    def analyze_multivariate(self, data: pl.DataFrame) -> pl.DataFrame:
+        """
+        Per-target leverage analysis for multivariate models.
+        Columns: feature, {target}_aleatoric, {target}_epistemic, {target}_leverage, recommendation
+        """
+
+    def summary(self) -> dict: ...
+```

@@ -30,8 +30,7 @@ class TestLaunchDashboard:
             # If streamlit is available, just verify the function is callable
             assert callable(launch_dashboard)
         except ImportError:
-            # streamlit not installed - function should raise ImportError when called
-            # (but we can't test this without actually calling it, which would try to import streamlit)
+            # Streamlit is optional; without it we only verify the module exposes the entrypoint.
             # Instead, we just verify the module structure is correct
             from uncertainty_flow.viz import dashboard
 
@@ -120,8 +119,8 @@ class TestDashboardIntegration:
     def test_dashboard_workflow(self, sample_forecaster, sample_data):
         """Should be able to create predictions needed for dashboard."""
         # Get predictions
-        X = sample_data.drop("y")
-        predictions = sample_forecaster.predict(X.head(10))
+        x_features = sample_data.drop("y")
+        predictions = sample_forecaster.predict(x_features.head(10))
 
         # Verify predictions have required methods
         assert hasattr(predictions, "interval")
@@ -134,10 +133,10 @@ class TestDashboardIntegration:
 
     def test_calibration_metrics_computation(self, sample_forecaster, sample_data):
         """Should be able to compute calibration metrics."""
-        X = sample_data.drop("y")
+        x_features = sample_data.drop("y")
         y_true = sample_data["y"]
 
-        predictions = sample_forecaster.predict(X.head(50))
+        predictions = sample_forecaster.predict(x_features.head(50))
 
         # Compute empirical coverage
         interval = predictions.interval(0.9)
@@ -151,9 +150,9 @@ class TestDashboardIntegration:
 
     def test_interval_width_computation(self, sample_forecaster, sample_data):
         """Should be able to compute interval widths."""
-        X = sample_data.drop("y")
+        x_features = sample_data.drop("y")
 
-        predictions = sample_forecaster.predict(X.head(50))
+        predictions = sample_forecaster.predict(x_features.head(50))
 
         interval = predictions.interval(0.9)
         lower = interval["lower"].to_numpy()
@@ -166,10 +165,10 @@ class TestDashboardIntegration:
 
     def test_residual_computation(self, sample_forecaster, sample_data):
         """Should be able to compute residuals."""
-        X = sample_data.drop("y")
+        x_features = sample_data.drop("y")
         y_true = sample_data["y"]
 
-        predictions = sample_forecaster.predict(X.head(50))
+        predictions = sample_forecaster.predict(x_features.head(50))
 
         mean = predictions.mean().to_numpy()
         y_arr = y_true.head(50).to_numpy()
