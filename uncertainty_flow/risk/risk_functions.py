@@ -141,6 +141,7 @@ def inventory_cost(
 
 def financial_var(
     var_level: float = 0.95,
+    excess_penalty: float = 10.0,
 ) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
     """
     Financial Value-at-Risk (VaR) style risk function.
@@ -151,6 +152,8 @@ def financial_var(
     ----------
     var_level : float, default=0.95
         VaR confidence level (e.g., 0.95 for 95% VaR)
+    excess_penalty : float, default=10.0
+        Multiplier for excess loss beyond VaR threshold
 
     Returns
     -------
@@ -170,9 +173,8 @@ def financial_var(
 
     def _risk(y_true: np.ndarray, y_pred: np.ndarray) -> np.ndarray:
         losses = np.abs(y_true - y_pred)
-        # VaR: penalty proportional to loss beyond VaR threshold
         var_threshold = np.quantile(losses, var_level)
         excess_loss = np.maximum(losses - var_threshold, 0)
-        return losses + 10 * excess_loss  # Penalize excess losses heavily
+        return losses + excess_penalty * excess_loss
 
     return _risk

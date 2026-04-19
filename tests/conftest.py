@@ -50,13 +50,13 @@ def random_state():
 @pytest.fixture
 def time_series_data():
     """Create extended time series DataFrame for testing (150 rows)."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n = 150
     return pl.DataFrame(
         {
             "date": range(n),
-            "price": [10 + i * 0.5 + np.sin(i / 3) + np.random.randn() * 0.5 for i in range(n)],
-            "volume": [100 + i * 2 + np.cos(i / 2) + np.random.randn() * 5 for i in range(n)],
+            "price": [10 + i * 0.5 + np.sin(i / 3) + rng.standard_normal() * 0.5 for i in range(n)],
+            "volume": [100 + i * 2 + np.cos(i / 2) + rng.standard_normal() * 5 for i in range(n)],
         }
     )
 
@@ -64,12 +64,15 @@ def time_series_data():
 @pytest.fixture
 def univariate_time_series():
     """Create univariate time series DataFrame (150 rows)."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n = 150
     return pl.DataFrame(
         {
             "date": range(n),
-            "target": [10 + i * 0.5 + np.sin(i / 3) + np.random.randn() * 0.5 for i in range(n)],
+            "target": [
+                10 + i * 0.5 + np.sin(i / 3) + rng.standard_normal() * 0.5
+                for i in range(n)
+            ],
         }
     )
 
@@ -77,14 +80,14 @@ def univariate_time_series():
 @pytest.fixture
 def multivariate_time_series():
     """Create multivariate time series with multiple targets."""
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     n = 200
     return pl.DataFrame(
         {
             "date": range(n),
-            "price": [100 + i * 0.3 + np.random.randn() * 2 for i in range(n)],
-            "demand": [50 + i * 0.2 + np.random.randn() * 1 for i in range(n)],
-            "inventory": [200 + i * 0.1 + np.random.randn() * 3 for i in range(n)],
+            "price": [100 + i * 0.3 + rng.standard_normal() * 2 for i in range(n)],
+            "demand": [50 + i * 0.2 + rng.standard_normal() * 1 for i in range(n)],
+            "inventory": [200 + i * 0.1 + rng.standard_normal() * 3 for i in range(n)],
         }
     )
 

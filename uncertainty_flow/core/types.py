@@ -8,12 +8,9 @@ import polars as pl
 if TYPE_CHECKING:
     pass
 
-# Import from configuration for single source of truth
-from .config import get_config
-
-# Backward compatibility alias - DEFAULT_QUANTILES now comes from config
+# Default quantiles - lazily initialized on first access via get_config()
 # For new code, use get_config().default_quantiles instead
-DEFAULT_QUANTILES = get_config().default_quantiles
+DEFAULT_QUANTILES = (0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95)
 
 
 class CalibrationMethod(str, Enum):

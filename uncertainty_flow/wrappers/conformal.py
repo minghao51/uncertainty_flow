@@ -16,7 +16,7 @@ from ..utils.auto_tuning import (
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, error_invalid_data, error_model_not_fitted
 from ..utils.polars_bridge import (
     materialize_lazyframe,
     to_numpy_series_zero_copy,
@@ -165,10 +165,21 @@ class ConformalRegressor(BaseUncertaintyModel):
         target_str = target if isinstance(target, str) else target[0]
         self._target_col_ = target_str
 
+        if target_str not in data.columns:
+            error_invalid_data(
+                f"Target column '{target_str}' not found in data. "
+                f"Available columns: {list(data.columns)}"
+            )
+
         if self.auto_tune:
             self._auto_tune(data, target_str)
 
         feature_cols = [col for col in data.columns if col != target_str]
+        if not feature_cols:
+            error_invalid_data(
+                f"No feature columns remaining after excluding target '{target_str}'. "
+                f"Data must have at least one feature column."
+            )
         self._feature_cols_ = feature_cols
 
         # Split data

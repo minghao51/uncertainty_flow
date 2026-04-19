@@ -24,7 +24,7 @@ class TestDefaultQuantiles:
 
     def test_default_quantiles_sorted(self):
         """DEFAULT_QUANTILES should be sorted ascending."""
-        assert DEFAULT_QUANTILES == sorted(DEFAULT_QUANTILES)
+        assert list(DEFAULT_QUANTILES) == sorted(DEFAULT_QUANTILES)
 
 
 class TestTypeAliases:

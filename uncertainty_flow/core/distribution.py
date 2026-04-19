@@ -513,13 +513,17 @@ class DistributionPrediction:
         assert self._posterior is not None
         samples = self._posterior
         n_total = samples.shape[0]
+        if n_total % n_chains != 0:
+            error_invalid_data(
+                f"n_chains={n_chains} does not evenly divide n_total={n_total}. "
+                f"R-hat requires n_total to be a multiple of n_chains."
+            )
         chain_len = n_total // n_chains
-        chains = samples[: n_chains * chain_len].reshape(n_chains, chain_len, -1)
+        chains = samples.reshape(n_chains, chain_len, -1)
         chain_means = chains.mean(axis=1)
         b = chain_len * np.var(chain_means, axis=0, ddof=1)
         w = np.mean(np.var(chains, axis=1, ddof=1), axis=0)
 
-        # Check for near-zero within-chain variance
         if np.any(w < 1e-10):
             error_invalid_data(
                 f"Within-chain variance too close to zero for R-hat calculation. "
