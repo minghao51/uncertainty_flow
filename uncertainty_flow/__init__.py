@@ -53,6 +53,15 @@ from .causal import CausalUncertaintyEstimator
 # Counterfactual module (no extra deps)
 from .counterfactual import UncertaintyExplainer
 
+# Decisions module (no extra deps)
+from .decisions import (
+    DecisionResult,
+    DecisionStrategy,
+    InventoryOptimiser,
+    TargetOptimizer,
+    ThresholdAction,
+)
+
 # Decomposition module (no extra deps)
 from .decomposition import EnsembleDecomposition
 
@@ -112,6 +121,12 @@ __all__ = [
     "threshold_penalty",
     # Counterfactual
     "UncertaintyExplainer",
+    # Decisions
+    "DecisionResult",
+    "DecisionStrategy",
+    "InventoryOptimiser",
+    "TargetOptimizer",
+    "ThresholdAction",
 ]
 
 if _viz_available:

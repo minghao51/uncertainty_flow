@@ -1,7 +1,9 @@
 """DistributionPrediction - core output object for all models."""
 
+from __future__ import annotations
+
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 import numpy as np
 import polars as pl
@@ -10,6 +12,7 @@ from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quant
 from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 if TYPE_CHECKING:
+    from ..decisions.base import DecisionResult, DecisionStrategy
     from ..multivariate.copula import BaseCopula
 
 # Constants
@@ -674,3 +677,77 @@ class DistributionPrediction:
             "epistemic": epistemic,
             "total": aleatoric + epistemic,
         }
+
+    def decide(
+        self,
+        strategy: DecisionStrategy | Callable,
+        **kwargs,
+    ) -> DecisionResult:
+        """
+        Derive an optimal action/decision from the predicted distribution.
+
+        Args:
+            strategy: A DecisionStrategy object (e.g., InventoryOptimiser)
+                or a callable cost function for Monte Carlo optimization.
+            **kwargs: Additional arguments passed to the strategy or optimizer.
+
+        Returns:
+            DecisionResult containing the optimal action and metadata.
+
+        Examples
+        --------
+        >>> from uncertainty_flow.decisions import InventoryOptimiser
+        >>> pred = model.predict(X_test)
+        >>> # Newsvendor problem: $10 cost for shortage, $2 for excess
+        >>> decision = pred.decide(InventoryOptimiser(stockout_cost=10, overstock_cost=2))
+        >>> print(decision.optimal_value)
+        """
+        from ..decisions.base import DecisionStrategy
+
+        if isinstance(strategy, DecisionStrategy):
+            return strategy.resolve(self)
+
+        if callable(strategy):
+            return self._decide_monte_carlo(strategy, **kwargs)
+
+        raise ValueError("strategy must be a DecisionStrategy or a callable cost function")
+
+    def _decide_monte_carlo(
+        self,
+        cost_function: Callable,
+        n_samples: int = 1000,
+        random_state: int | None = None,
+    ) -> DecisionResult:
+        """Optimize custom cost function using Monte Carlo samples."""
+        from ..decisions.base import DecisionResult
+
+        samples_df = self.sample(n=n_samples, random_state=random_state)
+        samples_np = samples_df.drop("sample_id").to_numpy()
+        if samples_np.ndim == 2 and samples_np.shape[1] == 1:
+            samples_np = samples_np.ravel()
+        n_rows = self._n_samples
+        n_targets = len(self._targets)
+
+        optimal = np.empty((n_rows, n_targets) if n_targets > 1 else (n_rows,))
+        for row_idx in range(n_rows):
+            y = samples_np[row_idx * n_samples : (row_idx + 1) * n_samples]
+            candidates = y
+            expected_costs = np.empty(len(candidates), dtype=float)
+            for i, d in enumerate(candidates):
+                costs = np.asarray(cost_function(y, d))
+                expected_costs[i] = float(costs) if costs.ndim == 0 else float(costs.mean())
+            optimal[row_idx] = candidates[np.argmin(expected_costs)]
+
+        optimal_val: pl.Series | pl.DataFrame
+        if len(self._targets) == 1:
+            optimal_val = pl.Series("optimal_value", optimal)
+        else:
+            optimal_val = pl.DataFrame(
+                optimal.reshape(-1, len(self._targets)), schema=self._targets
+            )
+
+        return DecisionResult(
+            optimal_value=optimal_val,
+            strategy="Monte Carlo Optimization (Custom Cost)",
+            metadata={"n_samples": n_samples},
+        )
