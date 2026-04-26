@@ -99,19 +99,26 @@ class BaseUncertaintyModel(ABC):
         self._metadata = save_model_archive(self, path, include_metadata=include_metadata)
 
     @classmethod
-    def load(cls, path: str | Path) -> "BaseUncertaintyModel":
+    def load(
+        cls,
+        path: str | Path,
+        *,
+        expected_archive_sha256: str | None = None,
+    ) -> "BaseUncertaintyModel":
         """
         Load a model from a .uf archive.
 
         Args:
             path: Archive path produced by save().
+            expected_archive_sha256: Optional SHA-256 hex digest expected for the archive.
+                When provided, load() fails if the on-disk archive digest does not match.
 
         Returns:
             Loaded model instance.
         """
         from ._persistence import _class_path, load_model_archive
 
-        model, _ = load_model_archive(path)
+        model, _ = load_model_archive(path, expected_archive_sha256=expected_archive_sha256)
         if cls is not BaseUncertaintyModel and not isinstance(model, cls):
             raise TypeError(
                 f"Loaded archive contains {_class_path(model)}, "
