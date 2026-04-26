@@ -82,11 +82,11 @@ def list_datasets_cmd(domain: str | None) -> None:
     ),
 )
 @click.option(
-    "--n-samples",
-    "-n",
+    "--samples",
+    "-s",
     type=int,
-    default=1000,
-    help="Number of samples to use from dataset (default: 1000)",
+    default=100,
+    help="Number of samples to use from dataset (default: 100)",
 )
 @click.option(
     "--horizon",
@@ -146,10 +146,21 @@ def list_datasets_cmd(domain: str | None) -> None:
     is_flag=True,
     help="Only output CSV, skip JSON",
 )
+@click.option(
+    "--allow-partial",
+    is_flag=True,
+    help="Continue running other models when a model fails and return partial results.",
+)
+@click.option(
+    "--test-size",
+    type=float,
+    default=0.2,
+    help="Fraction of data to hold out for testing (default: 0.2)",
+)
 def benchmark(
     dataset: str,
     model: str,
-    n_samples: int,
+    samples: int,
     horizon: int,
     n_estimators: int,
     target: str | None,
@@ -159,6 +170,8 @@ def benchmark(
     output: str | None,
     json_only: bool,
     csv_only: bool,
+    allow_partial: bool,
+    test_size: float,
 ) -> None:
     """Run benchmark on a dataset with optional auto-tuning.
 
@@ -186,13 +199,14 @@ def benchmark(
     """
     config = BenchmarkConfig(
         dataset_name=dataset,
-        n_samples=n_samples,
+        n_samples=samples,
         horizon=horizon,
         n_estimators=n_estimators,
         target_column=target,
         auto_tune=auto_tune,
         target_coverage=target_coverage,
         tune_samples=tune_samples,
+        test_size=test_size,
     )
 
     if model == "all":
@@ -211,7 +225,7 @@ def benchmark(
     click.echo(f"\n{'=' * 60}")
     click.echo(f"Benchmark: {dataset}")
     click.echo(f"{'=' * 60}")
-    click.echo(f"  Samples: {n_samples}")
+    click.echo(f"  Samples: {samples}")
     click.echo(f"  Horizon: {horizon}")
     click.echo(f"  Estimators: {n_estimators}")
     if target:
@@ -231,7 +245,7 @@ def benchmark(
         click.echo(f"  Target: {runner.target}")
         click.echo()
 
-        result = runner.run_all(model_names)
+        result = runner.run_all(model_names, allow_partial=allow_partial)
 
         click.echo(f"\n{'=' * 60}")
         click.echo("Results")
@@ -246,6 +260,12 @@ def benchmark(
             click.echo(f"    Winkler @ 90%: {r.winkler_90:.4f}")
             click.echo(f"    Winkler @ 80%: {r.winkler_80:.4f}")
             click.echo(f"    Train time: {r.train_time_sec}s")
+            click.echo()
+
+        if result.errors:
+            click.echo("Model failures:")
+            for error in result.errors:
+                click.echo(f"  - {error['model']}: {error['error']}")
             click.echo()
 
         if output:

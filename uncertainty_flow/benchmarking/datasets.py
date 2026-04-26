@@ -439,17 +439,25 @@ def load_dataset(
             f"Use 'uncertainty-flow list-datasets' to see available datasets."
         )
 
+    hf_kwargs: dict[str, str] = {}
+    if cache_dir is not None:
+        hf_kwargs["cache_dir"] = cache_dir
+    if force_download:
+        hf_kwargs["download_mode"] = "force_redownload"
+
     try:
         if ds_info.subset:
             hf_ds = hf_load_dataset(
                 ds_info.hf_path,
                 ds_info.subset,
                 split=split,
+                **hf_kwargs,
             )
         else:
             hf_ds = hf_load_dataset(
                 ds_info.hf_path,
                 split=split,
+                **hf_kwargs,
             )
 
         arrow_table = hf_ds.data.table  # type: ignore[attr-defined]
@@ -487,9 +495,15 @@ def download_dataset(name: str, cache_dir: str | None = None) -> Path:
     Returns:
         Path to downloaded dataset
     """
-    df, ds_info = load_dataset(name, n_samples=None, force_download=True)
-    local_path = DATASETS_DIR / f"{ds_info.name}.parquet"
-    DATASETS_DIR.mkdir(exist_ok=True)
+    df, ds_info = load_dataset(
+        name,
+        n_samples=None,
+        force_download=True,
+        cache_dir=cache_dir,
+    )
+    output_dir = Path(cache_dir) if cache_dir is not None else DATASETS_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    local_path = output_dir / f"{ds_info.name}.parquet"
     df.write_parquet(local_path)
     return local_path
 

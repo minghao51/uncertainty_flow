@@ -77,6 +77,7 @@ class BenchmarkConfig:
     target_coverage: float = 0.9
     tune_samples: int = 500
     tune_timeout: int = 120
+    test_size: float = 0.2
 
     def __post_init__(self):
         if self.confidence_levels is None:
@@ -112,6 +113,7 @@ class BenchmarkResult:
     n_samples: int
     horizon: int
     models: list[ModelResult]
+    errors: list[dict[str, str]] = field(default_factory=list)
 
 
 MODEL_REGISTRY: dict[str, type] = {}
@@ -241,6 +243,7 @@ class BenchmarkRunner:
         self.df: pl.DataFrame | None = None
         self.ds_info: DatasetInfo | None = None
         self.results: list[ModelResult] = []
+        self.errors: list[dict[str, str]] = []
         self._run_result: BenchmarkResult | None = None
         self._tuning_cache: dict[str, dict[str, Any]] = {}
 
@@ -303,17 +306,23 @@ class BenchmarkRunner:
         model_cls = MODEL_REGISTRY[model_name]
         benchmark = model_cls(self.config, tuned_params)
 
+        # Temporal train/test split to prevent data leakage
+        n_total = len(self.df)
+        n_test = int(n_total * self.config.test_size)
+        train_df = self.df.head(n_total - n_test)
+        test_df = self.df.tail(n_test)
+
         print(f"    Fitting {model_name}...")
-        benchmark.fit(self.df, self.target)
+        benchmark.fit(train_df, self.target)
 
         print("    Predicting...")
-        pred = benchmark.predict(self.df)
+        pred = benchmark.predict(test_df)
 
         interval_90 = pred.interval(0.9)
         interval_80 = pred.interval(0.8)
 
         n_pred = len(interval_90)
-        y_true = to_numpy_series_zero_copy(self.df[self.target])[-n_pred:]
+        y_true = to_numpy_series_zero_copy(test_df[self.target])[-n_pred:]
         lower_90 = to_numpy_series_zero_copy(
             interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
         )
@@ -355,7 +364,11 @@ class BenchmarkRunner:
             was_tuned=was_tuned,
         )
 
-    def run_all(self, model_names: list[str] | None = None) -> BenchmarkResult:
+    def run_all(
+        self,
+        model_names: list[str] | None = None,
+        allow_partial: bool = False,
+    ) -> BenchmarkResult:
         """Run all benchmarks for configured dataset.
 
         Args:
@@ -368,13 +381,25 @@ class BenchmarkRunner:
             model_names = list(MODEL_REGISTRY.keys())
 
         self.results = []
+        self.errors = []
 
         for model_name in model_names:
             try:
                 result = self.run_model(model_name)
                 self.results.append(result)
             except Exception as e:
-                print(f"    ERROR running {model_name}: {e}")
+                error_payload = {"model": model_name, "error": str(e)}
+                self.errors.append(error_payload)
+                if not allow_partial:
+                    raise RuntimeError(f"Benchmark failed for model '{model_name}': {e}") from e
+
+        if not self.results:
+            if self.errors:
+                raise RuntimeError(
+                    "Benchmark produced no successful model results. "
+                    f"Errors: {self.errors}"
+                )
+            raise RuntimeError("Benchmark produced no model results.")
 
         self._run_result = BenchmarkResult(
             run_id=str(uuid.uuid4())[:8],
@@ -384,6 +409,7 @@ class BenchmarkRunner:
             n_samples=self.config.n_samples,
             horizon=self.config.horizon,
             models=self.results,
+            errors=self.errors,
         )
 
         return self._run_result
@@ -393,6 +419,25 @@ class BenchmarkRunner:
         if self._run_result is None:
             return {"metadata": {}, "results": []}
         return {
+            # Backward-compatible aliases:
+            "dataset": self._run_result.dataset_name,
+            "models": [
+                {
+                    "model": r.model_name,
+                    "coverage_90": r.coverage_90,
+                    "coverage_80": r.coverage_80,
+                    "sharpness_90": r.sharpness_90,
+                    "sharpness_80": r.sharpness_80,
+                    "winkler_90": r.winkler_90,
+                    "winkler_80": r.winkler_80,
+                    "pinball_loss": r.pinball_loss,
+                    "train_time_sec": r.train_time_sec,
+                    "n_samples": r.n_samples,
+                    "tuned_params": r.tuned_params,
+                    "was_tuned": r.was_tuned,
+                }
+                for r in self._run_result.models
+            ],
             "metadata": {
                 "run_id": self._run_result.run_id,
                 "timestamp": self._run_result.timestamp,
@@ -400,9 +445,11 @@ class BenchmarkRunner:
                 "domain": self._run_result.dataset_domain,
                 "n_samples": self._run_result.n_samples,
                 "horizon": self._run_result.horizon,
+                "test_size": self.config.test_size,
                 "auto_tune": self.config.auto_tune,
                 "target_coverage": self.config.target_coverage,
             },
+            "errors": self._run_result.errors,
             "results": [
                 {
                     "model": r.model_name,
