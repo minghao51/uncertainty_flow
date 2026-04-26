@@ -98,6 +98,15 @@ loaded = QuantileForestForecaster.load("models/example.uf")
 pred = loaded.predict(ts_test)
 ```
 
+> **Security Warning:** `.uf` archives use Python `pickle` for serialization. Loading untrusted archives can execute arbitrary code. Always verify archive integrity with `expected_archive_sha256` and only load files from trusted sources.
+
+```python
+loaded = QuantileForestForecaster.load(
+    "models/example.uf",
+    expected_archive_sha256="...64-char-sha256-hex...",
+)
+```
+
 ### Calibration Report
 
 ```python

@@ -64,3 +64,4 @@ wheels/
 .claude
 .mypy_cache/
 .planning/
+results/

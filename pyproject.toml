@@ -20,6 +20,9 @@ dev = [
     "pytest>=9.0.2",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
+    "mypy>=1.10.0",
+    "bandit>=1.7.9",
+    "pip-audit>=2.7.0",
     "matplotlib>=3.7.0",
 ]
 torch = [
@@ -59,14 +62,14 @@ ignore = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-python_files = ["test_*.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
+addopts = ["--strict-markers", "-ra", "--durations=10", "--import-mode=importlib", "--cov=uncertainty_flow", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=85"]
 markers = [
     "unit: fast, focused tests for a single module or behavior",
     "integration: tests covering multi-module workflows or heavier model interactions",
     "slow: expensive tests that are useful to exclude during quick local iteration",
     "optional: tests that rely on optional dependency stacks or non-core integrations",
+    "network: tests requiring internet access",
+    "smoke: critical path tests for CI gating",
 ]
 filterwarnings = [
     "ignore:Stochastic Optimizer",
@@ -78,9 +81,54 @@ filterwarnings = [
     "ignore::uncertainty_flow.utils.exceptions.UncertaintyFlowWarning",
 ]
 
+[tool.coverage.run]
+branch = true
+source = ["uncertainty_flow"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+    "uncertainty_flow/viz/dashboard.py",
+    "uncertainty_flow/models/deep_quantile_torch.py",
+    "uncertainty_flow/bayesian/numpyro_model.py",
+    "uncertainty_flow/calibration/shap_values.py",
+    "uncertainty_flow/models/transformer_forecaster.py",
+]
+
+[tool.coverage.report]
+fail_under = 85.0
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+    "class .*\\bProtocol\\b:",
+    "@abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
 [tool.mypy]
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+ignore_missing_imports = true
+disable_error_code = [
+    "no-any-return",
+    "misc",
+    "override",
+    "union-attr",
+    "attr-defined",
+]
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]
+skips = ["B101", "B110", "B403"]
+
+[dependency-groups]
+dev = [
+    "matplotlib>=3.10.8",
+]

@@ -1,0 +1,33 @@
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check
+        language: system
+        types: [python]
+        files: ^(uncertainty_flow|tests)/
+        pass_filenames: false
+
+      - id: mypy-check
+        name: mypy check
+        entry: uv run mypy uncertainty_flow/
+        language: system
+        types: [python]
+        files: ^uncertainty_flow/
+        pass_filenames: false
+
+      - id: bandit-scan
+        name: bandit security scan
+        entry: uv run bandit -r uncertainty_flow/
+        language: system
+        types: [python]
+        files: ^uncertainty_flow/
+        pass_filenames: false
+
+      - id: pytest-fast
+        name: pytest (fast)
+        entry: uv run pytest tests/ -m "not slow and not optional" --ignore=tests/models/test_deep_quantile_torch.py -q
+        language: system
+        types: [python]
+        pass_filenames: false
