@@ -98,9 +98,25 @@ class ConformalForecaster(BaseUncertaintyModel):
         self._copula: BaseCopula | None = None
         self._models_: dict[str, BaseEstimator] = {}
         self._quantiles_: dict[str, np.ndarray] = {}
+        self._quantile_levels_: np.ndarray | None = None
         self._feature_cols_: dict[str, list[str]] = {}
         self._uncertainty_drivers_: pl.DataFrame | None = None
         self.tuned_params_: dict[str, float | int] = {}
+
+    def _resolve_quantile_levels(self) -> np.ndarray:
+        """Return fit-time quantile levels, with backward-compatible fallback."""
+        if self._quantile_levels_ is not None:
+            return self._quantile_levels_
+
+        fallback_levels = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
+        if self._quantiles_:
+            first_target = next(iter(self._quantiles_))
+            if len(self._quantiles_[first_target]) != len(fallback_levels):
+                error_invalid_data(
+                    "Current config quantile count does not match fitted residual quantiles. "
+                    "Refit the model after setting the desired quantile configuration."
+                )
+        return fallback_levels
 
     def _auto_tune(self, data: pl.DataFrame) -> None:
         """Tune supported params using a temporal validation split."""
@@ -193,6 +209,7 @@ class ConformalForecaster(BaseUncertaintyModel):
 
         # Create lag features for each target
         data_with_lags = data
+        self._quantile_levels_ = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
         for target in self.targets:
             data_with_lags = self._create_lag_features(data_with_lags, target)
 
@@ -220,7 +237,9 @@ class ConformalForecaster(BaseUncertaintyModel):
 
             calib_preds = model.predict(x_calib)
             residuals = y_calib - calib_preds
-            self._quantiles_[target] = np.quantile(residuals, DEFAULT_QUANTILES)
+            if self._quantile_levels_ is None:
+                raise RuntimeError("Internal error: _quantile_levels_ not set before calibration")
+            self._quantiles_[target] = np.quantile(residuals, self._quantile_levels_)
 
             residual_matrix.append(residuals)
 
@@ -275,13 +294,20 @@ class ConformalForecaster(BaseUncertaintyModel):
             data_with_lags = self._create_lag_features(data_with_lags, target)
 
         # Get predictions for each target
+        quantile_levels = self._resolve_quantile_levels()
         all_quantiles = []
         for target in self.targets:
             x = to_numpy(data_with_lags, self._feature_cols_[target])
             point_preds = self._models_[target].predict(x)
 
             # Add conformal quantiles
-            quantile_matrix = np.zeros((len(point_preds), len(DEFAULT_QUANTILES)))
+            target_quantiles = self._quantiles_[target]
+            if len(target_quantiles) != len(quantile_levels):
+                error_invalid_data(
+                    "Stored quantiles do not match configured quantile levels. "
+                    "Refit the model to regenerate compatible quantiles."
+                )
+            quantile_matrix = np.zeros((len(point_preds), len(quantile_levels)))
             for i, q in enumerate(self._quantiles_[target]):
                 quantile_matrix[:, i] = point_preds + q
 
@@ -296,13 +322,13 @@ class ConformalForecaster(BaseUncertaintyModel):
                 [
                     all_quantiles[t][:, i]
                     for t in range(len(self.targets))
-                    for i in range(len(DEFAULT_QUANTILES))
+                    for i in range(len(quantile_levels))
                 ]
             )
 
         return DistributionPrediction(
             quantile_matrix=final_matrix,
-            quantile_levels=DEFAULT_QUANTILES,
+            quantile_levels=quantile_levels.tolist(),
             target_names=self.targets,
             copula=self._copula,
         )

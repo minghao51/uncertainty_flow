@@ -48,7 +48,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
             random_state: Random seed for reproducibility.
         """
         self.hidden_layer_sizes = hidden_layer_sizes
-        self.quantile_levels = quantile_levels or DEFAULT_QUANTILES
+        self.quantile_levels: list[float] = quantile_levels or list(DEFAULT_QUANTILES)
         self.random_state = self._validate_random_state(random_state)
 
         # Fitted attributes
@@ -200,7 +200,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
             data = materialize_lazyframe(data)
             if self._feature_cols_ is None:
                 error_invalid_data("Feature columns not set. Call fit() first.")
-            x = to_numpy(data, self._feature_cols_)  # type: ignore[arg-type]
+            x = to_numpy(data, self._feature_cols_)
 
         return x
 

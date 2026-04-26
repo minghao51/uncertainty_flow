@@ -87,8 +87,22 @@ class ConformalRegressor(BaseUncertaintyModel):
         self._feature_cols_: list[str] = []
         self._target_col_: str = ""
         self._quantiles_: np.ndarray | None = None
+        self._quantile_levels_: np.ndarray | None = None
         self._uncertainty_drivers_: pl.DataFrame | None = None
         self.tuned_params_: dict[str, float | int] = {}
+
+    def _resolve_quantile_levels(self) -> np.ndarray:
+        """Return quantile levels used to compute stored residual quantiles."""
+        if self._quantile_levels_ is not None:
+            return self._quantile_levels_
+
+        fallback_levels = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
+        if self._quantiles_ is not None and len(fallback_levels) != len(self._quantiles_):
+            raise ConfigurationError(
+                "Current config quantile count does not match fitted residual quantiles. "
+                "Refit the model after setting the desired quantile configuration."
+            )
+        return fallback_levels
 
     def _auto_tune(
         self,
@@ -200,7 +214,8 @@ class ConformalRegressor(BaseUncertaintyModel):
         residuals = y_calib - calib_preds
 
         # Store quantiles for prediction
-        self._quantiles_ = np.quantile(residuals, DEFAULT_QUANTILES)
+        self._quantile_levels_ = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
+        self._quantiles_ = np.quantile(residuals, self._quantile_levels_)
 
         # Compute uncertainty drivers using calibration features
         calib_features = calib.select(feature_cols)
@@ -232,13 +247,14 @@ class ConformalRegressor(BaseUncertaintyModel):
         # Add conformal quantiles
         if self._quantiles_ is None:
             error_model_not_fitted("ConformalRegressor")
-        quantile_matrix = np.zeros((len(point_preds), len(DEFAULT_QUANTILES)))
+        quantile_levels = self._resolve_quantile_levels()
+        quantile_matrix = np.zeros((len(point_preds), len(quantile_levels)))
         for i, q in enumerate(self._quantiles_):
             quantile_matrix[:, i] = point_preds + q
 
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,
-            quantile_levels=DEFAULT_QUANTILES,
+            quantile_levels=quantile_levels.tolist(),
             target_names=[self._target_col_],
         )
 

@@ -96,9 +96,26 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         self._copula: BaseCopula | None = None
         self._models: dict[str, RandomForestRegressor] = {}
         self._leaf_distributions: dict[str, list] = {}
+        self._quantile_levels_: np.ndarray | None = None
         self._feature_cols_: dict[str, list[str]] = {}
         self._uncertainty_drivers_: pl.DataFrame | None = None
         self.tuned_params_: dict[str, float | int] = {}
+
+    def _resolve_quantile_levels(self) -> np.ndarray:
+        """Return fit-time quantile levels, with backward-compatible fallback."""
+        if self._quantile_levels_ is not None:
+            return self._quantile_levels_
+
+        fallback_levels = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
+        if self._leaf_distributions:
+            first_target = next(iter(self._leaf_distributions))
+            first_tree = self._leaf_distributions[first_target][0]
+            if first_tree["quantiles"].shape[1] != len(fallback_levels):
+                error_invalid_data(
+                    "Current config quantile count does not match fitted leaf distributions. "
+                    "Refit the model after setting the desired quantile configuration."
+                )
+        return fallback_levels
 
     def _auto_tune(self, data: pl.DataFrame) -> None:
         """Tune supported params using a temporal validation split."""
@@ -161,6 +178,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         """
         # Materialize if needed
         data = materialize_lazyframe(data)
+        self._quantile_levels_ = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
 
         if self.auto_tune:
             self._auto_tune(data)
@@ -194,7 +212,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             self._models[target] = rf
 
             self._leaf_distributions[target] = self._extract_leaf_distributions(
-                rf, x_train, y_train
+                rf, x_train, y_train, self._quantile_levels_
             )
             residual_matrix.append(y_calib - rf.predict(x_calib))
 
@@ -223,6 +241,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         rf: RandomForestRegressor,
         x: np.ndarray,
         y: np.ndarray,
+        quantile_levels: np.ndarray,
     ) -> list[dict[str, np.ndarray]]:
         """
         Extract training values that fall into each leaf.
@@ -241,10 +260,10 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             leaf_ids = tree.apply(x)
             unique_leaves, inverse = np.unique(leaf_ids, return_inverse=True)
 
-            leaf_quantiles = np.zeros((len(unique_leaves), len(DEFAULT_QUANTILES)))
+            leaf_quantiles = np.zeros((len(unique_leaves), len(quantile_levels)))
             for leaf_idx in range(len(unique_leaves)):
                 leaf_values = y[inverse == leaf_idx]
-                leaf_quantiles[leaf_idx] = np.quantile(leaf_values, DEFAULT_QUANTILES)
+                leaf_quantiles[leaf_idx] = np.quantile(leaf_values, quantile_levels)
 
             distributions.append(
                 {
@@ -260,7 +279,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         rf: RandomForestRegressor,
         leaf_dists: list,
         x: np.ndarray,
-        quantile_levels: list[float],
+        quantile_levels: list[float] | None = None,
     ) -> np.ndarray:
         """
         Predict quantiles from leaf distributions.
@@ -269,28 +288,20 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             rf: Fitted random forest
             leaf_dists: Leaf distributions from training
             X: Feature matrix
-            quantile_levels: Quantile levels to compute
+            quantile_levels: Quantile levels to compute (unused, kept for API compat)
 
         Returns:
             Quantile predictions shape (n_samples, n_quantiles)
         """
-        predictions = np.zeros((len(x), len(quantile_levels)))
-        quantile_array = np.asarray(quantile_levels, dtype=float)
-        default_quantiles = np.asarray(DEFAULT_QUANTILES, dtype=float)
+        del quantile_levels
+        quantile_count = leaf_dists[0]["quantiles"].shape[1]
+        predictions = np.zeros((len(x), quantile_count))
         all_leaf_ids = rf.apply(x)
-
-        if np.array_equal(quantile_array, default_quantiles):
-            quantile_indices = np.arange(len(DEFAULT_QUANTILES))
-        else:
-            quantile_indices = np.array(
-                [DEFAULT_QUANTILES.index(float(level)) for level in quantile_levels],
-                dtype=int,
-            )
 
         for tree_idx, tree_leaf_ids in enumerate(all_leaf_ids.T):
             tree_dist = leaf_dists[tree_idx]
             positions = np.searchsorted(tree_dist["leaf_ids"], tree_leaf_ids)
-            predictions += tree_dist["quantiles"][positions][:, quantile_indices]
+            predictions += tree_dist["quantiles"][positions]
 
         predictions /= len(leaf_dists)
 
@@ -313,13 +324,19 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         data = materialize_lazyframe(data)
 
         all_quantiles = []
+        quantile_levels = self._resolve_quantile_levels()
 
         for target in self.targets:
             x = to_numpy(data, self._feature_cols_[target])
             rf = self._models[target]
             leaf_dists = self._leaf_distributions[target]
 
-            quantile_matrix = self._predict_quantiles(rf, leaf_dists, x, DEFAULT_QUANTILES)
+            quantile_matrix = self._predict_quantiles(rf, leaf_dists, x)
+            if quantile_matrix.shape[1] != len(quantile_levels):
+                error_invalid_data(
+                    "Stored leaf distribution quantiles do not match configured quantile levels. "
+                    "Refit the model to regenerate compatible quantiles."
+                )
 
             all_quantiles.append(quantile_matrix)
 
@@ -330,13 +347,13 @@ class QuantileForestForecaster(BaseUncertaintyModel):
                 [
                     all_quantiles[t][:, i]
                     for t in range(len(self.targets))
-                    for i in range(len(DEFAULT_QUANTILES))
+                    for i in range(len(quantile_levels))
                 ]
             )
 
         return DistributionPrediction(
             quantile_matrix=final_matrix,
-            quantile_levels=DEFAULT_QUANTILES,
+            quantile_levels=quantile_levels.tolist(),
             target_names=self.targets,
             copula=self._copula,
         )
