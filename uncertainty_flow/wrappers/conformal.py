@@ -230,7 +230,8 @@ class ConformalRegressor(BaseUncertaintyModel):
         point_preds = self.base_model.predict(x)
 
         # Add conformal quantiles
-        assert self._quantiles_ is not None
+        if self._quantiles_ is None:
+            error_model_not_fitted("ConformalRegressor")
         quantile_matrix = np.zeros((len(point_preds), len(DEFAULT_QUANTILES)))
         for i, q in enumerate(self._quantiles_):
             quantile_matrix[:, i] = point_preds + q

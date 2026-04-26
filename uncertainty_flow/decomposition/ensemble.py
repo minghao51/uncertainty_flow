@@ -129,7 +129,8 @@ class EnsembleDecomposition:
     def _predict_ensemble(self, data: pl.DataFrame) -> tuple[np.ndarray, np.ndarray]:
         """Return stacked point predictions and interval widths."""
         self._fit_ensemble()
-        assert self._ensemble_models is not None
+        if self._ensemble_models is None:
+            raise RuntimeError("Internal error: ensemble models not fitted")
 
         point_predictions = []
         interval_widths = []

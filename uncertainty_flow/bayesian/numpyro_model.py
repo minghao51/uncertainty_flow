@@ -153,7 +153,8 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         if not self._fitted:
             error_model_not_fitted("BayesianQuantileRegressor")
 
-        assert self._posterior_samples_ is not None
+        if self._posterior_samples_ is None:
+            raise RuntimeError("Internal error: posterior samples not available after fitting")
 
         # Materialize LazyFrame
         data = materialize_lazyframe(data)

@@ -177,7 +177,8 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
                 error_invalid_data("If data is Polars, target must be string column name")
             target_str = str(target)  # type: ignore[arg-type]  # target is str here
             self._feature_cols_ = [col for col in data.columns if col != target_str]
-            assert self._feature_cols_ is not None
+            if self._feature_cols_ is None:
+                error_invalid_data("Feature columns could not be determined from data")
             x = to_numpy(data, self._feature_cols_)
             y = to_numpy(data, [target_str]).flatten()
 

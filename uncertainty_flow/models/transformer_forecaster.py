@@ -177,7 +177,8 @@ class TransformerForecaster(BaseUncertaintyModel):
         pandas_df = data.select([self.target]).to_pandas()
         pandas_df.columns = ["target"]
 
-        assert self._pipeline is not None
+        if self._pipeline is None:
+            error_model_not_fitted("TransformerForecaster")
         context_length = min(len(data), self._pipeline.model.context_length)
         if len(data) > context_length:
             pandas_df = pandas_df.tail(context_length)
@@ -216,7 +217,8 @@ class TransformerForecaster(BaseUncertaintyModel):
         pandas_df = data.select([self.target]).to_pandas()
         pandas_df.columns = ["target"]
 
-        assert self._pipeline is not None
+        if self._pipeline is None:
+            error_model_not_fitted("TransformerForecaster")
         context_length = min(len(data), self._pipeline.model.context_length)
         if len(data) > context_length:
             pandas_df = pandas_df.tail(context_length)
@@ -240,7 +242,8 @@ class TransformerForecaster(BaseUncertaintyModel):
             else:
                 quantile_matrix[0, i] = np.median(values)
 
-        assert self._quantiles_ is not None
+        if self._quantiles_ is None:
+            error_model_not_fitted("TransformerForecaster")
         for i, q in enumerate(self._quantiles_):
             quantile_matrix[0, i] = quantile_matrix[0, i] + q
 

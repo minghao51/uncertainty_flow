@@ -485,7 +485,6 @@ class DistributionPrediction:
                 "posterior_samples() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-        assert self._posterior is not None
         return self._posterior
 
     def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
@@ -495,8 +494,6 @@ class DistributionPrediction:
                 "credible_interval() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-        assert self._posterior is not None
-        if not (0 < confidence < 1):
             error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
         alpha = (1 - confidence) / 2
         lower = np.quantile(self._posterior, alpha, axis=0)
@@ -510,9 +507,7 @@ class DistributionPrediction:
                 "rhat() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-        assert self._posterior is not None
         samples = self._posterior
-        n_total = samples.shape[0]
         if n_total % n_chains != 0:
             error_invalid_data(
                 f"n_chains={n_chains} does not evenly divide n_total={n_total}. "
@@ -541,10 +536,8 @@ class DistributionPrediction:
                 "posterior_summary() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-        assert self._posterior is not None
         return pl.DataFrame(
             {
-                "param": [f"param_{i}" for i in range(self._posterior.shape[1])],
                 "mean": np.mean(self._posterior, axis=0),
                 "std": np.std(self._posterior, axis=0),
                 "q025": np.quantile(self._posterior, 0.025, axis=0),
@@ -562,11 +555,9 @@ class DistributionPrediction:
                 "group_uncertainty() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
-        assert self._group_predictions is not None
         result = {}
         for name, pred in self._group_predictions.items():
             interval = pred.interval(0.9)
-            width = (interval["upper"] - interval["lower"]).mean()
             result[name] = float(width)  # type: ignore[arg-type]
         return result
 
@@ -577,23 +568,19 @@ class DistributionPrediction:
                 "group_intervals() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
-        assert self._group_predictions is not None
         return {name: pred.interval(confidence) for name, pred in self._group_predictions.items()}
 
     def cross_group_correlation(self) -> np.ndarray:
         """Return cross-group correlation matrix based on group median predictions."""
-        if self._group_predictions is None:
             error_invalid_data(
                 "cross_group_correlation() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
-        assert self._group_predictions is not None
         medians = np.column_stack(
             [
                 pred._quantiles[:, pred._find_nearest_quantile_index(0.5)]
                 for pred in self._group_predictions.values()
             ]
-        )
         return np.corrcoef(medians.T)  # type: ignore
 
     # --- Causal treatment methods ---
@@ -605,17 +592,14 @@ class DistributionPrediction:
                 "treatment_effect() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
-        assert self._treatment_info is not None
         return self._treatment_info["cate"]  # type: ignore
 
     def average_treatment_effect(self) -> dict:
         """Return ATE with confidence interval."""
         if self._treatment_info is None:
             error_invalid_data(
-                "average_treatment_effect() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
-        assert self._treatment_info is not None
         return {
             "ate": self._treatment_info["ate"],
             "ci": self._treatment_info["ate_ci"],
@@ -623,12 +607,10 @@ class DistributionPrediction:
 
     def heterogeneity_score(self) -> float:
         """Return CATE variance as heterogeneity measure."""
-        if self._treatment_info is None:
             error_invalid_data(
                 "heterogeneity_score() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
-        assert self._treatment_info is not None
         return float(np.var(self._treatment_info["cate"]))
 
     def uncertainty_decomposition(
@@ -637,7 +619,6 @@ class DistributionPrediction:
     ) -> dict[str, float]:
         """
         Return a lightweight heuristic uncertainty decomposition.
-
         Aleatoric uncertainty (data noise): Irreducible uncertainty inherent in the data.
         Epistemic uncertainty (model uncertainty): Reducible uncertainty due to limited
             data/knowledge.

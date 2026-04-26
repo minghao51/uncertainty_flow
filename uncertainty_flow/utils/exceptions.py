@@ -100,7 +100,9 @@ class QuantileError(ConfigurationError):
 # ============================================================================
 
 
-def error_model_not_fitted(model_name: str = "Model") -> None:
+from typing import NoReturn
+
+def error_model_not_fitted(model_name: str = "Model") -> NoReturn:
     """Raise ModelNotFittedError.
 
     Args:
@@ -112,7 +114,7 @@ def error_model_not_fitted(model_name: str = "Model") -> None:
     raise ModelNotFittedError(model_name)
 
 
-def error_invalid_data(reason: str) -> None:
+def error_invalid_data(reason: str) -> NoReturn:
     """Raise InvalidDataError.
 
     Args:
@@ -124,7 +126,7 @@ def error_invalid_data(reason: str) -> None:
     raise InvalidDataError(reason)
 
 
-def error_calibration_too_small(n_samples: int, min_size: int = 20) -> None:
+def error_calibration_too_small(n_samples: int, min_size: int = 20) -> NoReturn:
     """Raise CalibrationSizeError.
 
     Args:
@@ -137,7 +139,7 @@ def error_calibration_too_small(n_samples: int, min_size: int = 20) -> None:
     raise CalibrationSizeError(n_samples, min_size)
 
 
-def error_quantile_invalid(reason: str) -> None:
+def error_quantile_invalid(reason: str) -> NoReturn:
     """Raise QuantileError.
 
     Args:

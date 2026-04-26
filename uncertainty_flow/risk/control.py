@@ -255,7 +255,6 @@ class ConformalRiskControl:
                 "ConformalRiskControl must be fitted before accessing risk_threshold. "
                 "Call fit() first."
             )
-        assert self._risk_threshold is not None
         return self._risk_threshold
 
     def summary(self) -> dict[str, object]:

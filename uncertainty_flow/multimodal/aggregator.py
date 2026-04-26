@@ -125,7 +125,8 @@ class CrossModalAggregator(BaseUncertaintyModel):
         if not self._fitted:
             error_model_not_fitted("CrossModalAggregator")
 
-        assert self._quantile_levels is not None
+        if self._quantile_levels is None:
+            raise RuntimeError("Internal error: quantile levels not set during fitting")
 
         data = materialize_lazyframe(data)
 
