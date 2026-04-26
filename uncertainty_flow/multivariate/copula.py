@@ -94,6 +94,36 @@ def _resolve_rng(
     return np.random.default_rng(random_state)
 
 
+def _gumbel_conditional_cdf(v: np.ndarray, u: np.ndarray, theta: float) -> np.ndarray:
+    """Compute C_{2|1}(v|u) for Gumbel copula."""
+    eps = 1e-300
+    lu = -np.log(np.clip(u, eps, 1.0))
+    lv = -np.log(np.clip(v, eps, 1.0))
+    a = lu**theta + lv**theta
+    return (
+        np.exp(-(a ** (1 / theta)))
+        * a ** ((1 - theta) / theta)
+        * lu ** (theta - 1)
+        / np.clip(u, eps, 1.0)
+    )
+
+
+def _solve_gumbel_conditional(
+    u: np.ndarray, w: np.ndarray, theta: float, max_iter: int = 50, tol: float = 1e-8
+) -> np.ndarray:
+    """Solve C_{2|1}(v|u) = w for v using vectorized bisection."""
+    lo = np.full_like(u, 1e-10)
+    hi = np.full_like(u, 1.0 - 1e-10)
+    for _ in range(max_iter):
+        mid = (lo + hi) / 2
+        cdf_val = _gumbel_conditional_cdf(mid, u, theta)
+        lo = np.where(cdf_val < w, mid, lo)
+        hi = np.where(cdf_val >= w, mid, hi)
+        if np.max(hi - lo) < tol:
+            break
+    return (lo + hi) / 2
+
+
 def _inverse_from_marginals(
     marginals: np.ndarray,
     uniform_samples: np.ndarray,
@@ -171,16 +201,51 @@ class GaussianCopula(BaseCopula):
         if residuals.ndim != 2:
             error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
 
+        n_samples, n_targets = residuals.shape
+
+        # Check for constant (zero-variance) columns before computing correlation
+        constant_cols = []
+        for t in range(n_targets):
+            if np.all(residuals[:, t] == residuals[0, t]):
+                constant_cols.append(t)
+
+        if len(constant_cols) > 0:
+            error_invalid_data(
+                f"Target columns at indices {constant_cols} are constant (zero variance). "
+                "Cannot compute correlation matrix. Check if target values vary across samples."
+            )
+
         self.correlation_matrix_ = np.corrcoef(residuals.T)
 
-        # Check for singular correlation matrix
+        # Condition correlation matrix for numerical stability
+        min_eigval = 1e-6
         try:
             eigenvals = np.linalg.eigvals(self.correlation_matrix_)
-            if np.any(eigenvals < 1e-10):
+            if np.any(np.isnan(eigenvals)):
                 error_invalid_data(
-                    f"Correlation matrix is singular or near-singular. "
-                    f"This may indicate perfectly correlated targets. "
-                    f"Minimum eigenvalue: {np.min(eigenvals):.2e}"
+                    "Correlation matrix contains NaN values. "
+                    "This may indicate zero-variance columns or invalid residuals."
+                )
+            if np.any(eigenvals < min_eigval):
+                deficit = min_eigval - eigenvals[eigenvals < min_eigval].min()
+                conditioning = np.eye(n_targets) * deficit
+                self.correlation_matrix_ = self.correlation_matrix_ + conditioning
+
+                try:
+                    np.linalg.cholesky(self.correlation_matrix_)
+                except np.linalg.LinAlgError:
+                    error_invalid_data(
+                        "Correlation matrix is too ill-conditioned to condition. "
+                        "This may indicate very high correlation between targets."
+                    )
+                eigenvals = np.linalg.eigvals(self.correlation_matrix_)
+
+            if np.any(eigenvals < min_eigval):
+                error_invalid_data(
+                    f"Correlation matrix is too ill-conditioned. "
+                    f"Minimum eigenvalue: {np.min(eigenvals):.2e}, "
+                    f"Threshold: {min_eigval:.2e}. "
+                    f"This may indicate very high correlation between targets."
                 )
         except np.linalg.LinAlgError as e:
             error_invalid_data(
@@ -415,8 +480,8 @@ class ClaytonCopula(BaseCopula):
         s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
         s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
-        u = s1 ** (1 / theta)
-        v = s2 ** (1 / theta) * (1 - (1 - s1) ** (1 / theta)) ** (-1 / theta)
+        u = s1
+        v = (s1 ** (-theta) * (s2 ** (-theta / (theta + 1)) - 1) + 1) ** (-1 / theta)
 
         uniform_samples = np.stack([u, v], axis=-1)
         return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
@@ -559,11 +624,8 @@ class GumbelCopula(BaseCopula):
         s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
         s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
-        u = np.exp(-(((-np.log(s1)) ** theta + (-np.log(s2)) ** theta) ** (-1 / theta)))
-        v = np.exp(
-            -(((-np.log(s1)) ** theta + (-np.log(s2)) ** theta) ** (-1 / theta))
-            * (np.log(s2) / np.log(s1))
-        )
+        u = s1
+        v = _solve_gumbel_conditional(s1, s2, theta)
 
         uniform_samples = np.stack([u, v], axis=-1)
         return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
@@ -724,8 +786,9 @@ class FrankCopula(BaseCopula):
         s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
         s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
 
-        u = -np.log(1 - s1 * (1 - np.exp(-theta))) / theta
-        v = -np.log(1 - s2 * (1 - np.exp(-theta))) / theta
+        u = s1
+        denom = np.exp(-theta * u) * (1 - s2) + s2
+        v = -np.log(1 + s2 * (np.exp(-theta) - 1) / denom) / theta
 
         uniform_samples = np.stack([u, v], axis=-1)
         return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
