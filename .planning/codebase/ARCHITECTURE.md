@@ -11,19 +11,25 @@ The uncertainty_flow library follows a **layered architecture** with a clear sep
    - Type system and configuration management
    - Core data structures (DistributionPrediction)
 
-2. **Implementation Layer** 
+2. **Implementation Layer**
    - `models/`: Native uncertainty quantification models
    - `wrappers/`: Adapters for existing models (conformal prediction)
    - `bayesian/`: Bayesian approaches (optional - requires NumPyro)
    - `causal/`: Causal inference with uncertainty
    - `multimodal/`: Multi-modal uncertainty aggregation
    - `multivariate/`: Multivariate uncertainty handling
+   - `counterfactual/`: Counterfactual reasoning with uncertainty
+   - `decomposition/`: Uncertainty decomposition
 
 3. **Support Layer**
    - `metrics/`: Evaluation metrics (coverage, pinball loss, Winkler score)
    - `calibration/`: Calibration utilities
    - `utils/`: Common utilities and helpers
    - `benchmarking/`: Benchmarking framework and datasets
+   - `analysis/`: Analysis utilities
+   - `risk/`: Risk assessment utilities
+   - `decisions/`: Decision-making utilities
+   - `viz/`: Visualization utilities
 
 4. **Entry Points**
    - `__init__.py`: Public API surface
@@ -63,10 +69,32 @@ The uncertainty_flow library follows a **layered architecture** with a clear sep
 - **Copula**: Copula-based multivariate distributions
 - Models dependencies between multiple targets
 
+### Counterfactual Module (`counterfactual/`)
+- Counterfactual reasoning with uncertainty quantification
+
+### Decomposition Module (`decomposition/`)
+- Uncertainty decomposition into various components
+
+### Decisions Module (`decisions/`)
+- Decision-making utilities under uncertainty
+
+### Risk Module (`risk/`)
+- Risk assessment and management utilities
+
+### Viz Module (`viz/`)
+- Visualization utilities for uncertainty
+
 ### Metrics Module (`metrics/`)
 - **Coverage Score**: Measures prediction interval coverage
 - **Pinball Loss**: Quantile regression loss function
 - **Winkler Score**: Sharpness-aware coverage metric
+
+### Calibration Module (`calibration/`)
+- Calibration utilities and reports
+- Residual analysis and SHAP values
+
+### Analysis Module (`analysis/`)
+- Analysis utilities for model interpretability
 
 ## Data Flow Between Components
 
@@ -157,3 +185,5 @@ CrossModalAggregator
 4. **Performance**: Efficient NumPy backend with Polars interface
 5. **Usability**: Rich API with calibration reports and diagnostics
 6. **Benchmarking**: Built-in benchmarking framework with real datasets
+7. **Decision Support**: Utilities for decision-making under uncertainty
+8. **Risk Assessment**: Comprehensive risk metrics and analysis

@@ -70,3 +70,26 @@ class TestTypeAliases:
         target: TargetSpec = ["price", "volume"]
         assert isinstance(target, list)
         assert all(isinstance(t, str) for t in target)
+
+
+class TestConfigQuantiles:
+    """Test _ConfigQuantiles proxy behavior."""
+
+    def test_config_quantiles_index_with_args(self):
+        """index() with start/stop should slice correctly."""
+        assert DEFAULT_QUANTILES.index(1, 3) == [0.2, 0.5]
+        assert DEFAULT_QUANTILES.index(0) == 0.05
+        assert DEFAULT_QUANTILES.index(-1) == 0.95
+        assert DEFAULT_QUANTILES.index(1, 1) == 0.2
+
+    def test_config_quantiles_equality_with_sequence(self):
+        """__eq__() should compare with other sequences correctly."""
+        assert DEFAULT_QUANTILES == [0.05, 0.2, 0.5, 0.9]
+        assert DEFAULT_QUANTILES != "not_a_sequence"
+        other_list = [0.05, 0.2, 0.5, 0.9]
+        assert DEFAULT_QUANTILES == other_list
+
+    def test_config_quantiles_equality_with_string(self):
+        """__eq__() should reject non-sequence strings."""
+        assert DEFAULT_QUANTILES != "not_a_sequence"
+

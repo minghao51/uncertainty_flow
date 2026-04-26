@@ -8,6 +8,8 @@ from uncertainty_flow.core.config import (
     reset_config,
     set_config,
 )
+from uncertainty_flow.core.types import DEFAULT_QUANTILES
+from uncertainty_flow.wrappers.conformal import DEFAULT_QUANTILES as CONFORMAL_DEFAULT_QUANTILES
 
 
 class TestQuantileConfig:
@@ -133,6 +135,17 @@ class TestGlobalConfig:
             0.9,
             0.95,
         ]
+
+    def test_default_quantiles_proxy_tracks_config_updates(self):
+        """DEFAULT_QUANTILES should reflect later set_config() calls."""
+        custom = QuantileConfig(default_quantiles=[0.1, 0.5, 0.9])
+
+        set_config(custom)
+
+        assert list(DEFAULT_QUANTILES) == [0.1, 0.5, 0.9]
+        assert list(CONFORMAL_DEFAULT_QUANTILES) == [0.1, 0.5, 0.9]
+
+        reset_config()
 
 
 class TestEnvironmentVariables:

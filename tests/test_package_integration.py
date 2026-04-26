@@ -4,6 +4,7 @@ from importlib.util import find_spec
 
 import numpy as np
 import polars as pl
+import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
 import uncertainty_flow as uf
@@ -65,6 +66,7 @@ class TestPackageImports:
 class TestIntegrationSmoke:
     """Smoke tests to verify modules work end-to-end."""
 
+    @pytest.mark.smoke
     def test_causal_smoke(self):
         np.random.seed(42)
         n = 200
@@ -88,6 +90,7 @@ class TestIntegrationSmoke:
         assert isinstance(pred, DistributionPrediction)
         assert pred._quantiles.shape[0] == n
 
+    @pytest.mark.smoke
     def test_multimodal_smoke(self):
         np.random.seed(42)
         n = 100
@@ -115,3 +118,78 @@ class TestIntegrationSmoke:
         groups = pred.group_uncertainty()
         assert "g1" in groups
         assert "g2" in groups
+
+    @pytest.mark.smoke
+    def test_conformal_regressor_smoke(self):
+        np.random.seed(42)
+        n = 100
+        df = pl.DataFrame(
+            {
+                "x": np.random.randn(n),
+                "y": np.random.randn(n) + np.random.randn(n),
+            }
+        )
+        model = uf.ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            random_state=42,
+        )
+        model.fit(df, target="y")
+        pred = model.predict(df)
+        assert isinstance(pred, DistributionPrediction)
+        assert pred._quantiles.shape[0] == n
+
+    @pytest.mark.smoke
+    def test_quantile_forest_smoke(self):
+        np.random.seed(42)
+        n = 120
+        df = pl.DataFrame(
+            {
+                "date": range(n),
+                "price": np.random.randn(n) + np.arange(n) * 0.5,
+            }
+        )
+        model = uf.QuantileForestForecaster(targets="price", horizon=1, random_state=42)
+        model.fit(df, target="price")
+        pred = model.predict(df)
+        assert isinstance(pred, DistributionPrediction)
+
+    @pytest.mark.smoke
+    def test_copula_smoke(self):
+        from uncertainty_flow.multivariate.copula import GaussianCopula
+
+        rng = np.random.default_rng(42)
+        n = 100
+        data = rng.multivariate_normal([0, 0], [[1, 0.5], [0.5, 1]], size=n)
+        copula = GaussianCopula()
+        copula.fit(data)
+        marginals = np.stack([np.sort(data[:, 0])[:3], np.sort(data[:, 1])[:3]]).reshape(1, 2, 3)
+        samples = copula.sample(marginals, n_samples=50, random_state=42)
+        assert samples.shape[0] > 0
+
+    @pytest.mark.smoke
+    def test_decisions_smoke(self):
+        q_matrix = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
+        pred = DistributionPrediction(
+            quantile_matrix=q_matrix,
+            quantile_levels=[0.1, 0.5, 0.9],
+            target_names=["y"],
+        )
+        result = pred.decide(uf.InventoryOptimiser(stockout_cost=10, overstock_cost=2))
+        assert result.strategy == "Asymmetric Loss (Newsvendor)"
+        assert len(result.optimal_value) == 3
+
+    @pytest.mark.smoke
+    def test_persistence_smoke(self, tmp_path):
+        from uncertainty_flow.core.base import BaseUncertaintyModel
+
+        model = uf.QuantileForestForecaster(targets="price", horizon=1, random_state=42)
+        df = pl.DataFrame(
+            {"date": range(120), "price": np.random.randn(120) + np.arange(120) * 0.5}
+        )
+        model.fit(df, target="price")
+        path = tmp_path / "model.uf"
+        model.save(str(path))
+        loaded = BaseUncertaintyModel.load(str(path))
+        assert isinstance(loaded, uf.QuantileForestForecaster)
+        pred = loaded.predict(df)
+        assert isinstance(pred, DistributionPrediction)

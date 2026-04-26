@@ -4,167 +4,85 @@
 
 ```
 uncertainty_flow/
-├── README.md
-├── LICENSE
-├── pyproject.toml
-├── CLAUDE.md
-├── AGENTS.md
-├── data/
-│   ├── electricity.parquet
-│   ├── exchange_rate.parquet
-│   ├── weather.parquet
-│   └── README.md
-├── docs/
-│   ├── README.md
-│   ├── api/
-│   │   └── spec.md
-│   ├── architecture/
-│   │   └── overview.md
-│   ├── archive/
-│   │   ├── guides/
-│   │   ├── plans/
-│   │   │   ├── 2026-03-20-final-summary.md
-│   │   │   ├── 2026-03-20-implementation-progress.md
-│   │   │   └── 2026-03-20-uncertainty-flow-v1-design.md
-│   │   └── README.md
-│   ├── assets/
-│   │   ├── charting-forecast-fan-chart.png
-│   │   └── charting-regression-fan-chart.png
-│   ├── benchmarks/
-│   │   ├── comparison_table.csv
-│   │   ├── comprehensive_v2_all.json
-│   │   ├── comprehensive_v2_electricity.json
-│   │   ├── comprehensive_v2_exchange_rate.json
-│   │   ├── comprehensive_v2_weather.json
-│   │   └── README.md
-│   ├── guides/
-│   │   ├── benchmarking.md
-│   │   ├── calibration.md
-│   │   ├── charting.md
-│   │   ├── design.md
-│   │   ├── distribution-approach.md
-│   │   └── models.md
-│   ├── plans/
-│   │   └── 20260401-v6-plus-design.md
-│   ├── project/
-│   │   ├── changelog.md
-│   │   ├── contributing.md
-│   │   └── roadmap.md
-│   ├── technical_roadmap.md
-│   └── README.md
-├── results/
-│   ├── benchmark_report.md
-│   ├── comparison_table.csv
-│   ├── comprehensive_v2_all.json
-│   ├── comprehensive_v2_electricity.csv
-│   ├── comprehensive_v2_electricity.json
-│   ├── comprehensive_v2_exchange_rate.csv
-│   ├── comprehensive_v2_exchange_rate.json
-│   ├── comprehensive_v2_weather.csv
-│   └── comprehensive_v2_weather.json
-├── scripts/
-│   ├── comprehensive_benchmark.py
-│   ├── generate_report.py
-│   ├── ingest_datasets.py
-│   ├── README.md
-│   └── trial_benchmark.py
-└── uncertainty_flow/
-    ├── __init__.py
-    ├── cli.py
-    ├── py.typed
-    ├── bayesian/
-    │   ├── __init__.py
-    │   └── ... (bayesian implementation files)
-    ├── benchmarking/
-    │   ├── __init__.py
-    │   ├── ... (benchmarking implementation files)
-    │   └── datasets/
-    │       ├── __init__.py
-    │       └── ... (dataset definitions)
-    ├── calibration/
-    │   ├── __init__.py
-    │   ├── report.py
-    │   ├── residual_analysis.py
-    │   └── shap_values.py
-    ├── causal/
-    │   ├── __init__.py
-    │   └── estimator.py
-    ├── core/
-    │   ├── __init__.py
-    │   ├── base.py
-    │   ├── config.py
-    │   ├── distribution.py
-    │   └── types.py
-    ├── metrics/
-    │   ├── __init__.py
-    │   ├── coverage.py
-    │   ├── pinball.py
-    │   └── winkler.py
-    ├── models/
-    │   ├── __init__.py
-    │   ├── deep_quantile.py
-    │   ├── deep_quantile_torch.py
-    │   ├── quantile_forest.py
-    │   └── transformer_forecaster.py
-    ├── multimodal/
-    │   ├── __init__.py
-    │   └── aggregator.py
-    ├── multivariate/
-    │   ├── __init__.py
-    │   └── copula.py
-    ├── utils/
-    │   ├── __init__.py
-    │   ├── calibration_utils.py
-    │   ├── data_splitters.py
-    │   ├── exceptions.py
-    │   ├── polars_bridge.py
-    │   └── validation.py
-    └── wrappers/
-        ├── __init__.py
-        ├── conformal.py
-        └── conformal_ts.py
-
-├── tests/
+├── __init__.py              # Public API surface
+├── cli.py                   # CLI entry point
+├── py.typed                 # PEP 561 typing marker
+├── analysis/                # Analysis utilities
+├── bayesian/                # Bayesian approaches (NumPyro optional)
+├── benchmarking/             # Benchmarking framework and datasets
+├── calibration/             # Calibration utilities
+├── causal/                   # Causal inference with uncertainty
+├── core/                     # Base classes, types, configuration
 │   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_base_quantile.py
-│   ├── test_config.py
-│   ├── test_exceptions.py
-│   ├── test_package_integration.py
-│   ├── bayesian/
-│   │   ├── __init__.py
-│   │   └── test_numpyro_model.py
-│   ├── calibration/
-│   │   ├── test_residual_analysis.py
-│   │   └── test_shap.py
-│   ├── causal/
-│   │   ├── __init__.py
-│   │   └── test_estimator.py
-│   ├── core/
-│   │   ├── test_base.py
-│   │   ├── test_distribution.py
-│   │   └── test_types.py
-│   ├── metrics/
-│   │   ├── test_coverage.py
-│   │   ├── test_pinball.py
-│   │   └── test_winkler.py
-│   ├── models/
-│   │   ├── test_deep_quantile_torch.py
-│   │   ├── test_quantile_forest.py
-│   │   ├── test_deep_quantile.py
-│   │   └── test_transformer.py
-│   ├── multimodal/
-│   │   ├── __init__.py
-│   │   └── test_aggregator.py
-│   ├── multivariate/
-│   │   └── test_copula.py
-│   ├── utils/
-│   │   ├── test_split.py
-│   │   ├── test_polars_bridge.py
-│   │   └── test_calibration_report.py
-│   └── wrappers/
-│       ├── test_conformal.py
-│       └── test_conformal_ts.py
+│   ├── base.py              # BaseUncertaintyModel abstract class
+│   ├── config.py            # Configuration management
+│   ├── distribution.py      # DistributionPrediction class
+│   └── types.py             # Type aliases and constants
+├── counterfactual/           # Counterfactual reasoning
+├── decomposition/            # Uncertainty decomposition
+├── decisions/                # Decision-making utilities
+├── metrics/                  # Evaluation metrics
+├── models/                  # Native uncertainty models
+├── multimodal/               # Multi-modal aggregation
+├── multivariate/            # Multivariate distributions
+├── risk/                     # Risk assessment
+├── utils/                    # Common utilities
+├── viz/                      # Visualization utilities
+└── wrappers/                 # Adapter wrappers (conformal prediction)
+
+data/
+├── electricity.parquet
+├── exchange_rate.parquet
+├── weather.parquet
+└── README.md
+
+docs/
+├── README.md
+├── api/spec.md
+├── architecture/overview.md
+├── archive/guides/, plans/
+├── assets/
+├── benchmarks/
+├── guides/
+├── plans/
+├── project/
+└── technical_roadmap.md
+
+results/
+├── benchmark_report.md
+├── comparison_table.csv
+└── comprehensive_v2_*.json, csv
+
+scripts/
+├── comprehensive_benchmark.py
+├── generate_report.py
+├── ingest_datasets.py
+└── trial_benchmark.py
+
+tests/
+├── conftest.py               # Shared test fixtures
+├── test_base_quantile.py
+├── test_config.py
+├── test_decisions.py
+├── test_exceptions.py
+├── test_package_integration.py
+├── test_pytest_markers.py
+├── test_utils.py
+├── analysis/
+├── bayesian/
+├── calibration/
+├── causal/
+├── counterfactual/
+├── core/
+├── decomposition/
+├── metrics/
+├── models/
+├── multimodal/
+├── multivariate/
+├── risk/
+├── utils/
+├── viz/
+└── wrappers/
 ```
 
 ## Key Locations
@@ -193,17 +111,25 @@ uncertainty_flow/
 - **`uncertainty_flow/causal/`**: Causal inference with uncertainty
 - **`uncertainty_flow/multimodal/`**: Multi-modal aggregation
 - **`uncertainty_flow/multivariate/`**: Multivariate distributions
+- **`uncertainty_flow/counterfactual/`**: Counterfactual reasoning
+- **`uncertainty_flow/decomposition/`**: Uncertainty decomposition
+- **`uncertainty_flow/decisions/`**: Decision-making utilities
+- **`uncertainty_flow/risk/`**: Risk assessment utilities
 
 ### Evaluation
 - **`uncertainty_flow/metrics/`**: Evaluation metrics
 - **`uncertainty_flow/calibration/`**: Calibration utilities
 - **`uncertainty_flow/benchmarking/`**: Benchmarking framework
+- **`uncertainty_flow/analysis/`**: Analysis utilities
 
 ### Utilities
 - **`uncertainty_flow/utils/`**: Common utilities
   - `data_splitters.py`: Train/validation splitters
   - `calibration_utils.py`: Calibration diagnostics
   - `validation.py`: Input validation
+
+### Visualization
+- **`uncertainty_flow/viz/`**: Visualization utilities
 
 ## Entry Points
 
@@ -218,7 +144,7 @@ uncertainty_flow/
   - Commands: benchmark, tune, list-datasets, download-dataset
 
 ### Package Configuration
-- **`pyproject.toml`**: 
+- **`pyproject.toml`**:
   - Defines entry point: `uncertainty-flow = uncertainty_flow.cli:main`
   - Optional dependencies: torch, transformers, shap, bench, numpyro
 

@@ -205,6 +205,64 @@ class TestFeatureLeverageAnalyzerEdgeCases:
         assert analyzer._effective_perturbation_count(100) == 8
         assert analyzer._effective_perturbation_count(500) == 1
 
+    )
+
+    class TestFeatureLeverageAnalyzerEdgeCases:
+        """Test edge cases in FeatureLeverageAnalyzer."""
+
+        def test_rank_correlation_matrix_single_column(self):
+            """Single-column matrix should early-return upper triangle."""
+            np.random.seed(42)
+            n = 100
+            data = pl.DataFrame({"x": np.random.randn(n)})
+            analyzer = FeatureLeverageAnalyzer(
+                model=QuantileForestForecaster(targets="x", horizon=1, n_estimators=5, random_state=42),
+            )
+            corr = analyzer._rank_correlation_matrix(data, ["x"])
+            assert corr.width == 1
+            assert corr.to_numpy().tolist() == [[1.0]]
+
+        def test_mean_upper_triangle_small_matrix(self):
+            """1x1 and 2x2 identity matrices should pass."""
+            np.random.seed(42)
+            n = 100
+            data = pl.DataFrame({"x": np.random.randn(n), "y": np.random.randn(n)})
+            analyzer = FeatureLeverageAnalyzer(
+                model=QuantileForestForecaster(targets=["x", "y"], horizon=1, n_estimators=5, random_state=42),
+            )
+            corr_small_1x1 = analyzer._mean_upper_triangle_abs(data.select(["x"]))
+            corr_small_2x2 = analyzer._mean_upper_triangle_abs(data.select(["y"]))
+            assert corr_small_1x1.to_numpy().tolist() == [[1.0]]
+            assert corr_small_2x2.to_numpy().tolist() == [[1.0]]
+
+        def test_low_leverage_recommendation(self):
+            """Should return recommendation when all inputs have low leverage."""
+            np.random.seed(42)
+            n = 100
+            data = pl.DataFrame({"x": np.random.randn(n), "y": np.random.randn(n)})
+            model = QuantileForestForecaster(targets=["x", "y"], horizon=1, n_estimators=5, random_state=42)
+            model.fit(data)
+            pred = model.predict(data)
+
+            analyzer = FeatureLeverageAnalyzer(
+                model=model,
+                confidence=0.9,
+                n_bins=10,
+            )
+            result = analyzer.analyze(data)
+
+            assert result["low_leverage"] is True
+            assert result["recommendation"] is not None
+
+        def test_effective_perturbation_count_rejects_nonpositive(self):
+            """Should reject non-positive n_repeats."""
+            analyzer = FeatureLeverageAnalyzer(
+                model=QuantileForestForecaster(targets="x", horizon=1, n_estimators=5, random_state=42),
+                n_perturbations=100,
+            )
+            with pytest.raises(ValueError, match="n_repeats must be positive"):
+                analyzer.analyze(pl.DataFrame({"x": [1, 2, 3]}))
+
 
 class TestFeatureLeverageAnalyzerMultivariate:
     """Test multivariate extension."""

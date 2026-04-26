@@ -6,6 +6,7 @@ import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow import ConformalRegressor
+from uncertainty_flow.core.config import QuantileConfig, reset_config, set_config
 from uncertainty_flow.core.distribution import DistributionPrediction
 
 
@@ -198,6 +199,22 @@ class TestConformalRegressorPredict:
         model.fit(regression_data, target="target")
         pred = model.predict(regression_data.lazy())
         assert isinstance(pred, DistributionPrediction)
+
+    def test_predict_uses_fitted_quantile_levels_after_config_change(self, regression_data):
+        """Predict should remain consistent if global quantile config changes post-fit."""
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            random_state=42,
+        )
+        model.fit(regression_data, target="target")
+
+        set_config(QuantileConfig(default_quantiles=[0.1, 0.5, 0.9]))
+        try:
+            pred = model.predict(regression_data)
+            assert pred._quantiles.shape == (100, 11)
+            assert np.allclose(pred._levels, np.array(model._quantile_levels_))
+        finally:
+            reset_config()
 
 
 class TestConformalRegressorInterval:

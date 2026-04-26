@@ -7,11 +7,14 @@ This document explains how to benchmark `uncertainty_flow` models using the buil
 ## Quick Start
 
 ```bash
-# Run benchmark on weather dataset (auto-tuning enabled by default)
-uv run python -m uncertainty_flow.cli benchmark --dataset weather
+# Run the consolidated benchmark suite on all default datasets
+uv run python benchmarks/run_benchmarks.py --all-datasets
 
-# Run on a specific dataset
-uv run python -m uncertainty_flow.cli benchmark --dataset electricity
+# Run on a single dataset with custom iterations
+uv run python benchmarks/run_benchmarks.py -d weather -n 500 --iterations 5
+
+# Generate a report from saved results
+uv run python benchmarks/generate_report.py --output results/report.md
 
 # List available datasets
 uv run python -m uncertainty_flow.cli list-datasets

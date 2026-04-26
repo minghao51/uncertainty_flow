@@ -1,161 +1,127 @@
-# Codebase Conventions
+# Code Conventions
 
-## Code Style (Formatting, Line Length, Quotes)
+## Style & Formatting
 
-- **Line Length**: Maximum 100 characters (enforced by ruff)
-- **Quotes**: Use single quotes for strings (ruff E713/E714 violation otherwise)
-- **Formatting**: Code is formatted using ruff for linting
-- **Python Version**: Target Python 3.11+ (minimal supported version)
+- **Tool**: ruff (E, F, I, N, W rules)
+- **Line length**: 100 characters
+- **Python**: 3.11+
+- **Imports**: absolute within package (`from uncertainty_flow.utils...`)
+- **Future imports**: `from __future__ import annotations` at top of all files
 
 ## Naming Conventions
 
-### Files
-- Use snake_case for Python files
-- Module names should be descriptive and lowercase
-- Test files: `test_*.py`
-- No underscores in __init__.py files
+| Type | Convention | Example |
+|------|------------|---------|
+| Classes | PascalCase | `DistributionPrediction`, `BaseUncertaintyModel` |
+| Functions/methods | snake_case | `calibration_report`, `warn_quantile_crossing` |
+| Constants | SCREAMING_SNAKE | `MAX_SAMPLE_CHUNK_SIZE`, `PLOT_MAX_SAMPLES` |
+| Private attrs | underscore prefix | `_fitted`, `_metadata` |
+| Error codes | UF-EXXX | `UF-E001`, `UF-E002` |
+| Warning codes | UF-WXXX | `UF-W001`, `UF-W002` |
 
-### Classes
-- Use PascalCase (CapWords)
-- Abstract base classes typically use "Base" suffix
-- Exception classes use "Error" suffix
-- Keep class names concise but descriptive
+## Project Structure
 
-### Functions and Methods
-- Use snake_case
-- Private methods/functions use underscore prefix
-- Property methods use property decorator
-- Dunder methods (__init__, __str__, etc.) allowed
-
-### Variables
-- Use snake_case for local variables
-- Instance attributes: `self.attribute_name`
-- Class attributes: `ClassName.CONSTANT_NAME`
-- Parameters: descriptive names using snake_case
-
-## Type Annotation Patterns
-
-- Use type hints consistently across the codebase
-- Forward references using string literals (`"ClassName"`)
-- Use Union types with `|` syntax (Python 3.10+ style)
-- Optional types use `Type | None`
-- Collection types: `list[Type]`, `dict[str, Type]`
-- Polars types: `pl.DataFrame`, `pl.LazyFrame`, `pl.Series`
-- Custom type aliases defined in `core/types.py`
-
-```python
-from typing import TYPE_CHECKING, Union
-
-if TYPE_CHECKING:
-    from ..core.distribution import DistributionPrediction
-
-def function(param: int | None) -> str | list[float]:
-    pass
+```
+uncertainty_flow/
+├── core/           # Base classes, types, distribution output
+├── decisions/      # Decision strategies
+├── models/         # Quantile models (forest, deep, transformer)
+├── metrics/        # Evaluation metrics (pinball, coverage, winkler)
+├── calibration/    # Calibration utilities
+├── risk/           # Risk functions
+├── utils/          # Shared utilities
+├── viz/            # Dashboard visualization
+├── causal/         # Causal estimation
+├── counterfactual/ # Counterfactual explanations
+├── decomposition/  # Ensemble decomposition
+├── multivariate/   # Copula modeling
+├── multimodal/     # Multi-modal aggregation
+├── bayesian/       # Bayesian models (numpyro)
+└── benchmarking/   # Benchmarking utilities
 ```
 
-## Error Handling Patterns
+## Error Handling
 
-- Custom exception hierarchy under `UncertaintyFlowError`
-- All exceptions inherit from `ValueError` for backward compatibility
-- Error codes follow pattern: `UF-E###` (errors) or `UF-W###` (warnings)
-- Use helper functions for raising specific errors
-- Contextual error messages with clear descriptions
-- Include error codes in messages when available
+### Exception Hierarchy (`uncertainty_flow/utils/exceptions.py`)
 
-```python
-class DataError(UncertaintyFlowError):
-    """Base class for data-related errors."""
-    pass
-
-def error_invalid_data(reason: str) -> None:
-    """Raise InvalidDataError."""
-    raise InvalidDataError(reason)
+```
+UncertaintyFlowError (ValueError)
+├── ModelError
+│   └── ModelNotFittedError
+├── DataError
+│   └── InvalidDataError
+├── CalibrationError
+│   └── CalibrationSizeError
+└── ConfigurationError
+    └── QuantileError
 ```
 
-## Logging Patterns
+### Error Helpers
 
-- **No logging**: The codebase does not use the standard logging module
-- **Warnings**: Use Python's warnings module for user notifications
-- **Warning categories**: Custom `UncertaintyFlowWarning` class
-- **Stack level**: Use `stacklevel=3` to point to caller
-- **Warning codes**: Include warning codes like `UF-W001`
+Functions raise specific exceptions:
+- `error_model_not_fitted(model_name)` → `ModelNotFittedError`
+- `error_invalid_data(reason)` → `InvalidDataError`
+- `error_calibration_too_small(n_samples, min_size)` → `CalibrationSizeError`
+- `error_quantile_invalid(reason)` → `QuantileError`
 
-```python
-import warnings
+All errors include error codes (e.g., `UF-E002`) for programmatic handling.
 
-def warn_calibration_size(n_samples: int, warn_threshold: int = 50) -> None:
-    warnings.warn(
-        f"Calibration set has only {n_samples} samples. "
-        f"Coverage guarantees may be unreliable. [UF-W001]",
-        UncertaintyFlowWarning,
-        stacklevel=3,
-    )
-```
+### Warnings
 
-## Import Organization
+Custom warnings in `exceptions.py`:
+- `UncertaintyFlowWarning` (UserWarning subclass)
+- `warn_calibration_size()` - UF-W001
+- `warn_quantile_crossing()` - UF-W002
+- `warn_coverage_gap()` - UF-W003
+- `warn_no_uncertainty_drivers()` - UF-W004
+- `warn_lazyframe_materialized()` - UF-W005
+- `warn_copula_auto_selection_ndim()` - UF-W006
 
-### Standard Library Imports
-```python
-from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Union
-import warnings
-```
+## Code Patterns
 
-### Third-party Imports
-```python
-import polars as pl
-import numpy as np
-```
+### Base Model Interface
 
-### Local Imports
-```python
-from .types import PolarsInput, TargetSpec
-from ..core.distribution import DistributionPrediction
-```
+All uncertainty models inherit `BaseUncertaintyModel` (abstract):
+- `fit(data, target, **kwargs)` → returns self
+- `predict(data)` → `DistributionPrediction`
+- `calibration_report(data, target, quantile_levels)` → `pl.DataFrame`
+- `save(path)` / `load(cls, path)` → .uf archive
+- `metadata` property
+- `uncertainty_drivers_` property
 
-### Order of Imports
-1. Standard library (absolute imports)
-2. Third-party libraries
-3. Local relative imports
-4. `from __future__ import annotations` at top
+### DistributionPrediction
 
-## Docstring Style
+Core output object storing:
+- `quantile_matrix`: NumPy array (n_samples, n_targets * n_quantiles)
+- `quantile_levels`: list of quantile levels
+- `target_names`: list of target names
+- Optional: `posterior`, `group_predictions`, `copula`
 
-### Google Style Docstrings
+### Input Handling
 
-All docstrings follow Google style format with sections:
-- Summary (one line)
-- Args section
-- Returns section  
-- Raises section
-- Examples section (when helpful)
+- Accept `PolarsInput` = `pl.DataFrame | pl.LazyFrame`
+- Use `materialize_lazyframe()` from `utils.polars_bridge` to normalize
+- Validate with error helpers on construction
 
-```python
-def function(param: int) -> str:
-    """
-    Brief description of the function.
+### Decision Strategies
 
-    Args:
-        param: Description of the parameter
+Implement `DecisionStrategy` ABC:
+- `decide(distribution)` → `DecisionResult`
+- `DecisionResult` is a dataclass with `optimal_value`, `strategy`, `metadata`
 
-    Returns:
-        Description of return value
+## Polars Conventions
 
-    Raises:
-        ValueError: If param is negative
+- Use `pl.DataFrame` / `pl.LazyFrame` for data exchange
+- Internally convert to NumPy for efficiency via `to_numpy_series_zero_copy`
+- Avoid `collect()` calls until necessary
+- Use Polars expression API for transformations
 
-    Examples:
-        >>> function(5)
-        'output'
-    """
-```
+## Testing Markers
 
-### Class Docstrings
-- Include purpose and inheritance info
-- Document abstract methods
-- Note important class attributes
-
-### Module Docstrings
-- Brief description of module purpose
-- List main exports
-- Include usage examples if complex
+Automatic markers via `conftest.py` pytest hook:
+- `unit`: fast, single-module tests
+- `integration`: multi-module workflows
+- `slow`: expensive tests (deep quantile torch, numpyro, conformal_ts, counterfactual, persistence)
+- `optional`: tests requiring optional deps (torch, numpyro)
+- `network`: tests requiring internet
+- `smoke`: critical path for CI

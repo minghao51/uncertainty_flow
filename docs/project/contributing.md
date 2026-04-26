@@ -89,7 +89,7 @@ uv run ruff check . && uv run ruff format .
 Type hints are required on all public functions and methods. We use `mypy` for static type checking:
 
 ```bash
-uv run mypy uncertainty_flow/
+uv run --extra dev mypy uncertainty_flow/
 ```
 
 ---
@@ -279,8 +279,9 @@ Before opening a PR:
 
 - [ ] `uv run ruff check .` passes
 - [ ] `uv run ruff format .` applied
-- [ ] `uv run mypy uncertainty_flow/` passes
+- [ ] `uv run --extra dev mypy uncertainty_flow/` passes
 - [ ] `uv run pytest` passes with no regressions
+- [ ] `uv run --extra dev bandit -r uncertainty_flow/ -f txt` passes
 - [ ] New model has a docstring with guarantee statements
 - [ ] `MODELS.md` updated if a new model was added
 - [ ] Warning codes in `API_SPEC.md` updated if new warnings added

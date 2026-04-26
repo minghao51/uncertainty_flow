@@ -14,6 +14,8 @@ loaded = ModelClass.load("models/example.uf")
 model.metadata  # dict for fitted or loaded models, else None
 ```
 
+`load()` deserializes model payloads with Python pickle. Only load `.uf` archives from trusted sources.
+
 ---
 
 ## 1. `ConformalRegressor`
@@ -54,8 +56,8 @@ class ConformalRegressor(BaseUncertaintyModel):
         data: pl.DataFrame | pl.LazyFrame,
     ) -> DistributionPrediction:
         """
-        Returns DistributionPrediction with quantile levels:
-        [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+        Returns DistributionPrediction with the quantile levels captured at fit time.
+        If global quantile config changes after fit, prediction still uses fitted levels.
         """
         ...
 

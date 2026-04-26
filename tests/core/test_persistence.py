@@ -10,6 +10,7 @@ import polars as pl
 import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
+from uncertainty_flow.core._persistence import compute_archive_sha256
 from uncertainty_flow.core.base import BaseUncertaintyModel
 from uncertainty_flow.models import DeepQuantileNet, QuantileForestForecaster
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
@@ -80,6 +81,7 @@ class TestModelRoundTrip:
         assert loaded.metadata is not None
         assert loaded.metadata["class_path"].endswith("ConformalRegressor")
         assert loaded.metadata["fitted"] is True
+        assert "model_payload_sha256" in loaded.metadata
 
     def test_conformal_forecaster_round_trip(self, time_series_data, tmp_path):
         """ConformalForecaster should preserve multivariate predictions and sampling."""
@@ -175,7 +177,10 @@ class TestPersistenceFailures:
         """Archives without the pickled model payload should be rejected."""
         archive = tmp_path / "missing_model.uf"
         with zipfile.ZipFile(archive, "w") as zf:
-            zf.writestr("metadata.json", json.dumps({"class_path": "x", "fitted": False}))
+            zf.writestr(
+                "metadata.json",
+                json.dumps({"format_version": 1, "class_path": "x", "fitted": False}),
+            )
 
         with pytest.raises(ValueError, match="missing required payload 'model.pkl'"):
             BaseUncertaintyModel.load(archive)
@@ -185,6 +190,7 @@ class TestPersistenceFailures:
         archive = tmp_path / "missing_metadata.uf"
         with zipfile.ZipFile(archive, "w") as zf:
             zf.writestr("model.pkl", b"not-used")
+            # metadata.json intentionally missing
 
         with pytest.raises(ValueError, match="missing required payload 'metadata.json'"):
             BaseUncertaintyModel.load(archive)
@@ -193,7 +199,10 @@ class TestPersistenceFailures:
         """Corrupted pickles should raise a clear archive error."""
         archive = tmp_path / "corrupted.uf"
         with zipfile.ZipFile(archive, "w") as zf:
-            zf.writestr("metadata.json", json.dumps({"class_path": "x", "fitted": False}))
+            zf.writestr(
+                "metadata.json",
+                json.dumps({"format_version": 1, "class_path": "x", "fitted": False}),
+            )
             zf.writestr("model.pkl", b"not-a-pickle")
 
         with pytest.raises(ValueError, match="failed to deserialize model payload"):
@@ -212,3 +221,90 @@ class TestPersistenceFailures:
 
         with pytest.raises(TypeError, match="not an instance"):
             QuantileForestForecaster.load(archive)
+
+    def test_payload_checksum_mismatch_raises(self, tabular_data, tmp_path):
+        """Tampered model payload should be rejected before deserialization."""
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "tampered.uf"
+        model.save(archive)
+
+        with zipfile.ZipFile(archive, "a") as zf:
+            zf.writestr("model.pkl", b"tampered-model-payload")
+
+        with pytest.raises(ValueError, match="checksum mismatch"):
+            BaseUncertaintyModel.load(archive)
+
+    def test_expected_archive_sha256_mismatch_raises(self, tabular_data, tmp_path):
+        """Expected archive hash pinning should reject mismatched files."""
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "hash_pin.uf"
+        model.save(archive)
+
+        actual_hash = compute_archive_sha256(archive)
+        assert len(actual_hash) == 64
+
+        with pytest.raises(ValueError, match="Archive SHA-256 mismatch"):
+            BaseUncertaintyModel.load(archive, expected_archive_sha256="0" * 64)
+
+    def test_invalid_json_metadata_raises(self, tmp_path):
+        """Archives with non-JSON metadata should be rejected."""
+        archive = tmp_path / "bad_json.uf"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("metadata.json", b"not-json-at-all")
+            zf.writestr("model.pkl", b"not-used")
+
+        with pytest.raises(ValueError, match="metadata.json is not valid JSON"):
+            BaseUncertaintyModel.load(archive)
+
+    def test_missing_format_version_raises(self, tmp_path):
+        """Archives without format_version should be rejected."""
+        archive = tmp_path / "no_version.uf"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("metadata.json", json.dumps({"class_path": "x", "fitted": False}))
+            zf.writestr("model.pkl", b"not-used")
+
+        with pytest.raises(ValueError, match="missing required 'format_version'"):
+            BaseUncertaintyModel.load(archive)
+
+    def test_unsupported_format_version_raises(self, tmp_path):
+        """Archives with unsupported format_version should be rejected."""
+        archive = tmp_path / "bad_version.uf"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr(
+                "metadata.json",
+                json.dumps({"format_version": 99, "class_path": "x", "fitted": False}),
+            )
+            zf.writestr("model.pkl", b"not-used")
+
+        with pytest.raises(ValueError, match="Unsupported archive format version"):
+            BaseUncertaintyModel.load(archive)
+
+    def test_oversized_archive_raises(self, tabular_data, tmp_path, monkeypatch):
+        """Archives exceeding max size should be rejected."""
+        from uncertainty_flow.core._persistence import MAX_ARCHIVE_SIZE_BYTES
+
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "oversized.uf"
+        model.save(archive)
+
+        monkeypatch.setattr(
+            "uncertainty_flow.core._persistence.MAX_ARCHIVE_SIZE_BYTES", 1
+        )
+
+        with pytest.raises(ValueError, match="Model archive too large"):
+            BaseUncertaintyModel.load(archive)
