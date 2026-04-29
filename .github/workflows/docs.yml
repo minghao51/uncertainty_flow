@@ -24,7 +24,7 @@ jobs:
         with:
           enable-cache: true
 
-      - run: uv sync --extra docs --no-dev
+      - run: uv sync --extra docs
 
       - run: uv run mkdocs build
 
