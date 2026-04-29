@@ -100,11 +100,7 @@ DATASET_GROUPS: dict[str, list[str]] = {
     ],
 }
 
-EXPANDED_DATASETS = (
-    DATASET_GROUPS["ts"]
-    + DATASET_GROUPS["tabular"]
-    + DATASET_GROUPS["synthetic"]
-)
+EXPANDED_DATASETS = DATASET_GROUPS["ts"] + DATASET_GROUPS["tabular"] + DATASET_GROUPS["synthetic"]
 
 
 @dataclass
@@ -350,8 +346,7 @@ def _register_optional_models() -> None:
                 from uncertainty_flow.models import DeepQuantileNetTorch
             except ImportError:
                 raise ImportError(
-                    "torch is required for deep-quantile-torch. "
-                    "Install with: uv sync --extra torch"
+                    "torch is required for deep-quantile-torch. Install with: uv sync --extra torch"
                 )
 
             self.model = DeepQuantileNetTorch(
@@ -383,8 +378,7 @@ def _register_optional_models() -> None:
                 from uncertainty_flow.models import TransformerForecaster
             except ImportError:
                 raise ImportError(
-                    "chronos-forecasting is required. "
-                    "Install with: uv sync --extra transformers"
+                    "chronos-forecasting is required. Install with: uv sync --extra transformers"
                 )
 
             model_name = self.tuned_params.get("chronos_model", "chronos-bolt-tiny")
@@ -418,9 +412,7 @@ def _register_optional_models() -> None:
             try:
                 from uncertainty_flow.bayesian import BayesianQuantileRegressor
             except ImportError:
-                raise ImportError(
-                    "numpyro is required. Install with: uv sync --extra numpyro"
-                )
+                raise ImportError("numpyro is required. Install with: uv sync --extra numpyro")
 
             self.model = BayesianQuantileRegressor(
                 n_warmup=self.tuned_params.get("n_warmup", 1000),

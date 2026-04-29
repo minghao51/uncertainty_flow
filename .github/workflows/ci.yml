@@ -6,35 +6,51 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  pre-commit:
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-      - run: uv run --extra dev ruff check .
-      - run: uv run --extra dev mypy uncertainty_flow/
+          enable-cache: true
+      - run: uv sync --extra dev
+      - uses: pre-commit/action@v3.0.1
+
+  typecheck:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run mypy uncertainty_flow/
 
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         with:
+          enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - run: uv run --extra dev pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
+      - run: uv sync --extra dev
+      - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
 
   security:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.11"
-      - run: uv run --extra dev bandit -r uncertainty_flow -s B101,B110,B301,B403
-      - run: uv run --extra dev pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839
+          enable-cache: true
+      - run: uv sync --extra dev
+      - run: uv run bandit -r uncertainty_flow -s B101,B110,B301,B403
+      - run: uv run pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839

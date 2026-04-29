@@ -99,6 +99,7 @@ class QuantileError(ConfigurationError):
 # Error Helper Functions
 # ============================================================================
 
+
 def error_model_not_fitted(model_name: str = "Model") -> NoReturn:
     """Raise ModelNotFittedError.
 

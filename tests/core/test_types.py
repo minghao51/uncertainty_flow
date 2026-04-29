@@ -80,8 +80,7 @@ class TestConfigQuantiles:
         assert DEFAULT_QUANTILES.index(0.05) == 0
         assert DEFAULT_QUANTILES.index(0.3, 3) == 3
         assert (
-            DEFAULT_QUANTILES.index(0.95, 0, len(DEFAULT_QUANTILES))
-            == len(DEFAULT_QUANTILES) - 1
+            DEFAULT_QUANTILES.index(0.95, 0, len(DEFAULT_QUANTILES)) == len(DEFAULT_QUANTILES) - 1
         )
 
     def test_config_quantiles_equality_with_sequence(self):

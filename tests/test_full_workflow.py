@@ -12,23 +12,27 @@ from uncertainty_flow.wrappers import ConformalRegressor
 def sample_data():
     """Generate sample tabular data for testing."""
     n = 200
-    return pl.DataFrame({
-        "feature1": list(range(n)),
-        "feature2": [x * 2 + 0.5 for x in range(n)],
-        "feature3": [x ** 0.5 for x in range(n)],
-        "target": [x * 1.5 + 10 + (x % 5) for x in range(n)],
-    })
+    return pl.DataFrame(
+        {
+            "feature1": list(range(n)),
+            "feature2": [x * 2 + 0.5 for x in range(n)],
+            "feature3": [x**0.5 for x in range(n)],
+            "target": [x * 1.5 + 10 + (x % 5) for x in range(n)],
+        }
+    )
 
 
 @pytest.fixture
 def time_series_data():
     """Generate sample time series data for testing."""
     n = 100
-    return pl.DataFrame({
-        "date": list(range(n)),
-        "price": [100 + x + x % 10 for x in range(n)],
-        "volume": [1000 + x * 2 for x in range(n)],
-    })
+    return pl.DataFrame(
+        {
+            "date": list(range(n)),
+            "price": [100 + x + x % 10 for x in range(n)],
+            "volume": [1000 + x * 2 for x in range(n)],
+        }
+    )
 
 
 class TestConformalRegressorWorkflow:

@@ -54,9 +54,7 @@ class TestDownloadDataset:
     """Test download-dataset command."""
 
     @pytest.mark.network
-    @pytest.mark.skipif(
-        not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
-    )
+    @pytest.mark.skipif(not DATASETS_AVAILABLE, reason="datasets optional dependency not installed")
     def test_downloads_dataset(self, tmp_path, monkeypatch):
         """Should download dataset to cache."""
         monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
@@ -77,9 +75,7 @@ class TestBenchmark:
 
     @pytest.mark.integration
     @pytest.mark.optional
-    @pytest.mark.skipif(
-        not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
-    )
+    @pytest.mark.skipif(not DATASETS_AVAILABLE, reason="datasets optional dependency not installed")
     def test_runs_benchmark_with_all_models(self, tmp_path, monkeypatch):
         """Should run benchmark with all models."""
         monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
@@ -110,9 +106,7 @@ class TestBenchmark:
 
     @pytest.mark.integration
     @pytest.mark.optional
-    @pytest.mark.skipif(
-        not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
-    )
+    @pytest.mark.skipif(not DATASETS_AVAILABLE, reason="datasets optional dependency not installed")
     def test_runs_benchmark_with_specific_models(self, tmp_path, monkeypatch):
         """Should run benchmark with specific models."""
         monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
@@ -150,9 +144,7 @@ class TestTune:
 
     @pytest.mark.integration
     @pytest.mark.optional
-    @pytest.mark.skipif(
-        not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
-    )
+    @pytest.mark.skipif(not DATASETS_AVAILABLE, reason="datasets optional dependency not installed")
     def test_runs_tuning_with_all_models(self, tmp_path):
         """Should run auto-tuning and save results."""
         output = tmp_path / "tuned.json"
@@ -181,9 +173,7 @@ class TestTune:
 
     @pytest.mark.integration
     @pytest.mark.optional
-    @pytest.mark.skipif(
-        not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
-    )
+    @pytest.mark.skipif(not DATASETS_AVAILABLE, reason="datasets optional dependency not installed")
     def test_runs_tuning_with_specific_model(self, tmp_path):
         """Should run tuning on specific model."""
         output = tmp_path / "tuned.json"

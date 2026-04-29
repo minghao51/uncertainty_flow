@@ -108,8 +108,8 @@ coverage_score(y_true, lower, upper)
 
 A held-out portion of the data (last n% for time series, random n% for tabular) is reserved as the calibration set. The model never sees this data during training.
 
-**Advantages:** Simple, fast, easy to reason about.  
-**Disadvantages:** Wastes some training data; calibration estimate has higher variance on small datasets.  
+**Advantages:** Simple, fast, easy to reason about.
+**Disadvantages:** Wastes some training data; calibration estimate has higher variance on small datasets.
 **Time series note:** The holdout is always the *last* n% of observations. Random splits are never used for temporal data.
 
 ### Cross-Conformal
@@ -123,8 +123,8 @@ model = ConformalRegressor(
 )
 ```
 
-**Advantages:** More data-efficient; lower variance calibration estimate.  
-**Disadvantages:** Slower to fit (k training runs); more complex to reason about.  
+**Advantages:** More data-efficient; lower variance calibration estimate.
+**Disadvantages:** Slower to fit (k training runs); more complex to reason about.
 **When to use:** Small datasets where holdout wastes too much data.
 
 ---
@@ -198,7 +198,7 @@ This is not necessarily a problem — it can mean the model is well-specified. B
 
 ### Scenario: Coverage is good but Winkler score is high
 
-Intervals are covering correctly but are too wide (low sharpness). 
+Intervals are covering correctly but are too wide (low sharpness).
 
 1. **Improve the base model** (reduce residuals → narrower intervals).
 2. **Feature engineering.** Better features → better point predictions → narrower uncertainty.

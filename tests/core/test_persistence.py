@@ -300,9 +300,7 @@ class TestPersistenceFailures:
         archive = tmp_path / "oversized.uf"
         model.save(archive)
 
-        monkeypatch.setattr(
-            "uncertainty_flow.core._persistence.MAX_ARCHIVE_SIZE_BYTES", 1
-        )
+        monkeypatch.setattr("uncertainty_flow.core._persistence.MAX_ARCHIVE_SIZE_BYTES", 1)
 
         with pytest.raises(ValueError, match="Model archive too large"):
             BaseUncertaintyModel.load(archive)

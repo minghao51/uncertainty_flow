@@ -1,0 +1,80 @@
+site_name: Uncertainty Flow
+site_description: Probabilistic forecasting and uncertainty quantification
+repo_url: https://github.com/minghao51/uncertainty_flow
+repo_name: minghao51/uncertainty_flow
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.annotate
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          docstring_style: google
+          paths: [.]
+          options:
+            show_source: true
+            show_root_heading: true
+            members_order: source
+
+nav:
+  - Home: README.md
+  - Guides:
+      - Distribution Approach: guides/distribution-approach.md
+      - Models: guides/models.md
+      - Calibration: guides/calibration.md
+      - Charting: guides/charting.md
+      - Benchmarking: guides/benchmarking.md
+      - Design Principles: guides/design.md
+  - Architecture: architecture/overview.md
+  - API Reference:
+      - Core: api/core.md
+      - Metrics: api/metrics.md
+      - Models: api/models.md
+      - Wrappers: api/wrappers.md
+      - Risk: api/risk.md
+      - Causal: api/causal.md
+      - Analysis: api/analysis.md
+      - Decomposition: api/decomposition.md
+      - Counterfactual: api/counterfactual.md
+      - Multivariate: api/multivariate.md
+      - Multimodal: api/multimodal.md
+      - Bayesian: api/bayesian.md
+      - Calibration Module: api/calibration-module.md
+      - Utils: api/utils.md
+      - Viz: api/viz.md
+      - CLI: api/cli.md
+  - Benchmarks: benchmarks/README.md
+  - Project:
+      - Contributing: project/contributing.md
+      - Changelog: project/changelog.md
+      - Roadmap: project/roadmap.md
+
+markdown_extensions:
+  - admonition
+  - codehilite
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true

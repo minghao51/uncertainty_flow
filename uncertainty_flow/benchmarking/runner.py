@@ -315,9 +315,7 @@ class BenchmarkRunner:
         n_total = len(self.df)
         n_test = int(n_total * self.config.test_size)
         if n_total < 2:
-            raise DataError(
-                "Dataset must contain at least 2 rows for benchmark train/test split."
-            )
+            raise DataError("Dataset must contain at least 2 rows for benchmark train/test split.")
         if n_test < 1:
             raise DataError(
                 "test_size produced an empty test split. "
@@ -416,8 +414,7 @@ class BenchmarkRunner:
         if not self.results:
             if self.errors:
                 raise RuntimeError(
-                    "Benchmark produced no successful model results. "
-                    f"Errors: {self.errors}"
+                    f"Benchmark produced no successful model results. Errors: {self.errors}"
                 )
             raise RuntimeError("Benchmark produced no model results.")
 

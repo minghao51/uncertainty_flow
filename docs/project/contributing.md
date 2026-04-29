@@ -148,7 +148,7 @@ class MyModel(BaseUncertaintyModel):
     ...
     """
 
-    def __init__(self, targets: str | list[str], ...): 
+    def __init__(self, targets: str | list[str], ...):
         ...
 
     def fit(

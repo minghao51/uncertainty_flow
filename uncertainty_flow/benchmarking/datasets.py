@@ -565,11 +565,7 @@ def load_dataset(
                 local_df = local_df.head(n_samples)
             return local_df, ds_info
 
-    effective_revision = (
-        explicit_revision
-        if explicit_revision is not None
-        else ds_info.revision
-    )
+    effective_revision = explicit_revision if explicit_revision is not None else ds_info.revision
     if effective_revision is None:
         effective_revision = os.getenv("UNCERTAINTY_FLOW_HF_REVISION")
     if effective_revision is None:

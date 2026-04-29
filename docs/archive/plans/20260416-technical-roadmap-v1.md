@@ -332,7 +332,7 @@ report = analyzer.analyze_multivariate(X_test)
 
 # Extended output includes:
 # - leverage_score_demand: leverage for demand predictions
-# - leverage_score_price: leverage for price predictions  
+# - leverage_score_price: leverage for price predictions
 # - leverage_score_joint: leverage for joint intervals (copula contribution)
 # - copula_impact: how feature affects inter-target dependence
 ```
@@ -397,37 +397,37 @@ The leverage score is computed using a combination of methods:
 def compute_feature_leverage(model, X, feature_name, n_perturbations=100):
     """
     Compute leverage score for a single feature.
-    
+
     Returns:
         - aleatoric_score: Irreducible uncertainty contribution
-        - epistemic_score: Reducible uncertainty contribution  
+        - epistemic_score: Reducible uncertainty contribution
         - leverage_score: Total impact on prediction intervals
     """
     # Baseline prediction intervals
     baseline_pred = model.predict(X)
     baseline_width = baseline_pred.interval(0.9)[1] - baseline_pred.interval(0.9)[0]
-    
+
     # Perturbation-based leverage
     X_perturbed = X.clone()
     X_perturbed[feature_name] = np.random.permutation(X[feature_name])
     perturbed_pred = model.predict(X_perturbed)
     perturbed_width = perturbed_pred.interval(0.9)[1] - perturbed_pred.interval(0.9)[0]
     leverage_score = np.abs(perturbed_width - baseline_width).mean()
-    
+
     # Conditional decomposition (for continuous features, bin first)
     binned = X[feature_name].qcut(10)  # 10 quantile bins
     within_group_var = []
     between_group_means = []
-    
+
     for bin_label in binned.unique():
         bin_mask = binned == bin_label
         bin_widths = baseline_width.filter(bin_mask)
         within_group_var.append(bin_widths.var())
         between_group_means.append(bin_widths.mean())
-    
+
     aleatoric_score = np.mean(within_group_var)  # Noise within groups
     epistemic_score = np.var(between_group_means)  # Variance between groups
-    
+
     return {
         "feature": feature_name,
         "aleatoric_score": aleatoric_score,
@@ -528,10 +528,10 @@ from uncertainty_flow.integrations import MLflowCallback
 with mlflow.start_run():
     model = ConformalForecaster(...)
     model.fit(X_train)
-    
+
     # Automatic logging of metrics, parameters, artifacts
     mlflow.log_model(model, "model")
-    
+
     # Custom uncertainty metrics
     MLflowCallback(model, X_test, y_test).log_all()
 ```

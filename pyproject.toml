@@ -42,6 +42,11 @@ numpyro = [
     "numpyro>=0.14.0",
     "jax>=0.4.0",
 ]
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+]
 
 [project.scripts]
 uncertainty-flow = "uncertainty_flow.cli:main"
@@ -132,4 +137,5 @@ skips = ["B101", "B110", "B403"]
 [dependency-groups]
 dev = [
     "matplotlib>=3.10.8",
+    "pre-commit>=4.6.0",
 ]

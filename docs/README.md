@@ -1,33 +1,52 @@
-# uncertainty_flow Documentation
+# Uncertainty Flow
 
-This folder holds the maintained documentation for `uncertainty_flow`.
+> Probabilistic forecasting and uncertainty quantification — as easy as `fit` / `predict`.
 
-## Start Here
+---
 
-- [../README.md](../README.md) for installation and quickstart
-- [./api/spec.md](./api/spec.md) for API details
-- [./architecture/overview.md](./architecture/overview.md) for package structure and data flow
-- [./guides/distribution-approach.md](./guides/distribution-approach.md) for a narrative overview of the distribution-first workflow
-- [./guides/charting.md](./guides/charting.md) for plotting, intervals, samples, and chart-oriented usage
-- [./guides/models.md](./guides/models.md) for model selection and guarantee tradeoffs
-- [./guides/calibration.md](./guides/calibration.md) for calibration diagnostics and interpretation
-- [./guides/benchmarking.md](./guides/benchmarking.md) for benchmark datasets and CLI usage
+## Quick Links
 
-## Project Docs
+- **[Guides](guides/distribution-approach.md)** — Learn the distribution-first workflow
+- **[API Reference](api/core.md)** — Auto-generated docs for every module
+- **[Architecture](architecture/overview.md)** — Package structure and data flow
+- **[Benchmarks](benchmarks/README.md)** — Benchmark results and reproduction
 
-- [./project/contributing.md](./project/contributing.md) for developer workflow
-- [./project/changelog.md](./project/changelog.md) for release history
-- [./project/roadmap.md](./project/roadmap.md) for active priorities and future work
+## Overview
 
-## Design Notes
+`uncertainty_flow` is built **distribution-first**: every model returns a `DistributionPrediction` object, not just a number. Uncertainty is not an afterthought.
 
-- [./guides/design.md](./guides/design.md) for durable design decisions and principles
+### Key Features
 
-## Benchmarks
+| Feature | Description |
+|---|---|
+| **Distribution-first API** | `model.predict()` returns quantiles, intervals, mean, samples, and plots |
+| **Polars-native I/O** | Pass Polars DataFrames or LazyFrames directly |
+| **Conformal wrappers** | Wrap any scikit-learn model with statistically rigorous coverage guarantees |
+| **Multivariate support** | Marginal CDFs with copula-backed joint sampling |
+| **Model persistence** | Save/load fitted models with `.save()` / `.load()` |
+| **Calibration reports** | Polars DataFrame reports — paste-ready for model cards |
+| **Risk functions** | Financial VaR, inventory cost, asymmetric loss, and conformal risk control |
 
-- [./benchmarks/README.md](./benchmarks/README.md) for benchmark results and reproduction
-- [./benchmarks/20260426-comprehensive-run.md](./benchmarks/20260426-comprehensive-run.md) for the latest auto-generated report
+### Install
 
-## Archive
+```bash
+pip install uncertainty-flow
+```
 
-Older planning snapshots and merged guides live in [./archive/README.md](./archive/README.md). They are preserved for context, but they are not the source of truth for the current codebase.
+### Quick Start
+
+```python
+from uncertainty_flow import (
+    QuantileForestForecaster,
+    coverage_score,
+    pinball_loss,
+)
+
+model = QuantileForestForecaster(quantiles=[0.1, 0.5, 0.9])
+model.fit(X_train, y_train)
+pred = model.predict(X_test)
+
+print(pred.interval(alpha=0.8))
+print("Coverage:", coverage_score(y_test, pred))
+print("Pinball loss:", pinball_loss(y_test, pred))
+```

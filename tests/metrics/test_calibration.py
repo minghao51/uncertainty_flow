@@ -24,8 +24,7 @@ class TestCalibrationError:
         assert isinstance(error, float)
 
     def test_perfect_calibration(self):
-        y_true = np.array([5.0, 5.0, 5.0, 5.0, 5.0,
-                           5.0, 5.0, 5.0, 5.0, 5.0])
+        y_true = np.array([5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 5.0])
         lower = np.array([4.0] * 9 + [6.0])
         upper = np.array([6.0] * 9 + [8.0])
         error = calibration_error(y_true, lower, upper, nominal_coverage=0.9)

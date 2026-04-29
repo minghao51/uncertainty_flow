@@ -20,8 +20,8 @@ model.metadata  # dict for fitted or loaded models, else None
 
 ## 1. `ConformalRegressor`
 
-> Tabular regression. Wraps any scikit-learn estimator with statistically guaranteed coverage intervals.  
-> **Coverage guarantee: ✅ (exchangeability assumption)**  
+> Tabular regression. Wraps any scikit-learn estimator with statistically guaranteed coverage intervals.
+> **Coverage guarantee: ✅ (exchangeability assumption)**
 > **Non-crossing: ✅ (post-sort)**
 
 ```python
@@ -95,8 +95,8 @@ class ConformalRegressor(BaseUncertaintyModel):
 
 ## 2. `ConformalForecaster`
 
-> Time series forecasting (univariate & multivariate). Temporal-aware conformal wrapper.  
-> **Coverage guarantee: ✅ (with temporal correction)**  
+> Time series forecasting (univariate & multivariate). Temporal-aware conformal wrapper.
+> **Coverage guarantee: ✅ (with temporal correction)**
 > **Non-crossing: ✅ (post-sort)**
 
 ```python
@@ -145,8 +145,8 @@ class ConformalForecaster(BaseUncertaintyModel):
 
 ## 3. `QuantileForestForecaster`
 
-> Quantile Regression Forest. Stores full leaf distributions for fast quantile retrieval.  
-> **Coverage guarantee: ⚠️ Empirical only**  
+> Quantile Regression Forest. Stores full leaf distributions for fast quantile retrieval.
+> **Coverage guarantee: ⚠️ Empirical only**
 > **Non-crossing: ✅ (by leaf distribution construction)**
 
 ```python

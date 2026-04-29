@@ -64,8 +64,7 @@ def ingest_concrete(output_dir: Path) -> None:
 def ingest_wine_quality(output_dir: Path) -> None:
     print("Downloading wine quality dataset...")
     url = (
-        "https://archive.ics.uci.edu/ml/machine-learning-databases/"
-        "wine-quality/winequality-red.csv"
+        "https://archive.ics.uci.edu/ml/machine-learning-databases/wine-quality/winequality-red.csv"
     )
     df = pl.read_csv(url, separator=";", infer_schema_length=10000)
     _save(df, output_dir / "wine_quality.parquet")
@@ -182,8 +181,11 @@ def generate_synthetic_multivariate(output_dir: Path, n: int = 5000, seed: int =
     u = rng.uniform(size=(n, 3))
     v1 = u[:, 0]
     w = u[:, 1]
-    v2 = (v1 ** (-(theta_clayton + 1)) * (w ** (-(theta_clayton + 1) / theta_clayton))
-          - v1 ** (-(theta_clayton + 1)) + 1) ** (-1 / (theta_clayton + 1))
+    v2 = (
+        v1 ** (-(theta_clayton + 1)) * (w ** (-(theta_clayton + 1) / theta_clayton))
+        - v1 ** (-(theta_clayton + 1))
+        + 1
+    ) ** (-1 / (theta_clayton + 1))
     v3 = rng.uniform(size=n)
 
     y1 = x_mat[:, 0] + sp_stats.norm.ppf(v1) + rng.standard_normal(n) * 0.3
@@ -252,9 +254,7 @@ def ingest_fraud(output_dir: Path, n_samples: int = 50_000) -> None:
             print("  SKIP: no rows received from fraud dataset")
             return
         df = pl.DataFrame(rows)
-        df = df.with_columns(
-            pl.col("type").cast(pl.Categorical).to_physical().alias("type_code")
-        )
+        df = df.with_columns(pl.col("type").cast(pl.Categorical).to_physical().alias("type_code"))
         numeric_cols = get_numeric_cols(df)
         df = df.select(numeric_cols)
         _save(df, output_dir / "fraud.parquet")

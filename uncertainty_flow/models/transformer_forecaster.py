@@ -152,7 +152,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         if len(y_calib) > n_forecasts:
             y_calib = y_calib[-n_forecasts:]
         elif len(y_calib) < n_forecasts:
-            calib_forecasts = calib_forecasts[-len(y_calib):]
+            calib_forecasts = calib_forecasts[-len(y_calib) :]
 
         residuals = y_calib - calib_forecasts
 

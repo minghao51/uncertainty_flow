@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-import sys
 import logging
+import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 

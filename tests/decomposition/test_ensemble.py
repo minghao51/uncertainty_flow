@@ -149,6 +149,7 @@ class TestEnsembleDecompositionInputValidation:
 
         assert result1 == result2
 
+
 class TestEnsembleDecompositionRefitWorkflow:
     """Integration tests for refit-based decomposition."""
 

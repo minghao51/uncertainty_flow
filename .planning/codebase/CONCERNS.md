@@ -42,21 +42,21 @@ MIN_EIGVAL = 1e-6
 # Condition correlation matrix for numerical stability
 try:
     eigenvals = np.linalg.eigvals(self.correlation_matrix_)
-    
+
     if np.any(np.isnan(eigenvals)):
         error_invalid_data(
             "Correlation matrix contains NaN values. "
             "This may indicate zero-variance columns or invalid residuals."
         )
-    
+
     if np.any(eigenvals < MIN_EIGVAL):
         # Add ridge regularization to small eigenvalues
         conditioning = np.eye(n_targets) * (MIN_EIGVAL - eigenvals[eigenvals < MIN_EIGVAL].min())
         self.correlation_matrix_ = self.correlation_matrix_ + conditioning
-        
+
         # Recompute eigenvalues after conditioning
         eigenvals = np.linalg.eigvals(self.correlation_matrix_)
-    
+
     if np.any(eigenvals < MIN_EIGVAL):
         error_invalid_data(
             f"Correlation matrix is too ill-conditioned. "
@@ -99,7 +99,7 @@ try:
    - Added `test_fit_rejects_zero_variance_columns`
    - Added Gumbel validation test skeleton (currently skipped due to pytest issues)
 
-**Test Results:** 
+**Test Results:**
 - 16/26 copula tests passing (includes all GaussianCopula, ClaytonCopula, GumbelCopula, FrankCopula)
 - 1 test skipped (high correlation test due to pytest module loading issues)
 

@@ -11,11 +11,13 @@ from uncertainty_flow.benchmarking.runner import BenchmarkConfig
 def sample_df():
     rng = np.random.default_rng(42)
     n = 100
-    return pl.DataFrame({
-        "feature1": rng.standard_normal(n),
-        "feature2": rng.standard_normal(n),
-        "target": rng.standard_normal(n) * 0.5 + 1.0,
-    })
+    return pl.DataFrame(
+        {
+            "feature1": rng.standard_normal(n),
+            "feature2": rng.standard_normal(n),
+            "target": rng.standard_normal(n) * 0.5 + 1.0,
+        }
+    )
 
 
 @pytest.fixture

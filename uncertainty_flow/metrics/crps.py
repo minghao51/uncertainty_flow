@@ -52,9 +52,7 @@ def crps_score(
 
     phi_z = norm.pdf(z_obs)
 
-    crps_values = sigma * (
-        z_obs * (2 * norm.cdf(z_obs) - 1) + 2 * phi_z - 1 / np.sqrt(np.pi)
-    )
+    crps_values = sigma * (z_obs * (2 * norm.cdf(z_obs) - 1) + 2 * phi_z - 1 / np.sqrt(np.pi))
 
     crps_values = np.where(sigma > 0, crps_values, np.abs(y_true - midpoint))
 

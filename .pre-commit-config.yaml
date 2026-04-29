@@ -1,33 +1,32 @@
 repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        exclude: mkdocs.yml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 0.6.14
+    hooks:
+      - id: uv-lock
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.7
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
   - repo: local
     hooks:
-      - id: ruff-check
-        name: ruff check
-        entry: uv run ruff check
-        language: system
-        types: [python]
-        files: ^(uncertainty_flow|tests)/
-        pass_filenames: false
-
-      - id: mypy-check
-        name: mypy check
+      - id: mypy
+        name: mypy
         entry: uv run mypy uncertainty_flow/
         language: system
         types: [python]
         files: ^uncertainty_flow/
-        pass_filenames: false
-
-      - id: bandit-scan
-        name: bandit security scan
-        entry: uv run bandit -r uncertainty_flow/ -s B101,B110,B301,B403
-        language: system
-        types: [python]
-        files: ^uncertainty_flow/
-        pass_filenames: false
-
-      - id: pytest-fast
-        name: pytest (fast)
-        entry: uv run pytest tests/ -m "not slow and not optional" --ignore=tests/models/test_deep_quantile_torch.py -q
-        language: system
-        types: [python]
         pass_filenames: false
