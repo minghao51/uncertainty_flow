@@ -291,8 +291,6 @@ class TestPersistenceFailures:
 
     def test_oversized_archive_raises(self, tabular_data, tmp_path, monkeypatch):
         """Archives exceeding max size should be rejected."""
-        from uncertainty_flow.core._persistence import MAX_ARCHIVE_SIZE_BYTES
-
         model = ConformalRegressor(
             base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
             auto_tune=False,

@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "dataset": "exchange_rate",
+    "domain": "Finance",
+    "n_samples": 1000,
+    "horizon": 3,
+    "iterations": 3,
+    "warmup": 1,
+    "auto_tune": false
+  },
+  "results": [
+    {
+      "model": "naive-forecast",
+      "coverage_90": 0.165,
+      "coverage_80": 0.14,
+      "sharpness_90": 0.1619,
+      "sharpness_80": 0.126,
+      "winkler_90": 3.7912,
+      "winkler_80": 2.0924,
+      "pinball_loss": 0.1242,
+      "crps": 0.2299,
+      "mae": 0.2547,
+      "rmse": 0.2999,
+      "calibration_error": 0.735,
+      "train_time_sec": 0.001,
+      "memory_delta_mb": 0,
+      "n_samples": 1000,
+      "timing_mean": 0.001088,
+      "timing_std": 0.0001,
+      "n_runs": 3
+    },
+    {
+      "model": "moving-average",
+      "coverage_90": 0.137,
+      "coverage_80": 0.122,
+      "sharpness_90": 0.1287,
+      "sharpness_80": 0.1001,
+      "winkler_90": 4.1204,
+      "winkler_80": 2.2203,
+      "pinball_loss": 0.1394,
+      "crps": 0.2385,
+      "mae": 0.2586,
+      "rmse": 0.3056,
+      "calibration_error": 0.763,
+      "train_time_sec": 0.003,
+      "memory_delta_mb": 0,
+      "n_samples": 1000,
+      "timing_mean": 0.002583,
+      "timing_std": 3.2e-05,
+      "n_runs": 3
+    }
+  ]
+}

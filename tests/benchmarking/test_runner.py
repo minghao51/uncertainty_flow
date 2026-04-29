@@ -1,91 +1,131 @@
-"""Integration tests for uncertainty_flow.benchmarking module."""
+"""Integration tests for uncertainty_flow.benchmarking.runner."""
 
 import json
-import tempfile
-from pathlib import Path
 
+import polars as pl
 import pytest
 
-from uncertainty_flow.benchmarking.runner import BenchmarkRunner
+from uncertainty_flow.benchmarking.runner import BenchmarkConfig, BenchmarkRunner
+
+
+def _dataset_info(name: str):
+    return type(
+        "DatasetInfo",
+        (),
+        {"name": name, "domain": "Test", "default_target": "OT"},
+    )()
 
 
 @pytest.fixture
-def sample_benchmark_config():
+def sample_benchmark_config() -> BenchmarkConfig:
     """Create a valid benchmark configuration."""
-    return {
-        "dataset_name": "weather",
-        "n_samples": 100,
-        "horizon": 3,
-        "n_estimators": 30,
-        "target_column": "price",
-        "auto_tune": False,
-        "target_coverage": 0.9,
-        "tune_samples": 100,
-        "tune_timeout": 300,
-    }
+    return BenchmarkConfig(
+        dataset_name="weather",
+        n_samples=200,
+        horizon=3,
+        n_estimators=10,
+        target_column="OT",
+        auto_tune=False,
+        target_coverage=0.9,
+        tune_samples=100,
+        tune_timeout=30,
+        test_size=0.2,
+    )
+
+
+@pytest.fixture
+def mock_dataset() -> pl.DataFrame:
+    """Local deterministic dataset to avoid network in tests."""
+    n = 240
+    return pl.DataFrame(
+        {
+            "date": list(range(n)),
+            "feature": [float(i % 7) for i in range(n)],
+            "OT": [100.0 + i * 0.3 for i in range(n)],
+        }
+    )
 
 
 class TestBenchmarkRunner:
     """Test BenchmarkRunner integration."""
 
-    def test_load_data_weather(self, sample_benchmark_config):
-        """Should load weather dataset."""
-        from uncertainty_flow.benchmarking.datasets import load_dataset
+    def test_load_data_weather(self, sample_benchmark_config, mock_dataset, monkeypatch):
+        """Should load dataset through loader hook."""
 
-        runner = BenchmarkRunner(sample_benchmark_config())
+        def _fake_load_dataset(name, n_samples=None, split="train", **kwargs):
+            del split, kwargs
+            df = mock_dataset
+            if n_samples is not None:
+                df = df.head(n_samples)
+            return df, _dataset_info(name)
+
+        monkeypatch.setattr("uncertainty_flow.benchmarking.runner.load_dataset", _fake_load_dataset)
+
+        runner = BenchmarkRunner(sample_benchmark_config)
         runner.load_data()
 
         assert runner.df is not None
-        assert len(runner.df) == 100
+        assert len(runner.df) == 200
+        assert runner.target == "OT"
 
-    def test_load_data_resolves_target(self, sample_benchmark_config):
-        """Should auto-resolve target from DatasetInfo."""
-        runner = BenchmarkRunner(sample_benchmark_config())
-        runner.load_data()
-
-        assert runner.target in ["price", "temperature", "humidity"]
-
-    def test_run_single_model(self, sample_benchmark_config):
+    def test_run_single_model(self, sample_benchmark_config, mock_dataset, monkeypatch):
         """Should run a single model benchmark."""
-        runner = BenchmarkRunner(sample_benchmark_config())
+
+        def _fake_load_dataset(name, n_samples=None, split="train", **kwargs):
+            del split, kwargs
+            df = mock_dataset
+            if n_samples is not None:
+                df = df.head(n_samples)
+            return df, _dataset_info(name)
+
+        monkeypatch.setattr("uncertainty_flow.benchmarking.runner.load_dataset", _fake_load_dataset)
+
+        runner = BenchmarkRunner(sample_benchmark_config)
         runner.load_data()
 
         result = runner.run_model("quantile-forest")
         assert result.model_name == "quantile-forest"
-        assert len(result.metrics) > 0
+        assert 0 <= result.coverage_90 <= 1
 
-    def test_run_all_models(self, sample_benchmark_config):
-        """Should run all models."""
-        runner = BenchmarkRunner(sample_benchmark_config())
+    def test_run_all_models(self, sample_benchmark_config, mock_dataset, monkeypatch):
+        """Should run all registered models."""
+
+        def _fake_load_dataset(name, n_samples=None, split="train", **kwargs):
+            del split, kwargs
+            df = mock_dataset
+            if n_samples is not None:
+                df = df.head(n_samples)
+            return df, _dataset_info(name)
+
+        monkeypatch.setattr("uncertainty_flow.benchmarking.runner.load_dataset", _fake_load_dataset)
+
+        runner = BenchmarkRunner(sample_benchmark_config)
         runner.load_data()
 
-        results = runner.run_all()
-        assert len(results) > 0
+        result = runner.run_all(model_names=["quantile-forest", "conformal-regressor"])
+        assert len(result.models) > 0
 
-    def test_save_results_json(self, sample_benchmark_config, tmp_path):
+    def test_save_results_json(self, sample_benchmark_config, mock_dataset, monkeypatch, tmp_path):
         """Should save results to JSON file."""
-        runner = BenchmarkRunner(sample_benchmark_config())
+
+        def _fake_load_dataset(name, n_samples=None, split="train", **kwargs):
+            del split, kwargs
+            df = mock_dataset
+            if n_samples is not None:
+                df = df.head(n_samples)
+            return df, _dataset_info(name)
+
+        monkeypatch.setattr("uncertainty_flow.benchmarking.runner.load_dataset", _fake_load_dataset)
+
+        runner = BenchmarkRunner(sample_benchmark_config)
         runner.load_data()
-        runner.run_all()
+        runner.run_all(model_names=["quantile-forest"])
 
         output_file = tmp_path / "results.json"
-        runner.save_results(output_file)
+        runner.save_json(output_file)
 
         assert output_file.exists()
-        with open(output_file) as f:
-            data = json.load(f)
-            assert "dataset" in data
-            assert "results" in data
-
-    def test_auto_tune_integration(self, sample_benchmark_config):
-        """Should integrate with auto_tune_model."""
-        runner = BenchmarkRunner(
-            {**sample_benchmark_config(), "auto_tune": True}
-        )
-        runner.load_data()
-
-        assert "_tuning_cache" in runner._tuning_cache
-
-        result = runner.run_model("quantile-forest")
-        assert result.best_params is not None
-        assert "tuned" in result.model_name
+        with open(output_file, encoding="utf-8") as handle:
+            data = json.load(handle)
+        assert "metadata" in data
+        assert "results" in data

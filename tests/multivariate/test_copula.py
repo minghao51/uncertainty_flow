@@ -12,7 +12,7 @@ from uncertainty_flow.multivariate.copula import (
     GumbelCopula,
     auto_select_copula,
 )
-from uncertainty_flow.utils.exceptions import InvalidDataError
+from uncertainty_flow.utils.exceptions import InvalidDataError, ModelNotFittedError
 
 
 def _make_bivariate_residuals(n=1000, seed=42):
@@ -290,27 +290,40 @@ class TestAutoSelectCopula:
 class TestCopulaParameterized:
     """Test parameterized error handling across all copula families."""
 
-    @pytest.mark.parametrize("copula_class", [ClaytonCopula, FrankCopula, GumbelCopula, GaussianCopula])
+    @pytest.mark.parametrize(
+        "copula_class",
+        [ClaytonCopula, FrankCopula, GumbelCopula, GaussianCopula],
+    )
     def test_rejects_non_2d_input(self, copula_class):
         """All copulas should reject 1D residuals."""
         copula = copula_class()
         with pytest.raises(InvalidDataError, match="residuals must be 2D"):
             copula.fit(np.random.randn(100))
 
-    @pytest.mark.parametrize("copula_class", [ClaytonCopula, FrankCopula, GumbelCopula, GaussianCopula])
+    @pytest.mark.parametrize(
+        "copula_class",
+        [ClaytonCopula, FrankCopula, GumbelCopula],
+    )
     def test_rejects_non_bivariate_input(self, copula_class):
-        """All copulas should reject 3-column residuals in fit and sample."""
+        """Bivariate-only copulas should reject 3-column residuals."""
         copula = copula_class()
         residuals_3col = np.random.randn(100, 3)
-        with pytest.raises(InvalidDataError, match="residuals must be 2D"):
+        with pytest.raises(InvalidDataError, match="supports bivariate only"):
             copula.fit(residuals_3col)
+
+    def test_gaussian_accepts_multivariate_input(self):
+        """Gaussian copula should support dimensions greater than two."""
+        copula = GaussianCopula()
+        residuals_3col = np.random.randn(100, 3)
+        fitted = copula.fit(residuals_3col)
+        assert fitted is copula
 
     @pytest.mark.parametrize("copula_class", [ClaytonCopula, FrankCopula, GumbelCopula])
     def test_log_likelihood_rejects_unfitted_copula(self, copula_class):
         """log_likelihood should raise error on unfitted copula."""
         copula = copula_class()
         bivariate_residuals = _make_bivariate_residuals()
-        with pytest.raises(InvalidDataError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             copula.log_likelihood(bivariate_residuals)
 
 
@@ -321,7 +334,7 @@ class TestGaussianCopulaErrors:
         """Should reject residuals producing NaN eigenvalues."""
         copula = GaussianCopula()
         residuals_nan = np.full((100, 2), np.nan)
-        with pytest.raises(InvalidDataError, match="contains NaN values"):
+        with pytest.raises(InvalidDataError, match="infs or NaNs"):
             copula.fit(residuals_nan)
 
 

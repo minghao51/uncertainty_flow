@@ -1,0 +1,161 @@
+{
+  "weather": {
+    "metadata": {
+      "dataset": "weather",
+      "domain": "Climate",
+      "n_samples": 1000,
+      "horizon": 3,
+      "iterations": 3,
+      "warmup": 1,
+      "auto_tune": false
+    },
+    "results": [
+      {
+        "model": "moving-average",
+        "coverage_90": 0.268,
+        "coverage_80": 0.197,
+        "sharpness_90": 0.0234,
+        "sharpness_80": 0.0182,
+        "winkler_90": 0.3552,
+        "winkler_80": 0.204,
+        "pinball_loss": 0.0142,
+        "crps": 0.0234,
+        "mae": 0.0269,
+        "rmse": 0.0319,
+        "calibration_error": 0.632,
+        "train_time_sec": 0.003,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.00267,
+        "timing_std": 3.3e-05,
+        "n_runs": 3
+      },
+      {
+        "model": "naive-forecast",
+        "coverage_90": 0.271,
+        "coverage_80": 0.203,
+        "sharpness_90": 0.0282,
+        "sharpness_80": 0.022,
+        "winkler_90": 0.3822,
+        "winkler_80": 0.2229,
+        "pinball_loss": 0.0158,
+        "crps": 0.0258,
+        "mae": 0.0299,
+        "rmse": 0.0353,
+        "calibration_error": 0.629,
+        "train_time_sec": 0.0,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.000353,
+        "timing_std": 2.5e-05,
+        "n_runs": 3
+      }
+    ]
+  },
+  "exchange_rate": {
+    "metadata": {
+      "dataset": "exchange_rate",
+      "domain": "Finance",
+      "n_samples": 1000,
+      "horizon": 3,
+      "iterations": 3,
+      "warmup": 1,
+      "auto_tune": false
+    },
+    "results": [
+      {
+        "model": "naive-forecast",
+        "coverage_90": 0.165,
+        "coverage_80": 0.14,
+        "sharpness_90": 0.1619,
+        "sharpness_80": 0.126,
+        "winkler_90": 3.7912,
+        "winkler_80": 2.0924,
+        "pinball_loss": 0.1242,
+        "crps": 0.2299,
+        "mae": 0.2547,
+        "rmse": 0.2999,
+        "calibration_error": 0.735,
+        "train_time_sec": 0.001,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.001088,
+        "timing_std": 0.0001,
+        "n_runs": 3
+      },
+      {
+        "model": "moving-average",
+        "coverage_90": 0.137,
+        "coverage_80": 0.122,
+        "sharpness_90": 0.1287,
+        "sharpness_80": 0.1001,
+        "winkler_90": 4.1204,
+        "winkler_80": 2.2203,
+        "pinball_loss": 0.1394,
+        "crps": 0.2385,
+        "mae": 0.2586,
+        "rmse": 0.3056,
+        "calibration_error": 0.763,
+        "train_time_sec": 0.003,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.002583,
+        "timing_std": 3.2e-05,
+        "n_runs": 3
+      }
+    ]
+  },
+  "electricity": {
+    "metadata": {
+      "dataset": "electricity",
+      "domain": "Energy",
+      "n_samples": 1000,
+      "horizon": 3,
+      "iterations": 3,
+      "warmup": 1,
+      "auto_tune": false
+    },
+    "results": [
+      {
+        "model": "naive-forecast",
+        "coverage_90": 0.651,
+        "coverage_80": 0.524,
+        "sharpness_90": 759.8335,
+        "sharpness_80": 591.2383,
+        "winkler_90": 1737.8145,
+        "winkler_80": 1431.8112,
+        "pinball_loss": 57.8666,
+        "crps": 217.5224,
+        "mae": 300.384,
+        "rmse": 356.6057,
+        "calibration_error": 0.249,
+        "train_time_sec": 0.0,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.000326,
+        "timing_std": 4.3e-05,
+        "n_runs": 3
+      },
+      {
+        "model": "moving-average",
+        "coverage_90": 0.504,
+        "coverage_80": 0.455,
+        "sharpness_90": 723.585,
+        "sharpness_80": 563.0327,
+        "winkler_90": 2758.8073,
+        "winkler_80": 2000.2366,
+        "pinball_loss": 66.4289,
+        "crps": 267.3817,
+        "mae": 345.4408,
+        "rmse": 423.9673,
+        "calibration_error": 0.396,
+        "train_time_sec": 0.002,
+        "memory_delta_mb": 0,
+        "n_samples": 1000,
+        "timing_mean": 0.001757,
+        "timing_std": 6e-06,
+        "n_runs": 3
+      }
+    ]
+  }
+}

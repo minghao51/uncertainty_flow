@@ -57,6 +57,8 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         self._target_col_: str = ""
         self._posterior_samples_: np.ndarray | None = None
         self._n_features_: int = 0
+        self._y_mean_: float = 0.0
+        self._y_std_: float = 1.0
 
     def _numpyro_model(self, x, y=None):
         """NumPyro probabilistic model with horseshoe-like priors.
@@ -68,12 +70,13 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         n_features = x.shape[1]
         pw = self.prior_width
 
+        alpha = numpyro.sample("alpha", dist.Normal(0, pw))
         tau = numpyro.sample("tau", dist.HalfCauchy(pw * 0.1))
         lam = numpyro.sample("lam", dist.HalfCauchy(pw), sample_shape=(n_features,))
         beta = numpyro.sample("beta", dist.Normal(0, tau * lam))
         sigma = numpyro.sample("sigma", dist.HalfNormal(pw))
 
-        mu = x @ beta
+        mu = alpha + x @ beta
 
         with numpyro.plate("data", x.shape[0]):
             numpyro.sample("obs", dist.Normal(mu, sigma), obs=y)
@@ -115,6 +118,12 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         x = to_numpy(data, self._feature_cols_)
         y = to_numpy(data, [target_col]).flatten()
 
+        self._y_mean_ = float(np.mean(y))
+        self._y_std_ = float(np.std(y))
+        if self._y_std_ < 1e-12:
+            self._y_std_ = 1.0
+        y_scaled = (y - self._y_mean_) / self._y_std_
+
         # Create JAX PRNGKey
         seed = self.random_state if self.random_state is not None else 0
         rng_key = random.PRNGKey(seed)
@@ -128,7 +137,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
             num_warmup=self.n_warmup,
             num_samples=self.n_samples,
         )
-        mcmc.run(rng_key, x=x, y=y)
+        mcmc.run(rng_key, x=x, y=y_scaled)
 
         # Convert JAX posterior samples to numpy
         samples = mcmc.get_samples()
@@ -207,18 +216,25 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         # - sigma: shape (n_samples,) -> 1 column
         # Total: 1 + n_features + n_features + 1
 
-        n_beta_cols = n
-        beta_start = 1 + n  # after tau(1) + lam(n)
-        beta_end = beta_start + n_beta_cols
+        # Extract parameters from column-stacked posterior.
+        # Declaration order: alpha(1), tau(1), lam(n), beta(n), sigma(1)
+        # Column layout: [alpha, tau, lam(n), beta(n), sigma]
+        # Total: 2*n + 3
+        alpha_samples = self._posterior_samples_[:, 0]
+        beta_start = 2 + n  # after alpha(1) + tau(1) + lam(n)
+        beta_end = beta_start + n
         beta_samples = self._posterior_samples_[:, beta_start:beta_end]
-        # shape: (n_posterior, n_features)
+        sigma_col = 2 * n + 2
+        sigma_samples = self._posterior_samples_[:, sigma_col]
 
-        # Compute predictive matrix: (n_data, n_posterior)
-        pred_matrix = x @ beta_samples.T
+        mu_matrix = alpha_samples[np.newaxis, :] + x @ beta_samples.T
+        rng = np.random.default_rng(self.random_state or 0)
+        noise = rng.standard_normal(mu_matrix.shape) * sigma_samples[np.newaxis, :]
+        pred_matrix = mu_matrix + noise
 
-        # Compute quantiles from predictive distribution
+        pred_matrix = pred_matrix * self._y_std_ + self._y_mean_
+
         quantile_matrix = np.quantile(pred_matrix, self.quantiles, axis=1).T
-        # shape: (n_data, n_quantiles)
 
         # Sort each row for monotonicity
         quantile_matrix = np.sort(quantile_matrix, axis=1)

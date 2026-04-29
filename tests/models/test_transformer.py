@@ -29,7 +29,7 @@ class TestTransformerForecasterInit:
         model = TransformerForecaster(
             target="price",
             horizon=48,
-            model_name="chronos-2",
+            model_name="chronos-bolt-base",
             calibration_size=0.3,
             auto_tune=False,
             device="cpu",
@@ -37,7 +37,7 @@ class TestTransformerForecasterInit:
         )
         assert model.target == "price"
         assert model.horizon == 48
-        assert model.model_name == "chronos-2"
+        assert model.model_name == "chronos-bolt-base"
         assert model.calibration_size == 0.3
         assert model.auto_tune is False
         assert model.device == "cpu"
@@ -52,11 +52,11 @@ class TestTransformerForecasterInit:
 
     def test_chronos_models_config(self):
         """Should have valid Chronos model mappings."""
-        assert "chronos-2-small" in CHRONOS_MODELS
-        assert "chronos-2" in CHRONOS_MODELS
-        assert "chronos-2-tiny" in CHRONOS_MODELS
-        assert CHRONOS_MODELS["chronos-2-small"] == "amazon/chronos-2-small"
-        assert CHRONOS_MODELS["chronos-2"] == "amazon/chronos-2"
+        assert "chronos-bolt-tiny" in CHRONOS_MODELS
+        assert "chronos-bolt-small" in CHRONOS_MODELS
+        assert "chronos-bolt-base" in CHRONOS_MODELS
+        assert CHRONOS_MODELS["chronos-bolt-small"] == "amazon/chronos-bolt-small"
+        assert CHRONOS_MODELS["chronos-bolt-base"] == "amazon/chronos-bolt-base"
 
     def test_uncertainty_features_param(self):
         """Should accept uncertainty_features parameter."""

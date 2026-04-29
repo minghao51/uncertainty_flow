@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -12,7 +12,6 @@ from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quant
 from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 if TYPE_CHECKING:
-    from ..decisions.base import DecisionResult, DecisionStrategy
     from ..multivariate.copula import BaseCopula
 
 # Constants
@@ -492,12 +491,13 @@ class DistributionPrediction:
 
     def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
         """Compute Bayesian credible interval from posterior."""
+        if not (0 < confidence < 1):
+            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
         if self._posterior is None:
             error_invalid_data(
                 "credible_interval() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
         alpha = (1 - confidence) / 2
         lower = np.quantile(self._posterior, alpha, axis=0)
         upper = np.quantile(self._posterior, 1 - alpha, axis=0)
@@ -511,6 +511,7 @@ class DistributionPrediction:
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
         samples = self._posterior
+        n_total = samples.shape[0]
         if n_total % n_chains != 0:
             error_invalid_data(
                 f"n_chains={n_chains} does not evenly divide n_total={n_total}. "
@@ -561,7 +562,9 @@ class DistributionPrediction:
         result = {}
         for name, pred in self._group_predictions.items():
             interval = pred.interval(0.9)
-            result[name] = float(width)  # type: ignore[arg-type]
+            lower = interval["lower"].to_numpy()
+            upper = interval["upper"].to_numpy()
+            result[name] = float(np.mean(upper - lower))
         return result
 
     def group_intervals(self, confidence: float = 0.9) -> dict[str, pl.DataFrame]:
@@ -575,6 +578,7 @@ class DistributionPrediction:
 
     def cross_group_correlation(self) -> np.ndarray:
         """Return cross-group correlation matrix based on group median predictions."""
+        if self._group_predictions is None:
             error_invalid_data(
                 "cross_group_correlation() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
@@ -584,6 +588,7 @@ class DistributionPrediction:
                 pred._quantiles[:, pred._find_nearest_quantile_index(0.5)]
                 for pred in self._group_predictions.values()
             ]
+        )
         return np.corrcoef(medians.T)  # type: ignore
 
     # --- Causal treatment methods ---
@@ -610,6 +615,7 @@ class DistributionPrediction:
 
     def heterogeneity_score(self) -> float:
         """Return CATE variance as heterogeneity measure."""
+        if self._treatment_info is None:
             error_invalid_data(
                 "heterogeneity_score() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
@@ -677,77 +683,3 @@ class DistributionPrediction:
             "epistemic": epistemic,
             "total": aleatoric + epistemic,
         }
-
-    def decide(
-        self,
-        strategy: DecisionStrategy | Callable,
-        **kwargs,
-    ) -> DecisionResult:
-        """
-        Derive an optimal action/decision from the predicted distribution.
-
-        Args:
-            strategy: A DecisionStrategy object (e.g., InventoryOptimiser)
-                or a callable cost function for Monte Carlo optimization.
-            **kwargs: Additional arguments passed to the strategy or optimizer.
-
-        Returns:
-            DecisionResult containing the optimal action and metadata.
-
-        Examples
-        --------
-        >>> from uncertainty_flow.decisions import InventoryOptimiser
-        >>> pred = model.predict(X_test)
-        >>> # Newsvendor problem: $10 cost for shortage, $2 for excess
-        >>> decision = pred.decide(InventoryOptimiser(stockout_cost=10, overstock_cost=2))
-        >>> print(decision.optimal_value)
-        """
-        from ..decisions.base import DecisionStrategy
-
-        if isinstance(strategy, DecisionStrategy):
-            return strategy.resolve(self)
-
-        if callable(strategy):
-            return self._decide_monte_carlo(strategy, **kwargs)
-
-        raise ValueError("strategy must be a DecisionStrategy or a callable cost function")
-
-    def _decide_monte_carlo(
-        self,
-        cost_function: Callable,
-        n_samples: int = 1000,
-        random_state: int | None = None,
-    ) -> DecisionResult:
-        """Optimize custom cost function using Monte Carlo samples."""
-        from ..decisions.base import DecisionResult
-
-        samples_df = self.sample(n=n_samples, random_state=random_state)
-        samples_np = samples_df.drop("sample_id").to_numpy()
-        if samples_np.ndim == 2 and samples_np.shape[1] == 1:
-            samples_np = samples_np.ravel()
-        n_rows = self._n_samples
-        n_targets = len(self._targets)
-
-        optimal = np.empty((n_rows, n_targets) if n_targets > 1 else (n_rows,))
-        for row_idx in range(n_rows):
-            y = samples_np[row_idx * n_samples : (row_idx + 1) * n_samples]
-            candidates = y
-            expected_costs = np.empty(len(candidates), dtype=float)
-            for i, d in enumerate(candidates):
-                costs = np.asarray(cost_function(y, d))
-                expected_costs[i] = float(costs) if costs.ndim == 0 else float(costs.mean())
-            optimal[row_idx] = candidates[np.argmin(expected_costs)]
-
-        optimal_val: pl.Series | pl.DataFrame
-        if len(self._targets) == 1:
-            optimal_val = pl.Series("optimal_value", optimal)
-        else:
-            optimal_val = pl.DataFrame(
-                optimal.reshape(-1, len(self._targets)), schema=self._targets
-            )
-
-        return DecisionResult(
-            optimal_value=optimal_val,
-            strategy="Monte Carlo Optimization (Custom Cost)",
-            metadata={"n_samples": n_samples},
-        )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -30,6 +31,8 @@ from .tuning import TuningConfig, auto_tune_model
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 SEARCH_SPACE = {
     "quantile-forest": {
@@ -78,6 +81,7 @@ class BenchmarkConfig:
     tune_samples: int = 500
     tune_timeout: int = 120
     test_size: float = 0.2
+    dataset_revision: str | None = None
 
     def __post_init__(self):
         if self.confidence_levels is None:
@@ -252,6 +256,7 @@ class BenchmarkRunner:
         self.df, self.ds_info = load_dataset(
             self.config.dataset_name,
             n_samples=self.config.n_samples,
+            revision=self.config.dataset_revision,
         )
         if self.config.target_column:
             self.target = self.config.target_column
@@ -269,7 +274,7 @@ class BenchmarkRunner:
         if self.df is None:
             raise DataError("Data not loaded. Call load_data() first.")
 
-        print(f"    Auto-tuning {model_name}...")
+        logger.info("Auto-tuning model '%s'", model_name)
         tune_config = TuningConfig(
             target_coverage=self.config.target_coverage,
             n_samples=self.config.tune_samples,
@@ -301,7 +306,7 @@ class BenchmarkRunner:
         was_tuned = bool(tuned_params)
 
         if was_tuned:
-            print(f"    Using tuned params: {tuned_params}")
+            logger.info("Using tuned params for '%s': %s", model_name, tuned_params)
 
         model_cls = MODEL_REGISTRY[model_name]
         benchmark = model_cls(self.config, tuned_params)
@@ -309,13 +314,27 @@ class BenchmarkRunner:
         # Temporal train/test split to prevent data leakage
         n_total = len(self.df)
         n_test = int(n_total * self.config.test_size)
+        if n_total < 2:
+            raise DataError(
+                "Dataset must contain at least 2 rows for benchmark train/test split."
+            )
+        if n_test < 1:
+            raise DataError(
+                "test_size produced an empty test split. "
+                "Increase test_size or n_samples so at least one test row is retained."
+            )
+        if n_test >= n_total:
+            raise DataError(
+                "test_size produced an empty train split. "
+                "Decrease test_size so at least one train row is retained."
+            )
         train_df = self.df.head(n_total - n_test)
         test_df = self.df.tail(n_test)
 
-        print(f"    Fitting {model_name}...")
+        logger.info("Fitting benchmark model '%s'", model_name)
         benchmark.fit(train_df, self.target)
 
-        print("    Predicting...")
+        logger.info("Predicting with benchmark model '%s'", model_name)
         pred = benchmark.predict(test_df)
 
         interval_90 = pred.interval(0.9)
@@ -390,6 +409,7 @@ class BenchmarkRunner:
             except Exception as e:
                 error_payload = {"model": model_name, "error": str(e)}
                 self.errors.append(error_payload)
+                logger.exception("Benchmark model '%s' failed: %s", model_name, e)
                 if not allow_partial:
                     raise RuntimeError(f"Benchmark failed for model '{model_name}': {e}") from e
 

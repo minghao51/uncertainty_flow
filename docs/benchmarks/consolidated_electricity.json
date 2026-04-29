@@ -1,0 +1,53 @@
+{
+  "metadata": {
+    "dataset": "electricity",
+    "domain": "Energy",
+    "n_samples": 1000,
+    "horizon": 3,
+    "iterations": 3,
+    "warmup": 1,
+    "auto_tune": false
+  },
+  "results": [
+    {
+      "model": "naive-forecast",
+      "coverage_90": 0.651,
+      "coverage_80": 0.524,
+      "sharpness_90": 759.8335,
+      "sharpness_80": 591.2383,
+      "winkler_90": 1737.8145,
+      "winkler_80": 1431.8112,
+      "pinball_loss": 57.8666,
+      "crps": 217.5224,
+      "mae": 300.384,
+      "rmse": 356.6057,
+      "calibration_error": 0.249,
+      "train_time_sec": 0.0,
+      "memory_delta_mb": 0,
+      "n_samples": 1000,
+      "timing_mean": 0.000326,
+      "timing_std": 4.3e-05,
+      "n_runs": 3
+    },
+    {
+      "model": "moving-average",
+      "coverage_90": 0.504,
+      "coverage_80": 0.455,
+      "sharpness_90": 723.585,
+      "sharpness_80": 563.0327,
+      "winkler_90": 2758.8073,
+      "winkler_80": 2000.2366,
+      "pinball_loss": 66.4289,
+      "crps": 267.3817,
+      "mae": 345.4408,
+      "rmse": 423.9673,
+      "calibration_error": 0.396,
+      "train_time_sec": 0.002,
+      "memory_delta_mb": 0,
+      "n_samples": 1000,
+      "timing_mean": 0.001757,
+      "timing_std": 6e-06,
+      "n_runs": 3
+    }
+  ]
+}

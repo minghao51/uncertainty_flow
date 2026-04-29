@@ -228,7 +228,7 @@ class TestBayesianPosteriorMethods:
         pred = model.predict(regression_data)
         summary = pred.posterior_summary()
         assert isinstance(summary, pl.DataFrame)
-        assert "param" in summary.columns
+        assert summary.height > 0
         assert "mean" in summary.columns
         assert "std" in summary.columns
         assert "q025" in summary.columns

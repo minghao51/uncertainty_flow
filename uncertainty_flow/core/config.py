@@ -8,9 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from ..utils.exceptions import ConfigurationError, error_quantile_invalid
 
 CHRONOS_MODELS = {
-    "chronos-2-small": "amazon/chronos-2-small",
-    "chronos-2": "amazon/chronos-2",
-    "chronos-2-tiny": "amazon/chronos-2-tiny",
+    "chronos-bolt-tiny": "amazon/chronos-bolt-tiny",
+    "chronos-bolt-small": "amazon/chronos-bolt-small",
+    "chronos-bolt-base": "amazon/chronos-bolt-base",
 }
 
 
@@ -66,10 +66,10 @@ class QuantileConfig(BaseSettings):
     )
 
     default_chronos_model: str = Field(
-        default="chronos-2-small",
+        default="chronos-bolt-small",
         description=(
             "Default Chronos model for TransformerForecaster. "
-            "Options: chronos-2-small (20M, default), chronos-2 (710M), chronos-2-tiny (8M)."
+            "Options: chronos-bolt-small (default), chronos-bolt-tiny (fastest), chronos-bolt-base."
         ),
     )
 

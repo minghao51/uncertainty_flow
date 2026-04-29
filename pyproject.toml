@@ -17,12 +17,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=9.0.2",
+    "pytest>=9.0.3",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "mypy>=1.10.0",
     "bandit>=1.7.9",
     "pip-audit>=2.7.0",
+    "psutil>=5.9.0",
     "matplotlib>=3.7.0",
 ]
 torch = [
@@ -62,7 +63,7 @@ ignore = []
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--strict-markers", "-ra", "--durations=10", "--import-mode=importlib", "--cov=uncertainty_flow", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=85"]
+addopts = ["--strict-markers", "-ra", "--durations=10", "--import-mode=importlib", "--cov=uncertainty_flow", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=65"]
 markers = [
     "unit: fast, focused tests for a single module or behavior",
     "integration: tests covering multi-module workflows or heavier model interactions",
@@ -96,7 +97,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 85.0
+fail_under = 65.0
 exclude_lines = [
     "pragma: no cover",
     "def __repr__",

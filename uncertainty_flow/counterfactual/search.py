@@ -323,7 +323,7 @@ class EvolutionarySearch:
                 )
                 fitness_values[i] = width_penalty + 0.1 * change_penalty
 
-            except Exception:
+            except (ValueError, TypeError, RuntimeError):
                 # Invalid individual, assign high fitness
                 fitness_values[i] = 1e6
                 widths[i] = original_width
@@ -428,16 +428,16 @@ class EvolutionarySearch:
 
 class GradientSearch:
     """
-    Gradient-based search for differentiable models.
+    Finite-difference optimization for uncertainty counterfactuals.
 
-    Uses gradient descent to find minimal feature changes that reduce
-    prediction interval width. Suitable for neural network models
-    where gradients can be computed.
+    Uses finite-difference gradients and coordinate-style updates to find
+    minimal feature changes that reduce prediction interval width. This
+    implementation does not use model autograd internals directly.
 
     Parameters
     ----------
     model : BaseUncertaintyModel
-        Fitted differentiable uncertainty model (e.g., DeepQuantileNetTorch)
+        Fitted uncertainty model with predict() method
     confidence : float, default=0.9
         Confidence level for prediction intervals
     learning_rate : float, default=0.01
@@ -500,7 +500,7 @@ class GradientSearch:
         fixed_features: list[str] | None = None,
     ) -> SearchResult:
         """
-        Search for counterfactual using gradient-based optimization.
+        Search for counterfactual using finite-difference optimization.
 
         Args:
             data: Original feature DataFrame (single row)
@@ -539,9 +539,8 @@ class GradientSearch:
         if fixed_features is None:
             fixed_features = []
 
-        # Check if model supports gradients
+        # Prefer a lightweight finite-difference fallback for non-differentiable models.
         if not self._model_supports_gradients():
-            # Fall back to finite difference approximation
             return self._finite_difference_search(
                 data, target_width, original_width, feature_bounds, fixed_features
             )
@@ -554,7 +553,7 @@ class GradientSearch:
 
         n_iterations = min(self.n_iterations, self._max_effective_iterations)
         for iteration in range(n_iterations):
-            # Compute gradient
+            # Compute finite-difference gradient
             gradient = self._compute_gradient(
                 cf_features, data, target_width, original_width, fixed_features
             )
@@ -642,12 +641,14 @@ class GradientSearch:
         original_width: float,
         fixed_features: list[str],
     ) -> np.ndarray:
-        """Compute gradient using autograd."""
+        """Compute finite-difference gradient (autograd is not used)."""
         try:
             import torch
         except ImportError:
             raise ImportError("PyTorch is required for gradient-based search")
 
+        # Kept for compatibility with Torch model environments; optimization
+        # still relies on finite differences for objective gradients.
         torch.tensor(cf_features, dtype=torch.float32, requires_grad=True)
 
         return self._finite_difference_gradient(
@@ -711,7 +712,7 @@ class GradientSearch:
 
             return width_loss + 0.1 * change_penalty
 
-        except Exception:
+        except (ValueError, TypeError, RuntimeError):
             return 1e6
 
     def _finite_difference_search(

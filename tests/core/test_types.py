@@ -76,20 +76,22 @@ class TestConfigQuantiles:
     """Test _ConfigQuantiles proxy behavior."""
 
     def test_config_quantiles_index_with_args(self):
-        """index() with start/stop should slice correctly."""
-        assert DEFAULT_QUANTILES.index(1, 3) == [0.2, 0.5]
-        assert DEFAULT_QUANTILES.index(0) == 0.05
-        assert DEFAULT_QUANTILES.index(-1) == 0.95
-        assert DEFAULT_QUANTILES.index(1, 1) == 0.2
+        """index() should match Sequence.index semantics."""
+        assert DEFAULT_QUANTILES.index(0.05) == 0
+        assert DEFAULT_QUANTILES.index(0.3, 3) == 3
+        assert (
+            DEFAULT_QUANTILES.index(0.95, 0, len(DEFAULT_QUANTILES))
+            == len(DEFAULT_QUANTILES) - 1
+        )
 
     def test_config_quantiles_equality_with_sequence(self):
         """__eq__() should compare with other sequences correctly."""
-        assert DEFAULT_QUANTILES == [0.05, 0.2, 0.5, 0.9]
+        expected = [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
+        assert DEFAULT_QUANTILES == expected
         assert DEFAULT_QUANTILES != "not_a_sequence"
-        other_list = [0.05, 0.2, 0.5, 0.9]
+        other_list = expected.copy()
         assert DEFAULT_QUANTILES == other_list
 
     def test_config_quantiles_equality_with_string(self):
         """__eq__() should reject non-sequence strings."""
         assert DEFAULT_QUANTILES != "not_a_sequence"
-

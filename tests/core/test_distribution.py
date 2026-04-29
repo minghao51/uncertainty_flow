@@ -258,14 +258,16 @@ class TestPlotMethod:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        # Just check it doesn't crash (we can't easily test plot output)
         try:
-            dp.plot()
+            import matplotlib.pyplot as plt
+
+            fig, ax = plt.subplots()
+            dp.plot(ax=ax)
+            plt.close(fig)
         except ImportError:
             pytest.skip("matplotlib not available")
         except Exception:
-            # Plot might fail due to display backend, but that's ok
-            # We just want to ensure the code runs
+            # Plot may still fail under constrained backends; this test only checks call safety.
             pass
 
 

@@ -16,10 +16,6 @@ uv run python benchmarks/run_benchmarks.py -d weather -n 500 --iterations 5
 # Generate a report from saved results
 uv run python benchmarks/generate_report.py --output results/report.md
 
-# List available datasets
-uv run python -m uncertainty_flow.cli list-datasets
-```
-
 ---
 
 ## Available Datasets

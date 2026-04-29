@@ -99,29 +99,27 @@ class TestEnsembleDecompositionInit:
         assert summary["random_state"] == 123
         assert summary["refit_based"] is True
 
-    )
-
 
 class TestEnsembleDecompositionInputValidation:
-        """Test input validation in EnsembleDecomposition.__init__."""
+    """Test input validation in EnsembleDecomposition.__init__."""
 
-        def test_rejects_zero_bootstrap(self):
-            """Should reject n_bootstrap=0."""
-            with pytest.raises(ValueError, match="at least 1"):
-                EnsembleDecomposition(
-                    model_factory=lambda: LinearBootstrapToyModel(),
-                    train_data=None,
-                    n_bootstrap=0,
-                )
+    def test_rejects_zero_bootstrap(self):
+        """Should reject n_bootstrap=0."""
+        with pytest.raises(ValueError, match="at least 1"):
+            EnsembleDecomposition(
+                model_factory=lambda: LinearBootstrapToyModel(),
+                train_data=None,
+                n_bootstrap=0,
+            )
 
-        def test_rejects_invalid_confidence(self):
-            """Should reject confidence outside (0, 1)."""
-            with pytest.raises(ValueError, match="must be in"):
-                EnsembleDecomposition(
-                    model_factory=lambda: LinearBootstrapToyModel(),
-                    train_data=None,
-                    confidence=0.0,
-                )
+    def test_rejects_invalid_confidence(self):
+        """Should reject confidence outside (0, 1)."""
+        with pytest.raises(ValueError, match="must be in"):
+            EnsembleDecomposition(
+                model_factory=lambda: LinearBootstrapToyModel(),
+                train_data=None,
+                confidence=0.0,
+            )
         with pytest.raises(ValueError, match="must be in"):
             EnsembleDecomposition(
                 model_factory=lambda: LinearBootstrapToyModel(),
@@ -129,31 +127,29 @@ class TestEnsembleDecompositionInputValidation:
                 confidence=1.5,
             )
 
-        def test_rejects_empty_train_data(self):
-            """Should reject empty train_data."""
-            with pytest.raises(ValueError, match="at least one row"):
-                EnsembleDecomposition(
-                    model_factory=lambda: LinearBootstrapToyModel(),
-                    train_data=pl.DataFrame(),
-                )
-
-        def test_decompose_caches_result(self):
-            """Second decompose() call should return cached result."""
-            decomposer = EnsembleDecomposition(
-                model_factory=quantile_forest_factory,
-                train_data=sample_data.select(["x1", "x2", "x3", "y"]),
-                n_bootstrap=3,
-                random_state=42,
+    def test_rejects_empty_train_data(self):
+        """Should reject empty train_data."""
+        with pytest.raises(ValueError, match="at least one row"):
+            EnsembleDecomposition(
+                model_factory=lambda: LinearBootstrapToyModel(),
+                train_data=pl.DataFrame(),
             )
 
-            result1 = decomposer.decompose(sample_data.select(["x1", "x2", "x3"]))
-            result2 = decomposer.decompose(sample_data.select(["x1", "x2", "x3"]))
+    def test_decompose_caches_result(self, sample_data):
+        """Second decompose() call should return cached result."""
+        decomposer = EnsembleDecomposition(
+            model_factory=quantile_forest_factory,
+            train_data=sample_data.select(["x1", "x2", "x3", "y"]),
+            n_bootstrap=3,
+            random_state=42,
+        )
 
-            assert result1 is result2
+        result1 = decomposer.decompose(sample_data.select(["x1", "x2", "x3"]))
+        result2 = decomposer.decompose(sample_data.select(["x1", "x2", "x3"]))
 
-    )
+        assert result1 == result2
 
-    class TestEnsembleDecompositionRefitWorkflow:
+class TestEnsembleDecompositionRefitWorkflow:
     """Integration tests for refit-based decomposition."""
 
     def test_decompose_returns_expected_keys(self, sample_data):

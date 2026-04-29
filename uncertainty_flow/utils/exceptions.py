@@ -1,7 +1,7 @@
 """Exception hierarchy and error helpers for uncertainty_flow."""
 
 import warnings
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NoReturn
 
 if TYPE_CHECKING:
     pass
@@ -98,9 +98,6 @@ class QuantileError(ConfigurationError):
 # ============================================================================
 # Error Helper Functions
 # ============================================================================
-
-
-from typing import NoReturn
 
 def error_model_not_fitted(model_name: str = "Model") -> NoReturn:
     """Raise ModelNotFittedError.

@@ -1,5 +1,6 @@
 """Dataset registry and loading utilities for benchmarking."""
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ class DatasetInfo:
     domain: str
     description: str
     default_target: str
+    revision: str | None = None
     is_local: bool = False
 
 
@@ -232,6 +234,121 @@ AVAILABLE_DATASETS: dict[str, DatasetInfo] = {
         description="Wikipedia web traffic",
         default_target="OT",
     ),
+    "concrete": DatasetInfo(
+        name="concrete",
+        hf_path="",
+        subset=None,
+        domain="Materials",
+        description="Concrete compressive strength (UCI, heteroscedastic)",
+        default_target="strength",
+        is_local=True,
+    ),
+    "wine_quality": DatasetInfo(
+        name="wine_quality",
+        hf_path="",
+        subset=None,
+        domain="Food",
+        description="Wine quality scores (UCI, non-Gaussian ordinal)",
+        default_target="quality",
+        is_local=True,
+    ),
+    "energy_efficiency": DatasetInfo(
+        name="energy_efficiency",
+        hf_path="",
+        subset=None,
+        domain="Energy",
+        description="Building energy efficiency (UCI, multi-target)",
+        default_target="y1",
+        is_local=True,
+    ),
+    "traffic": DatasetInfo(
+        name="traffic",
+        hf_path="ts-arena/traffic",
+        subset=None,
+        domain="Transportation",
+        description="Traffic flow (high-dimensional, regime changes)",
+        default_target="OT",
+    ),
+    "illness": DatasetInfo(
+        name="illness",
+        hf_path="ts-arena/illness",
+        subset=None,
+        domain="Healthcare",
+        description="ILI incidence (regime-switching, seasonal)",
+        default_target="OT",
+    ),
+    "beijingpm25_local": DatasetInfo(
+        name="beijingpm25_local",
+        hf_path="",
+        subset=None,
+        domain="Environment",
+        description="Beijing PM2.5 air quality (heavy tails, missing values)",
+        default_target="OT",
+        is_local=True,
+    ),
+    "synthetic_heteroscedastic": DatasetInfo(
+        name="synthetic_heteroscedastic",
+        hf_path="",
+        subset=None,
+        domain="Synthetic",
+        description="Synthetic heteroscedastic regression (ground truth)",
+        default_target="y",
+        is_local=True,
+    ),
+    "synthetic_regime_switching": DatasetInfo(
+        name="synthetic_regime_switching",
+        hf_path="",
+        subset=None,
+        domain="Synthetic",
+        description="Synthetic regime-switching series (ground truth)",
+        default_target="y",
+        is_local=True,
+    ),
+    "synthetic_heavy_tailed": DatasetInfo(
+        name="synthetic_heavy_tailed",
+        hf_path="",
+        subset=None,
+        domain="Synthetic",
+        description="Synthetic heavy-tailed regression (Student-t noise)",
+        default_target="y",
+        is_local=True,
+    ),
+    "financial_volatility": DatasetInfo(
+        name="financial_volatility",
+        hf_path="",
+        subset=None,
+        domain="Finance",
+        description="FX rate changes with rolling volatility features (real volatility clustering)",
+        default_target="OT_diff",
+        is_local=True,
+    ),
+    "climsim": DatasetInfo(
+        name="climsim",
+        hf_path="",
+        subset=None,
+        domain="Climate",
+        description="ClimSim low-res climate simulation (high-dimensional, non-stationary)",
+        default_target="ptend_t",
+        is_local=True,
+    ),
+    "fraud": DatasetInfo(
+        name="fraud",
+        hf_path="",
+        subset=None,
+        domain="Finance",
+        description="Synthetic fraud detection (extreme class imbalance, temporal dynamics)",
+        default_target="isFraud",
+        is_local=True,
+    ),
+    "synthetic_multivariate": DatasetInfo(
+        name="synthetic_multivariate",
+        hf_path="",
+        subset=None,
+        domain="Synthetic",
+        description="Synthetic multi-target with Clayton copula dependency (ground truth)",
+        default_target="y1",
+        is_local=True,
+    ),
 }
 
 
@@ -383,6 +500,7 @@ def load_dataset(
     n_samples: int | None = None,
     force_download: bool = False,
     cache_dir: str | None = None,
+    revision: str | None = None,
 ) -> tuple[pl.DataFrame, DatasetInfo]:
     """Load a dataset by name or path.
 
@@ -400,14 +518,14 @@ def load_dataset(
     Raises:
         ValueError: If dataset not found or cannot be loaded
     """
-    try:
-        from datasets import load_dataset as hf_load_dataset
-    except ImportError:
-        raise ImportError(
-            "datasets library is required for benchmarking. Install with: pip install datasets"
-        )
-
     ds_info: DatasetInfo | None = None
+    explicit_revision = revision
+
+    if "@" in name:
+        base_name, _, revision_suffix = name.rpartition("@")
+        if base_name and revision_suffix:
+            name = base_name
+            explicit_revision = revision_suffix
 
     if "/" in name:
         parts = name.split("/")
@@ -439,6 +557,35 @@ def load_dataset(
             f"Use 'uncertainty-flow list-datasets' to see available datasets."
         )
 
+    if ds_info.is_local:
+        local_path = DATASETS_DIR / f"{ds_info.name}.parquet"
+        if local_path.exists():
+            local_df = pl.read_parquet(local_path)
+            if n_samples and n_samples < len(local_df):
+                local_df = local_df.head(n_samples)
+            return local_df, ds_info
+
+    effective_revision = (
+        explicit_revision
+        if explicit_revision is not None
+        else ds_info.revision
+    )
+    if effective_revision is None:
+        effective_revision = os.getenv("UNCERTAINTY_FLOW_HF_REVISION")
+    if effective_revision is None:
+        raise ConfigurationError(
+            "Remote dataset loading requires a pinned HuggingFace revision. "
+            "Use '<dataset>@<revision>' (for example, 'weather@<commit>'), pass revision=, "
+            "or set UNCERTAINTY_FLOW_HF_REVISION."
+        )
+
+    try:
+        from datasets import load_dataset as hf_load_dataset
+    except ImportError:
+        raise ImportError(
+            "datasets library is required for benchmarking. Install with: pip install datasets"
+        )
+
     hf_kwargs: dict[str, str] = {}
     if cache_dir is not None:
         hf_kwargs["cache_dir"] = cache_dir
@@ -451,12 +598,14 @@ def load_dataset(
                 ds_info.hf_path,
                 ds_info.subset,
                 split=split,
+                revision=effective_revision,
                 **hf_kwargs,
             )
         else:
             hf_ds = hf_load_dataset(
                 ds_info.hf_path,
                 split=split,
+                revision=effective_revision,
                 **hf_kwargs,
             )
 
@@ -485,7 +634,11 @@ def load_dataset(
         ) from e
 
 
-def download_dataset(name: str, cache_dir: str | None = None) -> Path:
+def download_dataset(
+    name: str,
+    cache_dir: str | None = None,
+    revision: str | None = None,
+) -> Path:
     """Download a dataset to local cache.
 
     Args:
@@ -500,6 +653,7 @@ def download_dataset(name: str, cache_dir: str | None = None) -> Path:
         n_samples=None,
         force_download=True,
         cache_dir=cache_dir,
+        revision=revision,
     )
     output_dir = Path(cache_dir) if cache_dir is not None else DATASETS_DIR
     output_dir.mkdir(parents=True, exist_ok=True)

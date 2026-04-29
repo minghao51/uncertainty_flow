@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -21,6 +22,8 @@ from uncertainty_flow.benchmarking.datasets import download_dataset
 
 if TYPE_CHECKING:
     pass
+
+logger = logging.getLogger(__name__)
 
 
 @click.group()
@@ -157,6 +160,12 @@ def list_datasets_cmd(domain: str | None) -> None:
     default=0.2,
     help="Fraction of data to hold out for testing (default: 0.2)",
 )
+@click.option(
+    "--dataset-revision",
+    type=str,
+    default=None,
+    help="Pinned HuggingFace dataset revision (commit hash).",
+)
 def benchmark(
     dataset: str,
     model: str,
@@ -172,6 +181,7 @@ def benchmark(
     csv_only: bool,
     allow_partial: bool,
     test_size: float,
+    dataset_revision: str | None,
 ) -> None:
     """Run benchmark on a dataset with optional auto-tuning.
 
@@ -207,6 +217,7 @@ def benchmark(
         target_coverage=target_coverage,
         tune_samples=tune_samples,
         test_size=test_size,
+        dataset_revision=dataset_revision,
     )
 
     if model == "all":
@@ -238,8 +249,10 @@ def benchmark(
     try:
         click.echo("Loading dataset...")
         runner.load_data()
-        assert runner.df is not None, "Failed to load dataset"
-        assert runner.ds_info is not None, "Failed to get dataset info"
+        if runner.df is None:
+            raise RuntimeError("Failed to load dataset")
+        if runner.ds_info is None:
+            raise RuntimeError("Failed to get dataset info")
         click.echo(f"  Loaded: {len(runner.df):,} rows, {len(runner.df.columns)} columns")
         click.echo(f"  Domain: {runner.ds_info.domain}")
         click.echo(f"  Target: {runner.target}")
@@ -295,6 +308,7 @@ def benchmark(
                 click.echo(f"CSV results saved to: {default_csv}")
 
     except Exception as e:
+        logger.exception("Benchmark command failed: %s", e)
         click.echo(f"\nError: {e}", err=True)
         sys.exit(1)
 
@@ -338,12 +352,19 @@ def benchmark(
     default=None,
     help="Output file for tuned parameters",
 )
+@click.option(
+    "--dataset-revision",
+    type=str,
+    default=None,
+    help="Pinned HuggingFace dataset revision (commit hash).",
+)
 def tune(
     dataset: str,
     model: str,
     n_samples: int,
     target_coverage: float,
     output: str | None,
+    dataset_revision: str | None,
 ) -> None:
     """Automatically tune hyperparameters for optimal coverage.
 
@@ -392,6 +413,7 @@ def tune(
                 model_name=model_name,
                 n_samples=n_samples,
                 target_coverage=target_coverage,
+                dataset_revision=dataset_revision,
             )
             results.append(result)
             best_configs[model_name] = result.best_params
@@ -403,6 +425,7 @@ def tune(
             click.echo(f"  Trials: {result.trials}")
             click.echo()
         except Exception as e:
+            logger.exception("Tune command model '%s' failed: %s", model_name, e)
             click.echo(f"  ERROR: {e}", err=True)
             click.echo()
 
@@ -447,7 +470,17 @@ def tune(
     default=None,
     help="Custom cache directory for HuggingFace datasets",
 )
-def download_dataset_cmd(dataset: str, cache_dir: str | None) -> None:
+@click.option(
+    "--dataset-revision",
+    type=str,
+    default=None,
+    help="Pinned HuggingFace dataset revision (commit hash).",
+)
+def download_dataset_cmd(
+    dataset: str,
+    cache_dir: str | None,
+    dataset_revision: str | None,
+) -> None:
     """Download a dataset for offline use.
 
     Examples:
@@ -460,7 +493,11 @@ def download_dataset_cmd(dataset: str, cache_dir: str | None) -> None:
     """
     try:
         click.echo(f"Downloading dataset: {dataset}...")
-        path = download_dataset(dataset, cache_dir=cache_dir)
+        path = download_dataset(
+            dataset,
+            cache_dir=cache_dir,
+            revision=dataset_revision,
+        )
         click.echo(f"Dataset saved to: {path}")
 
         import polars as pl
@@ -468,6 +505,7 @@ def download_dataset_cmd(dataset: str, cache_dir: str | None) -> None:
         df = pl.read_parquet(path)
         click.echo(f"Dataset size: {len(df):,} rows, {len(df.columns)} columns")
     except Exception as e:
+        logger.exception("download-dataset command failed for '%s': %s", dataset, e)
         click.echo(f"Error downloading dataset: {e}", err=True)
         sys.exit(1)
 
@@ -511,6 +549,7 @@ def download_all(domain: str | None, output: str | None) -> None:
             path = download_dataset(ds.name)
             click.echo(f"  -> {path}")
         except Exception as e:
+            logger.exception("download-all failed for dataset '%s': %s", ds.name, e)
             click.echo(f"  ERROR: {e}", err=True)
 
     click.echo("\nDownload complete!")

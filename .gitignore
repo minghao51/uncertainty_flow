@@ -61,7 +61,11 @@ wheels/
 .env
 .venv
 
+.cla/
 .claude
 .mypy_cache/
 .planning/
 results/
+
+# Data files
+data/*.parquet

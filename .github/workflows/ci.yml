@@ -14,7 +14,8 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.11"
-      - run: uv run ruff check uncertainty_flow/ tests/
+      - run: uv run --extra dev ruff check .
+      - run: uv run --extra dev mypy uncertainty_flow/
 
   test:
     runs-on: ubuntu-latest
@@ -26,4 +27,14 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
+      - run: uv run --extra dev pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.11"
+      - run: uv run --extra dev bandit -r uncertainty_flow -s B101,B110,B301,B403
+      - run: uv run --extra dev pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839

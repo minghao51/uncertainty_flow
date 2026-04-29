@@ -26,6 +26,7 @@ This folder holds the maintained documentation for `uncertainty_flow`.
 ## Benchmarks
 
 - [./benchmarks/README.md](./benchmarks/README.md) for benchmark results and reproduction
+- [./benchmarks/20260426-comprehensive-run.md](./benchmarks/20260426-comprehensive-run.md) for the latest auto-generated report
 
 ## Archive
 

@@ -57,8 +57,9 @@ class TestDownloadDataset:
     @pytest.mark.skipif(
         not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
     )
-    def test_downloads_dataset(self, tmp_path):
+    def test_downloads_dataset(self, tmp_path, monkeypatch):
         """Should download dataset to cache."""
+        monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
         result = runner.invoke(cli, ["download-dataset", "weather", "--cache-dir", str(tmp_path)])
         assert result.exit_code == 0
         assert "Dataset saved to:" in result.output
@@ -79,8 +80,9 @@ class TestBenchmark:
     @pytest.mark.skipif(
         not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
     )
-    def test_runs_benchmark_with_all_models(self, tmp_path):
+    def test_runs_benchmark_with_all_models(self, tmp_path, monkeypatch):
         """Should run benchmark with all models."""
+        monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
         output = tmp_path / "results.json"
         result = runner.invoke(
             cli,
@@ -90,8 +92,9 @@ class TestBenchmark:
                 "weather",
                 "--model",
                 "all",
+                "--no-auto-tune",
                 "--samples",
-                "100",
+                "200",
                 "--output",
                 str(output),
             ],
@@ -110,8 +113,9 @@ class TestBenchmark:
     @pytest.mark.skipif(
         not DATASETS_AVAILABLE, reason="datasets optional dependency not installed"
     )
-    def test_runs_benchmark_with_specific_models(self, tmp_path):
+    def test_runs_benchmark_with_specific_models(self, tmp_path, monkeypatch):
         """Should run benchmark with specific models."""
+        monkeypatch.setenv("UNCERTAINTY_FLOW_HF_REVISION", "main")
         output = tmp_path / "results.json"
         result = runner.invoke(
             cli,
@@ -121,8 +125,9 @@ class TestBenchmark:
                 "weather",
                 "--model",
                 "quantile-forest,conformal-regressor",
+                "--no-auto-tune",
                 "--samples",
-                "100",
+                "200",
                 "--output",
                 str(output),
             ],

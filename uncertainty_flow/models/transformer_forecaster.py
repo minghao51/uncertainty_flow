@@ -68,8 +68,8 @@ class TransformerForecaster(BaseUncertaintyModel):
             target: Target column name for univariate forecasting
             horizon: Forecast horizon (number of steps ahead)
             model_name: Chronos model name. Defaults to config default.
-                        Options: "chronos-2-small" (20M, default), "chronos-2" (710M),
-                        "chronos-2-tiny" (8M, fastest)
+                        Options: "chronos-bolt-small" (default), "chronos-bolt-tiny" (fastest),
+                        "chronos-bolt-base"
             calibration_method: "holdout" (temporal split from end)
             calibration_size: Fraction of data for calibration (0-1)
             auto_tune: Whether to tune supported hyperparameters before final fit
@@ -121,7 +121,7 @@ class TransformerForecaster(BaseUncertaintyModel):
             self (for method chaining)
         """
         try:
-            from chronos import Chronos2Pipeline
+            from chronos import BaseChronosPipeline
         except ImportError:
             raise ImportError(
                 "chronos-forecasting is required for TransformerForecaster. "
@@ -141,13 +141,18 @@ class TransformerForecaster(BaseUncertaintyModel):
             else CHRONOS_MODELS.get(self.model_name, self.model_name)
         )
 
-        self._pipeline = Chronos2Pipeline.from_pretrained(
+        self._pipeline = BaseChronosPipeline.from_pretrained(
             model_path,
-            device_map=self.device,
         )
 
         calib_forecasts = self._generate_forecasts(calib)
         y_calib = calib.select(self.target).to_numpy().flatten()
+
+        n_forecasts = len(calib_forecasts)
+        if len(y_calib) > n_forecasts:
+            y_calib = y_calib[-n_forecasts:]
+        elif len(y_calib) < n_forecasts:
+            calib_forecasts = calib_forecasts[-len(y_calib):]
 
         residuals = y_calib - calib_forecasts
 
@@ -162,9 +167,24 @@ class TransformerForecaster(BaseUncertaintyModel):
         self._fitted = True
         return self
 
+    def _prepare_forecast_df(self, data: pl.DataFrame):
+        import pandas as pd
+
+        pandas_df = data.select([self.target]).to_pandas()
+        pandas_df.columns = ["target"]
+        pandas_df["item_id"] = "series_0"
+        pandas_df["timestamp"] = pd.date_range("2000-01-01", periods=len(pandas_df), freq="h")
+
+        if self._pipeline is None:
+            error_model_not_fitted("TransformerForecaster")
+        context_length = min(len(data), getattr(self._pipeline.model, "context_length", len(data)))
+        if len(data) > context_length:
+            pandas_df = pandas_df.tail(context_length)
+        return pandas_df
+
     def _generate_forecasts(self, data: pl.DataFrame) -> np.ndarray:
         """
-        Generate forecasts using Chronos-2 pipeline.
+        Generate forecasts using Chronos pipeline.
 
         Args:
             data: Polars DataFrame with time series
@@ -174,22 +194,17 @@ class TransformerForecaster(BaseUncertaintyModel):
         """
         from ..core.types import DEFAULT_QUANTILES
 
-        pandas_df = data.select([self.target]).to_pandas()
-        pandas_df.columns = ["target"]
+        pandas_df = self._prepare_forecast_df(data)
 
-        if self._pipeline is None:
-            error_model_not_fitted("TransformerForecaster")
-        context_length = min(len(data), self._pipeline.model.context_length)
-        if len(data) > context_length:
-            pandas_df = pandas_df.tail(context_length)
+        quantile_levels = [q for q in DEFAULT_QUANTILES if 0.1 <= q <= 0.9]
 
         forecast_df = self._pipeline.predict_df(
             pandas_df,
             prediction_length=self.horizon,
-            quantile_levels=list(DEFAULT_QUANTILES),
+            quantile_levels=quantile_levels,
         )
 
-        median_col = [col for col in forecast_df.columns if col.endswith("0.500")][0]
+        median_col = str(0.5)
         return forecast_df[median_col].to_numpy()
 
     def predict(
@@ -214,33 +229,30 @@ class TransformerForecaster(BaseUncertaintyModel):
 
         steps = steps or self.horizon
 
-        pandas_df = data.select([self.target]).to_pandas()
-        pandas_df.columns = ["target"]
-
-        if self._pipeline is None:
-            error_model_not_fitted("TransformerForecaster")
-        context_length = min(len(data), self._pipeline.model.context_length)
-        if len(data) > context_length:
-            pandas_df = pandas_df.tail(context_length)
+        pandas_df = self._prepare_forecast_df(data)
 
         from ..core.types import DEFAULT_QUANTILES
+
+        quantile_levels = [q for q in DEFAULT_QUANTILES if 0.1 <= q <= 0.9]
 
         forecast_df = self._pipeline.predict_df(
             pandas_df,
             prediction_length=steps,
-            quantile_levels=list(DEFAULT_QUANTILES),
+            quantile_levels=quantile_levels,
         )
 
         n_quantiles = len(DEFAULT_QUANTILES)
         quantile_matrix = np.zeros((1, n_quantiles))
 
         for i, q in enumerate(DEFAULT_QUANTILES):
-            col_name = [col for col in forecast_df.columns if col.endswith(f"{q:.3f}")][0]
-            values = forecast_df[col_name].to_numpy()
-            if len(values) == 1:
-                quantile_matrix[0, i] = values[0]
+            col_name = str(q) if q in quantile_levels else None
+            if col_name and col_name in forecast_df.columns:
+                values = forecast_df[col_name].to_numpy()
+                quantile_matrix[0, i] = np.median(values) if len(values) > 1 else values[0]
             else:
-                quantile_matrix[0, i] = np.median(values)
+                nearest = min(quantile_levels, key=lambda x: abs(x - q))
+                values = forecast_df[str(nearest)].to_numpy()
+                quantile_matrix[0, i] = np.median(values) if len(values) > 1 else values[0]
 
         if self._quantiles_ is None:
             error_model_not_fitted("TransformerForecaster")
@@ -249,7 +261,7 @@ class TransformerForecaster(BaseUncertaintyModel):
 
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,
-            quantile_levels=DEFAULT_QUANTILES,
+            quantile_levels=list(DEFAULT_QUANTILES),
             target_names=[self.target],
         )
 

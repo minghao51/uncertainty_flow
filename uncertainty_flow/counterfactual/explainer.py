@@ -342,7 +342,7 @@ class UncertaintyExplainer:
                         "effectiveness": effectiveness,
                     }
                 )
-            except Exception:
+            except (ValueError, TypeError, RuntimeError):
                 # Feature search failed, skip
                 results.append(
                     {

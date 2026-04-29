@@ -167,18 +167,6 @@ class TestIntegrationSmoke:
         assert samples.shape[0] > 0
 
     @pytest.mark.smoke
-    def test_decisions_smoke(self):
-        q_matrix = np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]])
-        pred = DistributionPrediction(
-            quantile_matrix=q_matrix,
-            quantile_levels=[0.1, 0.5, 0.9],
-            target_names=["y"],
-        )
-        result = pred.decide(uf.InventoryOptimiser(stockout_cost=10, overstock_cost=2))
-        assert result.strategy == "Asymmetric Loss (Newsvendor)"
-        assert len(result.optimal_value) == 3
-
-    @pytest.mark.smoke
     def test_persistence_smoke(self, tmp_path):
         from uncertainty_flow.core.base import BaseUncertaintyModel
 

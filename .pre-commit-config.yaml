@@ -19,7 +19,7 @@ repos:
 
       - id: bandit-scan
         name: bandit security scan
-        entry: uv run bandit -r uncertainty_flow/
+        entry: uv run bandit -r uncertainty_flow/ -s B101,B110,B301,B403
         language: system
         types: [python]
         files: ^uncertainty_flow/

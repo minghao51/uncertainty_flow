@@ -299,6 +299,7 @@ def auto_tune(
     model_name: str,
     n_samples: int = 1000,
     target_coverage: float = 0.9,
+    dataset_revision: str | None = None,
 ) -> TuningResult:
     """Automatically tune hyperparameters for a model on a dataset.
 
@@ -315,7 +316,11 @@ def auto_tune(
     """
     from .datasets import load_dataset
 
-    df, _ = load_dataset(dataset_name, n_samples=n_samples)
+    df, _ = load_dataset(
+        dataset_name,
+        n_samples=n_samples,
+        revision=dataset_revision,
+    )
     target = df.columns[-1]
 
     config = TuningConfig(target_coverage=target_coverage, n_samples=n_samples)

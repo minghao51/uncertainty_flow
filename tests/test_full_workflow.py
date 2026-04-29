@@ -4,8 +4,8 @@ import polars as pl
 import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
-from uncertainty_flow.wrappers import ConformalRegressor
 from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.wrappers import ConformalRegressor
 
 
 @pytest.fixture

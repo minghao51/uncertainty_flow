@@ -1,9 +1,8 @@
 # CHANGELOG.md
 
-All notable changes to `uncertainty_flow` are documented here.
+All notable changes to `uncertainty_flow` are documented in the root [CHANGELOG.md](../../CHANGELOG.md).
 
-The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).  
-This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+This file is kept for historical reference. The canonical changelog is at the repository root.
 
 ---
 
