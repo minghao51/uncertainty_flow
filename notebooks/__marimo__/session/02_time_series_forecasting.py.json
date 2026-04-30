@@ -64,7 +64,7 @@
         {
           "type": "data",
           "data": {
-            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-0' random-id='f9d5c2ed-853f-174b-e8f2-27652760fd23'><marimo-dropdown data-initial-value='[&quot;T (degC)&quot;]' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Target variable&lt;/span&gt;&lt;/span&gt;&quot;' data-options='[&quot;T (degC)&quot;,&quot;rh (%)&quot;,&quot;VPdef (mbar)&quot;]' data-allow-select-none='false' data-searchable='false' data-full-width='false'></marimo-dropdown></marimo-ui-element><marimo-ui-element object-id='lEQa-1' random-id='73273ff8-28e7-cedd-e14a-99ae3113d205'><marimo-slider data-initial-value='6' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Forecast horizon (hours)&lt;/span&gt;&lt;/span&gt;&quot;' data-start='1' data-stop='24' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element></div>"
+            "text/html": "<div style='display: flex;flex: 1;flex-direction: column;justify-content: flex-start;align-items: normal;flex-wrap: nowrap;gap: 0.5rem'><marimo-ui-element object-id='lEQa-0' random-id='a23e7753-fbd6-870a-78ad-4ba22a9effd0'><marimo-dropdown data-initial-value='[&quot;T (degC)&quot;]' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Target variable&lt;/span&gt;&lt;/span&gt;&quot;' data-options='[&quot;T (degC)&quot;,&quot;rh (%)&quot;,&quot;VPdef (mbar)&quot;]' data-allow-select-none='false' data-searchable='false' data-full-width='false'></marimo-dropdown></marimo-ui-element><marimo-ui-element object-id='lEQa-1' random-id='52a4f0be-1a05-f35c-fe66-8e128e1c572e'><marimo-slider data-initial-value='6' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Forecast horizon (hours)&lt;/span&gt;&lt;/span&gt;&quot;' data-start='1' data-stop='24' data-step='1' data-steps='[]' data-debounce='false' data-disabled='false' data-orientation='&quot;horizontal&quot;' data-show-value='false' data-include-input='false' data-full-width='false'></marimo-slider></marimo-ui-element></div>"
           }
         }
       ],
@@ -90,7 +90,7 @@
         {
           "type": "data",
           "data": {
-            "text/html": "<marimo-ui-element object-id='Xref-0' random-id='521e01bb-baae-97fd-8de3-a541a9d2f95c'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Train ConformalForecaster&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element>"
+            "text/html": "<marimo-ui-element object-id='Xref-0' random-id='0d5f6d00-1c41-6523-4733-fa967ab2186b'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Train ConformalForecaster&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element>"
           }
         }
       ],
@@ -142,7 +142,7 @@
         {
           "type": "data",
           "data": {
-            "text/html": "<marimo-ui-element object-id='Kclp-0' random-id='48679723-3458-73df-6f7c-79a46519cc12'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Train QuantileForestForecaster&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element>"
+            "text/html": "<marimo-ui-element object-id='Kclp-0' random-id='471c88a1-02e0-63ef-3c40-0ccfdbfc5dc6'><marimo-button data-initial-value='0' data-label='&quot;&lt;span class=&#92;&quot;markdown prose dark:prose-invert contents&#92;&quot;&gt;&lt;span class=&#92;&quot;paragraph&#92;&quot;&gt;Train QuantileForestForecaster&lt;/span&gt;&lt;/span&gt;&quot;' data-kind='&quot;neutral&quot;' data-disabled='false' data-full-width='false'></marimo-button></marimo-ui-element>"
           }
         }
       ],

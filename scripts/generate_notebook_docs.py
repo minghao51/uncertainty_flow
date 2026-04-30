@@ -102,7 +102,7 @@ def main():
         entries.append((slug, nb.name, title, desc))
 
         export_ok, export_note = export_notebook_html(nb, slug)
-        export_path = f"html/{slug}.html"
+        export_path = f"../html/{slug}.html"
 
         note_block = f"\n> **Note:** {export_note}\n" if export_note else ""
 
@@ -116,10 +116,6 @@ def main():
     src="{export_path}"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
-  ></iframe>
-</div>
-
-[![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/{GITHUB_REPO}/blob/main/notebooks/{nb.name})
     loading="lazy"
   ></iframe>
 </div>
