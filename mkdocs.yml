@@ -1,5 +1,6 @@
 site_name: Uncertainty Flow
 site_description: Probabilistic forecasting and uncertainty quantification
+site_url: https://minghao51.github.io/uncertainty_flow/
 repo_url: https://github.com/minghao51/uncertainty_flow
 repo_name: minghao51/uncertainty_flow
 edit_uri: edit/main/docs/
