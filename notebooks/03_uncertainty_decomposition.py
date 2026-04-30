@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -23,16 +23,17 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Uncertainty Decomposition: Aleatoric vs. Epistemic
+    mo.md(r"""
+    # Uncertainty Decomposition: Aleatoric vs. Epistemic
 
-Not all uncertainty is equal. This notebook decomposes prediction uncertainty into:
+    Not all uncertainty is equal. This notebook decomposes prediction uncertainty into:
 
-- **Aleatoric uncertainty** — irreducible noise in the data (e.g., measurement error)
-- **Epistemic uncertainty** — reducible uncertainty from limited data or model capacity
+    - **Aleatoric uncertainty** — irreducible noise in the data (e.g., measurement error)
+    - **Epistemic uncertainty** — reducible uncertainty from limited data or model capacity
 
-We use the `EnsembleDecomposition` class with bootstrap refitting to quantify each component
-on the **synthetic heteroscedastic** dataset (where noise varies with input features).
-""")
+    We use the `EnsembleDecomposition` class with bootstrap refitting to quantify each component
+    on the **synthetic heteroscedastic** dataset (where noise varies with input features).
+    """)
     return
 
 
@@ -49,7 +50,6 @@ def _():
         ConformalRegressor,
         EnsembleDecomposition,
         GradientBoostingRegressor,
-        np,
         pl,
     )
 
@@ -88,8 +88,6 @@ def _(
     confidence,
     df,
     n_bootstrap,
-    np,
-    pl,
     run_decomp,
     sample_size,
 ):
@@ -123,7 +121,7 @@ def _(
         by_sample = None
         eval_sample = None
     f"Decomposition complete: {overall is not None}"
-    return by_sample, eval_sample, overall
+    return by_sample, overall
 
 
 @app.cell
@@ -133,21 +131,21 @@ def _(mo, overall):
         aleatoric_pct = overall["aleatoric"] / overall["total"] * 100
         epistemic_pct = overall["epistemic"] / overall["total"] * 100
         _summary = mo.md(f"""
-| Component | Value |
-|---|---|
-| **Aleatoric** (data noise) | {overall["aleatoric"]:.4f} |
-| **Epistemic** (model uncertainty) | {overall["epistemic"]:.4f} |
-| **Total** | {overall["total"]:.4f} |
+    | Component | Value |
+    |---|---|
+    | **Aleatoric** (data noise) | {overall["aleatoric"]:.4f} |
+    | **Epistemic** (model uncertainty) | {overall["epistemic"]:.4f} |
+    | **Total** | {overall["total"]:.4f} |
 
-**Interpretation**: Aleatoric = {aleatoric_pct:.1f}% of total uncertainty.
-Reducible with more data: {epistemic_pct:.1f}%.
-""")
+    **Interpretation**: Aleatoric = {aleatoric_pct:.1f}% of total uncertainty.
+    Reducible with more data: {epistemic_pct:.1f}%.
+    """)
     _summary
     return
 
 
 @app.cell
-def _(by_sample, np, pl):
+def _(by_sample, pl):
     _stats = "No decomposition results yet"
     if by_sample is not None:
         summary_stats = by_sample.select(
@@ -165,7 +163,7 @@ def _(by_sample, np, pl):
 
 
 @app.cell
-def _(by_sample, np, pl):
+def _(by_sample):
     _plot_result = "No results to plot"
     if by_sample is not None:
         import matplotlib.pyplot as plt

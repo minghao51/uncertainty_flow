@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -23,14 +23,15 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Time Series Forecasting with Uncertainty
+    mo.md(r"""
+    # Time Series Forecasting with Uncertainty
 
-Forecast temperature using the **weather dataset** (36K+ hourly measurements) with conformal prediction bands.
+    Forecast temperature using the **weather dataset** (36K+ hourly measurements) with conformal prediction bands.
 
-This notebook compares two approaches:
-- **ConformalForecaster** — wrap any sklearn model, guaranteed coverage
-- **QuantileForestForecaster** — quantile regression forest, empirical coverage
-""")
+    This notebook compares two approaches:
+    - **ConformalForecaster** — wrap any sklearn model, guaranteed coverage
+    - **QuantileForestForecaster** — quantile regression forest, empirical coverage
+    """)
     return
 
 
@@ -74,14 +75,14 @@ def _(mo):
 
 
 @app.cell
-def _(horizon, pl, target_col, weather_clean):
+def _(target_col, weather_clean):
     df = weather_clean.select([target_col.value])
     n = df.height
     split_idx = int(n * 0.85)
     train_ts = df[:split_idx]
     test_ts = df[split_idx:]
     f"Train: {train_ts.height:,} | Test: {test_ts.height:,}"
-    return df, n, split_idx, test_ts, train_ts
+    return split_idx, test_ts, train_ts
 
 
 @app.cell
@@ -98,6 +99,7 @@ def _(
     horizon,
     run_btn,
     target_col,
+    test_ts,
     train_ts,
 ):
     if run_btn.value:
@@ -116,11 +118,11 @@ def _(
         ts_model = None
         ts_pred = None
     f"Model fitted: {ts_model is not None}"
-    return ts_model, ts_pred
+    return (ts_pred,)
 
 
 @app.cell
-def _(target_col, ts_pred):
+def _(ts_pred):
     _interval_out = "Click 'Train ConformalForecaster' above"
     if ts_pred is not None:
         interval = ts_pred.interval(confidence=0.9)
@@ -130,7 +132,7 @@ def _(target_col, ts_pred):
 
 
 @app.cell
-def _(horizon, pl, split_idx, target_col, ts_pred, weather_clean):
+def _(horizon, split_idx, target_col, ts_pred, weather_clean):
     _plot_out = "No predictions yet"
     if ts_pred is not None:
         actuals_ts = weather_clean[target_col.value][
@@ -175,7 +177,7 @@ def _(
         qf_model = None
         qf_pred = None
     f"QF Model fitted: {qf_model is not None}"
-    return qf_model, qf_pred
+    return (qf_pred,)
 
 
 @app.cell
@@ -187,8 +189,8 @@ def _(
     split_idx,
     target_col,
     ts_pred,
-    winkler_score,
     weather_clean,
+    winkler_score,
 ):
     results = []
     for label, pred in [("ConformalForecaster", ts_pred), ("QuantileForest", qf_pred)]:

@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -23,16 +23,17 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Risk-Aware Decision Making
+    mo.md(r"""
+    # Risk-Aware Decision Making
 
-Standard conformal prediction controls **coverage probability** — but real decisions often care about **cost**.
+    Standard conformal prediction controls **coverage probability** — but real decisions often care about **cost**.
 
-This notebook shows how to use `ConformalRiskControl` with custom risk functions:
+    This notebook shows how to use `ConformalRiskControl` with custom risk functions:
 
-- **Inventory management** — stockouts cost 10x more than excess inventory
-- **Asymmetric loss** — underpredictions penalized more than overpredictions
-- **Threshold penalty** — large errors are catastrophic
-""")
+    - **Inventory management** — stockouts cost 10x more than excess inventory
+    - **Asymmetric loss** — underpredictions penalized more than overpredictions
+    - **Threshold penalty** — large errors are catastrophic
+    """)
     return
 
 
@@ -71,7 +72,7 @@ def _(pl):
 
 
 @app.cell
-def _(df, pl):
+def _(df):
     cols = df.columns
     target_col = cols[-1]
     n = df.height
@@ -81,7 +82,7 @@ def _(df, pl):
     calib_df = df[split:split2]
     test_df = df[split2:]
     f"Target: {target_col} | Train: {train_df.height} | Calib: {calib_df.height} | Test: {test_df.height}"
-    return calib_df, n, split, split2, target_col, test_df, train_df
+    return calib_df, target_col, test_df, train_df
 
 
 @app.cell
@@ -110,7 +111,7 @@ def _(mo, scenario):
         "threshold": "**Threshold scenario**: Errors above 5 units are penalized at 10x rate. Models the cost of catastrophic mispredictions.",
     }
     mo.md(description.get(scenario.value, ""))
-    return (description,)
+    return
 
 
 @app.cell
@@ -121,12 +122,11 @@ def _(
     asymmetric_loss,
     calib_df,
     inventory_cost,
-    np,
-    pl,
     scenario,
     target_col,
     target_risk,
     test_df,
+    threshold_penalty,
     train_df,
 ):
     base_model = ConformalRegressor(
@@ -154,7 +154,7 @@ def _(
     summary = risk_model.summary()
     threshold_val = risk_model.risk_threshold()
     f"Risk threshold: {threshold_val:.4f} | Target risk: {summary['target_risk']}"
-    return base_model, risk_fns, risk_model, risk_pred, summary, threshold_val
+    return base_model, risk_pred
 
 
 @app.cell
@@ -164,7 +164,7 @@ def _(risk_pred):
 
 
 @app.cell
-def _(np, pl, risk_pred):
+def _(pl, risk_pred):
     total = risk_pred.height
     flagged = risk_pred.filter(pl.col("exceeds_threshold")).height
     mean_risk = risk_pred["risk"].mean()
@@ -189,11 +189,11 @@ def _(np, pl, risk_pred):
         }
     )
     stats_df
-    return flagged, max_risk, mean_risk, stats_df, total
+    return
 
 
 @app.cell
-def _(np, pl, risk_pred):
+def _(np, risk_pred):
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -223,7 +223,7 @@ def _(np, pl, risk_pred):
 
 
 @app.cell
-def _(base_model, pl, target_col, test_df):
+def _(base_model, pl, test_df):
     base_pred = base_model.predict(test_df)
     base_interval = base_pred.interval(confidence=0.9)
     comparison = pl.concat(
@@ -233,7 +233,7 @@ def _(base_model, pl, target_col, test_df):
         ]
     )
     comparison
-    return base_interval, base_pred, comparison
+    return
 
 
 if __name__ == "__main__":

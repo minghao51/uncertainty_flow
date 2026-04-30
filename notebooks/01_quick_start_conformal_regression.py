@@ -10,7 +10,7 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -23,16 +23,17 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Quick Start: Conformal Regression
+    mo.md(r"""
+    # Quick Start: Conformal Regression
 
-Wrap any scikit-learn model with **statistically rigorous coverage guarantees** using `ConformalRegressor`.
+    Wrap any scikit-learn model with **statistically rigorous coverage guarantees** using `ConformalRegressor`.
 
-This notebook demonstrates the core workflow:
-1. Load tabular data (concrete compressive strength)
-2. Wrap a GradientBoostingRegressor with conformal prediction
-3. Extract intervals, quantiles, and samples from predictions
-4. Evaluate calibration
-""")
+    This notebook demonstrates the core workflow:
+    1. Load tabular data (concrete compressive strength)
+    2. Wrap a GradientBoostingRegressor with conformal prediction
+    3. Extract intervals, quantiles, and samples from predictions
+    4. Evaluate calibration
+    """)
     return
 
 
@@ -45,7 +46,14 @@ def _():
     from uncertainty_flow.metrics import coverage_score, winkler_score
     from uncertainty_flow.wrappers import ConformalRegressor
 
-    return ConformalRegressor, GradientBoostingRegressor, Ridge, coverage_score, pl, winkler_score
+    return (
+        ConformalRegressor,
+        GradientBoostingRegressor,
+        Ridge,
+        coverage_score,
+        pl,
+        winkler_score,
+    )
 
 
 @app.cell
@@ -67,14 +75,14 @@ def _(mo):
 
 
 @app.cell
-def _(df, pl, target_col):
+def _(df, target_col):
     n = df.height
     split = int(n * 0.8)
     train_df = df[:split]
     test_df = df[split:]
     actuals = test_df[target_col.value]
     train_df.shape, test_df.shape
-    return actuals, split, test_df, train_df
+    return actuals, test_df, train_df
 
 
 @app.cell
@@ -129,11 +137,11 @@ def _(model, test_df):
 def _(coverage_slider, pred):
     interval_df = pred.interval(confidence=coverage_slider.value)
     interval_df.head(10)
-    return (interval_df,)
+    return
 
 
 @app.cell
-def _(coverage_slider, pred):
+def _(pred):
     quantiles_df = pred.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
     quantiles_df.head(10)
     return
@@ -147,7 +155,7 @@ def _(pred):
 
 
 @app.cell
-def _(actuals, coverage_slider, pred):
+def _(actuals, coverage_score, coverage_slider, pred, winkler_score):
     interval = pred.interval(confidence=coverage_slider.value)
     coverage = coverage_score(actuals, interval["lower"], interval["upper"])
     winkler = winkler_score(
@@ -168,7 +176,7 @@ def _(actuals, coverage_slider, pred, target_col):
 
 
 @app.cell
-def _(model, test_df, target_col):
+def _(model, target_col, test_df):
     calibration = model.calibration_report(test_df, test_df[target_col.value])
     calibration
     return

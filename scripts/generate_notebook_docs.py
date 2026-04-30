@@ -1,23 +1,26 @@
 """Generate docs/notebooks/ stub pages from marimo notebook .py files.
 
-marimo .py notebooks are the source of truth. This script reads each
-notebook, extracts its title, and generates thin mkdocs pages with
-a !marimo_file directive (rendered by mkdocs-marimo plugin) + molab badge
-+ local run command.
+Updates for each notebook:
+  1. Static HTML export via `marimo export html --no-include-code` placed in
+     docs/notebooks/html/{slug}.html
+  2. mkdocs stub page with description, an iframe embedding the exported HTML,
+     a molab badge, and a local run command.
 """
 
 import ast
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 NOTEBOOKS_DIR = REPO_ROOT / "notebooks"
 DOCS_DIR = REPO_ROOT / "docs" / "notebooks"
+EXPORT_DIR = DOCS_DIR / "html"
 GITHUB_REPO = "minghao51/uncertainty_flow"
 
 
 def extract_title_from_notebook(path: Path) -> tuple[str, str]:
-    """Extract title and short description from a marimo notebook."""
     tree = ast.parse(path.read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "md":
@@ -25,7 +28,7 @@ def extract_title_from_notebook(path: Path) -> tuple[str, str]:
                 raw = ast.literal_eval(node.args[0])
                 segments = raw.split("\n\n", 2)
                 title = (
-                    re.sub(r"^#\s+", "", segments[0]).strip()
+                    re.sub(r"^\s*#\s+", "", segments[0]).strip()
                     if segments
                     else path.stem.replace("_", " ").title()
                 )
@@ -35,12 +38,57 @@ def extract_title_from_notebook(path: Path) -> tuple[str, str]:
 
 
 def slug_from_filename(py_path: Path) -> str:
-    stem = py_path.stem  # e.g. "01_quick_start_conformal_regression"
+    stem = py_path.stem
     parts = stem.split("_", 1)
-    num = parts[0]  # "01"
+    num = parts[0]
     name = parts[1] if len(parts) > 1 else stem
     slug = re.sub(r"_+", "-", name)
     return f"{num}-{slug}"
+
+
+def export_notebook_html(nb: Path, slug: str) -> tuple[bool, str]:
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = EXPORT_DIR / f"{slug}.html"
+    if out_path.exists():
+        print(f"  export exists  html/{slug}.html (skipping)")
+        return True, ""
+    print(f"  exporting     html/{slug}.html ...", end=" ")
+    sys.stdout.flush()
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "marimo",
+            "export",
+            "html",
+            nb.name,
+            "--no-include-code",
+            "-o",
+            str(out_path),
+            "--no-sandbox",
+        ],
+        cwd=str(NOTEBOOKS_DIR),
+        capture_output=True,
+        text=True,
+    )
+    had_errors = "error" in result.stderr.lower() or "traceback" in result.stderr.lower()
+    note = ""
+    if out_path.exists() and out_path.stat().st_size > 1000:
+        print("OK" if not had_errors else "OK (with cell errors)")
+        if result.stderr.strip():
+            for line in result.stderr.strip().splitlines()[:3]:
+                print(f"    {line}")
+        if had_errors:
+            note = (
+                "Some cells failed to execute during static export. "
+                "Use the molab badge below for full interactivity."
+            )
+    else:
+        print("FAILED")
+        if result.stderr.strip():
+            print(f"    {result.stderr.strip()[:500]}")
+        return False, ""
+    return True, note
 
 
 def main():
@@ -53,11 +101,42 @@ def main():
         title, desc = extract_title_from_notebook(nb)
         entries.append((slug, nb.name, title, desc))
 
-        page = f"""# {title}
+        export_ok, export_note = export_notebook_html(nb, slug)
+        export_path = f"html/{slug}.html"
+
+        note_block = f"\n> **Note:** {export_note}\n" if export_note else ""
+
+        if export_ok:
+            page = f"""# {title}
+
+{desc}
+{note_block}
+<div style="margin: 0 -0.8rem">
+  <iframe
+    src="{export_path}"
+    style="width: 100%; height: 600px; border: 1px solid
+      var(--md-default-fg-color--lightest); border-radius: 4px;"
+  ></iframe>
+</div>
+
+[![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/{GITHUB_REPO}/blob/main/notebooks/{nb.name})
+    loading="lazy"
+  ></iframe>
+</div>
+
+[![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/{GITHUB_REPO}/blob/main/notebooks/{nb.name})
+
+```bash
+uv run marimo run notebooks/{nb.name}
+```
+"""
+        else:
+            page = f"""# {title}
 
 {desc}
 
-!marimo_file ../../notebooks/{nb.name}
+> **Note:** The notebook could not be pre-rendered as static HTML. Use the
+> links below to run it interactively.
 
 [![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/{GITHUB_REPO}/blob/main/notebooks/{nb.name})
 
@@ -72,7 +151,7 @@ uv run marimo run notebooks/{nb.name}
     index = f"""# Interactive Notebooks
 
 marimo notebooks are the **source of truth** for all examples. Each `.py` notebook
-is auto-converted to interactive HTML during CI/CD.
+is executed and exported as static HTML during CI/CD.
 
 | Notebook | Description |
 |----------|-------------|

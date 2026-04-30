@@ -28,11 +28,6 @@ theme:
 
 plugins:
   - search
-  - marimo:
-      enabled: true
-      display_code: true
-      display_output: true
-      is_reactive: true
   - mkdocstrings:
       handlers:
         python:

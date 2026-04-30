@@ -35,32 +35,18 @@ jobs:
         uses: actions/cache@v4
         with:
           path: site/
-          key: mkdocs-${{ hashFiles('mkdocs.yml', 'docs/**', 'notebooks/**', 'scripts/generate_notebook_docs.py', '.github/workflows/docs.yml') }}
-
-      - name: Generate notebook doc stubs
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: uv run python scripts/generate_notebook_docs.py
+          key: mkdocs-${{ hashFiles('mkdocs.yml', 'docs/**', 'notebooks/**', 'scripts/generate_notebook_docs.py', '.github/workflows/docs.yml', 'pyproject.toml', 'uv.lock') }}
 
       - name: Install dependencies
         if: steps.cache.outputs.cache-hit != 'true'
         run: uv sync --extra docs
 
-      - name: Check for notebook changes
+      - name: Generate notebook doc stubs + HTML exports
         if: steps.cache.outputs.cache-hit != 'true'
-        id: notebook_check
-        run: |
-          if [ "${{ github.event_name }}" = "push" ] && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
-            git diff --name-only "${{ github.event.before }}" HEAD | grep -q "^notebooks/" && \
-              echo "changed=true" >> $GITHUB_OUTPUT || \
-              echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
+        run: uv run python scripts/generate_notebook_docs.py
 
       - name: Build MkDocs
         if: steps.cache.outputs.cache-hit != 'true'
-        id: build
-        continue-on-error: true
         run: uv run mkdocs build
 
       - uses: actions/upload-pages-artifact@v3

@@ -1,0 +1,233 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#quick-start-conformal-regression"
+  - banner [ref=e3]:
+    - navigation "Header" [ref=e4]:
+      - img [ref=e6] [cursor=pointer]
+      - generic [ref=e9]:
+        - generic [ref=e11]: Uncertainty Flow
+        - generic:
+          - generic: Quick Start
+      - generic [ref=e12]:
+        - radio "Switch to dark mode"
+        - generic "Switch to dark mode" [ref=e13] [cursor=pointer]:
+          - img [ref=e14]
+        - radio "Switch to light mode"
+      - dialog [ref=e16]:
+        - search [ref=e17]:
+          - generic [ref=e18]:
+            - textbox "Search" [ref=e19]
+            - generic:
+              - img
+            - navigation "Search":
+              - button "Clear":
+                - img
+          - generic [ref=e22]: Type to start searching
+      - link "minghao51/uncertainty_flow 0 0" [ref=e24] [cursor=pointer]:
+        - /url: https://github.com/minghao51/uncertainty_flow
+        - img [ref=e26]
+        - generic [ref=e28]:
+          - text: minghao51/uncertainty_flow
+          - list [ref=e29]:
+            - listitem [ref=e30]: "0"
+            - listitem [ref=e31]: "0"
+  - generic [ref=e32]:
+    - main [ref=e33]:
+      - generic [ref=e34]:
+        - navigation "Navigation" [ref=e37]:
+          - generic [ref=e38] [cursor=pointer]:
+            - link "Uncertainty Flow" [ref=e39]:
+              - /url: ../..
+              - img [ref=e40]
+            - text: Uncertainty Flow
+          - list [ref=e42]:
+            - listitem [ref=e43]:
+              - link "Home" [ref=e44] [cursor=pointer]:
+                - /url: ../..
+                - generic [ref=e45]: Home
+            - listitem [ref=e46]:
+              - generic [ref=e48]: Guides
+              - navigation "Guides" [ref=e50]:
+                - generic [ref=e51] [cursor=pointer]: Guides
+                - list [ref=e53]:
+                  - listitem [ref=e54]:
+                    - link "Distribution Approach" [ref=e55] [cursor=pointer]:
+                      - /url: ../../guides/distribution-approach/
+                      - generic [ref=e56]: Distribution Approach
+                  - listitem [ref=e57]:
+                    - link "Models" [ref=e58] [cursor=pointer]:
+                      - /url: ../../guides/models/
+                      - generic [ref=e59]: Models
+                  - listitem [ref=e60]:
+                    - link "Calibration" [ref=e61] [cursor=pointer]:
+                      - /url: ../../guides/calibration/
+                      - generic [ref=e62]: Calibration
+                  - listitem [ref=e63]:
+                    - link "Charting" [ref=e64] [cursor=pointer]:
+                      - /url: ../../guides/charting/
+                      - generic [ref=e65]: Charting
+                  - listitem [ref=e66]:
+                    - link "Benchmarking" [ref=e67] [cursor=pointer]:
+                      - /url: ../../guides/benchmarking/
+                      - generic [ref=e68]: Benchmarking
+                  - listitem [ref=e69]:
+                    - link "Design Principles" [ref=e70] [cursor=pointer]:
+                      - /url: ../../guides/design/
+                      - generic [ref=e71]: Design Principles
+            - listitem [ref=e72]:
+              - link "Architecture" [ref=e73] [cursor=pointer]:
+                - /url: ../../architecture/overview/
+                - generic [ref=e74]: Architecture
+            - listitem [ref=e75]:
+              - generic [ref=e77]: API Reference
+              - navigation "API Reference" [ref=e79]:
+                - generic [ref=e80] [cursor=pointer]: API Reference
+                - list [ref=e82]:
+                  - listitem [ref=e83]:
+                    - link "Core" [ref=e84] [cursor=pointer]:
+                      - /url: ../../api/core/
+                      - generic [ref=e85]: Core
+                  - listitem [ref=e86]:
+                    - link "Metrics" [ref=e87] [cursor=pointer]:
+                      - /url: ../../api/metrics/
+                      - generic [ref=e88]: Metrics
+                  - listitem [ref=e89]:
+                    - link "Models" [ref=e90] [cursor=pointer]:
+                      - /url: ../../api/models/
+                      - generic [ref=e91]: Models
+                  - listitem [ref=e92]:
+                    - link "Wrappers" [ref=e93] [cursor=pointer]:
+                      - /url: ../../api/wrappers/
+                      - generic [ref=e94]: Wrappers
+                  - listitem [ref=e95]:
+                    - link "Risk" [ref=e96] [cursor=pointer]:
+                      - /url: ../../api/risk/
+                      - generic [ref=e97]: Risk
+                  - listitem [ref=e98]:
+                    - link "Causal" [ref=e99] [cursor=pointer]:
+                      - /url: ../../api/causal/
+                      - generic [ref=e100]: Causal
+                  - listitem [ref=e101]:
+                    - link "Analysis" [ref=e102] [cursor=pointer]:
+                      - /url: ../../api/analysis/
+                      - generic [ref=e103]: Analysis
+                  - listitem [ref=e104]:
+                    - link "Decomposition" [ref=e105] [cursor=pointer]:
+                      - /url: ../../api/decomposition/
+                      - generic [ref=e106]: Decomposition
+                  - listitem [ref=e107]:
+                    - link "Counterfactual" [ref=e108] [cursor=pointer]:
+                      - /url: ../../api/counterfactual/
+                      - generic [ref=e109]: Counterfactual
+                  - listitem [ref=e110]:
+                    - link "Multivariate" [ref=e111] [cursor=pointer]:
+                      - /url: ../../api/multivariate/
+                      - generic [ref=e112]: Multivariate
+                  - listitem [ref=e113]:
+                    - link "Multimodal" [ref=e114] [cursor=pointer]:
+                      - /url: ../../api/multimodal/
+                      - generic [ref=e115]: Multimodal
+                  - listitem [ref=e116]:
+                    - link "Bayesian" [ref=e117] [cursor=pointer]:
+                      - /url: ../../api/bayesian/
+                      - generic [ref=e118]: Bayesian
+                  - listitem [ref=e119]:
+                    - link "Calibration Module" [ref=e120] [cursor=pointer]:
+                      - /url: ../../api/calibration-module/
+                      - generic [ref=e121]: Calibration Module
+                  - listitem [ref=e122]:
+                    - link "Utils" [ref=e123] [cursor=pointer]:
+                      - /url: ../../api/utils/
+                      - generic [ref=e124]: Utils
+                  - listitem [ref=e125]:
+                    - link "Viz" [ref=e126] [cursor=pointer]:
+                      - /url: ../../api/viz/
+                      - generic [ref=e127]: Viz
+                  - listitem [ref=e128]:
+                    - link "CLI" [ref=e129] [cursor=pointer]:
+                      - /url: ../../api/cli/
+                      - generic [ref=e130]: CLI
+            - listitem [ref=e131]:
+              - generic [ref=e133]: Notebooks
+              - navigation "Notebooks" [ref=e135]:
+                - generic [ref=e136] [cursor=pointer]: Notebooks
+                - list [ref=e138]:
+                  - listitem [ref=e139]:
+                    - link "Overview" [ref=e140] [cursor=pointer]:
+                      - /url: ../
+                      - generic [ref=e141]: Overview
+                  - listitem [ref=e142]:
+                    - link "Quick Start" [ref=e143] [cursor=pointer]:
+                      - /url: ./
+                      - generic [ref=e144]: Quick Start
+                  - listitem [ref=e145]:
+                    - link "Time Series Forecasting" [ref=e146] [cursor=pointer]:
+                      - /url: ../02-time-series-forecasting/
+                      - generic [ref=e147]: Time Series Forecasting
+                  - listitem [ref=e148]:
+                    - link "Uncertainty Decomposition" [ref=e149] [cursor=pointer]:
+                      - /url: ../03-uncertainty-decomposition/
+                      - generic [ref=e150]: Uncertainty Decomposition
+                  - listitem [ref=e151]:
+                    - link "Risk-Aware Decisions" [ref=e152] [cursor=pointer]:
+                      - /url: ../04-risk-aware-decisions/
+                      - generic [ref=e153]: Risk-Aware Decisions
+                  - listitem [ref=e154]:
+                    - link "Multivariate Copulas" [ref=e155] [cursor=pointer]:
+                      - /url: ../05-multivariate-copulas/
+                      - generic [ref=e156]: Multivariate Copulas
+                  - listitem [ref=e157]:
+                    - link "Methods & Benchmarks" [ref=e158] [cursor=pointer]:
+                      - /url: ../06-methods-and-benchmarks/
+                      - generic [ref=e159]: Methods & Benchmarks
+            - listitem [ref=e160]:
+              - link "Benchmarks" [ref=e161] [cursor=pointer]:
+                - /url: ../../benchmarks/
+                - generic [ref=e162]: Benchmarks
+            - listitem [ref=e163]:
+              - generic [ref=e165]: Project
+              - navigation "Project" [ref=e167]:
+                - generic [ref=e168] [cursor=pointer]: Project
+                - list [ref=e170]:
+                  - listitem [ref=e171]:
+                    - link "Contributing" [ref=e172] [cursor=pointer]:
+                      - /url: ../../project/contributing/
+                      - generic [ref=e173]: Contributing
+                  - listitem [ref=e174]:
+                    - link "Changelog" [ref=e175] [cursor=pointer]:
+                      - /url: ../../project/changelog/
+                      - generic [ref=e176]: Changelog
+                  - listitem [ref=e177]:
+                    - link "Roadmap" [ref=e178] [cursor=pointer]:
+                      - /url: ../../project/roadmap/
+                      - generic [ref=e179]: Roadmap
+        - generic [ref=e181]:
+          - generic:
+            - navigation "Table of contents"
+        - article [ref=e183]:
+          - 'heading "Quick Start: Conformal Regression ¶" [level=1] [ref=e184]':
+            - text: "Quick Start: Conformal Regression"
+            - link "¶" [ref=e185] [cursor=pointer]:
+              - /url: "#quick-start-conformal-regression"
+          - paragraph [ref=e186]:
+            - text: Wrap any scikit-learn model with
+            - strong [ref=e187]: statistically rigorous coverage guarantees
+            - text: using
+            - code [ref=e188]: ConformalRegressor
+            - text: .
+          - generic [ref=e193]:
+            - img [ref=e194]
+            - generic [ref=e196]: Initializing...
+          - paragraph [ref=e197]:
+            - link "Open in molab" [ref=e198] [cursor=pointer]:
+              - /url: https://molab.marimo.io/github/minghao51/uncertainty_flow/blob/main/notebooks/01_quick_start_conformal_regression.py
+              - img "Open in molab" [ref=e199]
+          - code [ref=e202]: uv run marimo run notebooks/01_quick_start_conformal_regression.py
+      - button "Back to top":
+        - img
+        - text: Back to top
+    - contentinfo [ref=e203]:
+      - generic [ref=e206]:
+        - text: Made with
+        - link "Material for MkDocs" [ref=e207] [cursor=pointer]:
+          - /url: https://squidfunk.github.io/mkdocs-material/

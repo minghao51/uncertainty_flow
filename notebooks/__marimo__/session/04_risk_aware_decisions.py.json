@@ -1,0 +1,172 @@
+{
+  "version": "1",
+  "metadata": {
+    "marimo_version": "0.23.4",
+    "script_metadata_hash": "7c4489adabb29fdc468a4c4a3c99ddb1"
+  },
+  "cells": [
+    {
+      "id": "Hbol",
+      "code_hash": "1d0db38904205bec4d6f6f6a1f6cec3e",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "MJUe",
+      "code_hash": "9d2667434e3f24d02b654de393f4dd3f",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/markdown": "<span class=\"markdown prose dark:prose-invert contents\"><h1 id=\"risk-aware-decision-making\">Risk-Aware Decision Making</h1>\n<span class=\"paragraph\">Standard conformal prediction controls <strong>coverage probability</strong> \u2014 but real decisions often care about <strong>cost</strong>.</span>\n<span class=\"paragraph\">This notebook shows how to use <code>ConformalRiskControl</code> with custom risk functions:</span>\n<ul>\n<li><strong>Inventory management</strong> \u2014 stockouts cost 10x more than excess inventory</li>\n<li><strong>Asymmetric loss</strong> \u2014 underpredictions penalized more than overpredictions</li>\n<li><strong>Threshold penalty</strong> \u2014 large errors are catastrophic</li>\n</ul></span>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "vblA",
+      "code_hash": "4b65950aa7159ce30f7611fe2e03f6c4",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/plain": ""
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "bkHC",
+      "code_hash": "247d325e86409d3983a56fd1beeb3419",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<marimo-ui-element object-id='bkHC-0' random-id='96de3bfc-f4b9-4b5b-3dc0-0abc659c5046'><marimo-table data-initial-value='[]' data-label='null' data-data='&quot;[{&#92;&quot;V1&#92;&quot;:0.98,&#92;&quot;V2&#92;&quot;:514.5,&#92;&quot;V3&#92;&quot;:294.0,&#92;&quot;V4&#92;&quot;:110.25,&#92;&quot;V5&#92;&quot;:7.0,&#92;&quot;V6&#92;&quot;:2,&#92;&quot;V7&#92;&quot;:0.0,&#92;&quot;V8&#92;&quot;:0,&#92;&quot;y1&#92;&quot;:7.0,&#92;&quot;y2&#92;&quot;:11.0},{&#92;&quot;V1&#92;&quot;:0.98,&#92;&quot;V2&#92;&quot;:514.5,&#92;&quot;V3&#92;&quot;:294.0,&#92;&quot;V4&#92;&quot;:110.25,&#92;&quot;V5&#92;&quot;:7.0,&#92;&quot;V6&#92;&quot;:3,&#92;&quot;V7&#92;&quot;:0.0,&#92;&quot;V8&#92;&quot;:0,&#92;&quot;y1&#92;&quot;:7.0,&#92;&quot;y2&#92;&quot;:11.0},{&#92;&quot;V1&#92;&quot;:0.98,&#92;&quot;V2&#92;&quot;:514.5,&#92;&quot;V3&#92;&quot;:294.0,&#92;&quot;V4&#92;&quot;:110.25,&#92;&quot;V5&#92;&quot;:7.0,&#92;&quot;V6&#92;&quot;:4,&#92;&quot;V7&#92;&quot;:0.0,&#92;&quot;V8&#92;&quot;:0,&#92;&quot;y1&#92;&quot;:7.0,&#92;&quot;y2&#92;&quot;:11.0},{&#92;&quot;V1&#92;&quot;:0.98,&#92;&quot;V2&#92;&quot;:514.5,&#92;&quot;V3&#92;&quot;:294.0,&#92;&quot;V4&#92;&quot;:110.25,&#92;&quot;V5&#92;&quot;:7.0,&#92;&quot;V6&#92;&quot;:5,&#92;&quot;V7&#92;&quot;:0.0,&#92;&quot;V8&#92;&quot;:0,&#92;&quot;y1&#92;&quot;:7.0,&#92;&quot;y2&#92;&quot;:11.0},{&#92;&quot;V1&#92;&quot;:0.9,&#92;&quot;V2&#92;&quot;:563.5,&#92;&quot;V3&#92;&quot;:318.5,&#92;&quot;V4&#92;&quot;:122.5,&#92;&quot;V5&#92;&quot;:7.0,&#92;&quot;V6&#92;&quot;:2,&#92;&quot;V7&#92;&quot;:0.0,&#92;&quot;V8&#92;&quot;:0,&#92;&quot;y1&#92;&quot;:12.0,&#92;&quot;y2&#92;&quot;:18.0}]&quot;' data-total-rows='5' data-total-columns='10' data-max-columns='50' data-banner-text='&quot;&quot;' data-pagination='false' data-page-size='10' data-field-types='[[&quot;V1&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V2&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V3&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V4&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V5&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V6&quot;,[&quot;integer&quot;,&quot;i64&quot;]],[&quot;V7&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;V8&quot;,[&quot;integer&quot;,&quot;i64&quot;]],[&quot;y1&quot;,[&quot;number&quot;,&quot;f64&quot;]],[&quot;y2&quot;,[&quot;number&quot;,&quot;f64&quot;]]]' data-show-filters='true' data-show-download='true' data-show-column-summaries='false' data-show-data-types='true' data-show-page-size-selector='false' data-show-column-explorer='true' data-show-chart-builder='true' data-row-headers='[]' data-has-stable-row-id='false' data-lazy='false' data-preload='false'></marimo-table></marimo-ui-element>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "lEQa",
+      "code_hash": "238d399b0eaa21e6c6d448727898ddfa",
+      "outputs": [
+        {
+          "type": "data",
+          "data": {
+            "text/html": "<pre class='text-xs'>&#x27;Target: y2 | Train: 537 | Calib: 115 | Test: 116&#x27;</pre>"
+          }
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "PKri",
+      "code_hash": "ced18ed523ddc92bded8b3107dbc3544",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "The option name 'inventory' is not a valid option. Please use one of the following options: ['Inventory Cost (stockout=10x)', 'Asymmetric Loss (underpredict=3x)', 'Threshold Penalty (large errors)']",
+          "traceback": null
+        }
+      ],
+      "console": [
+        {
+          "type": "stream",
+          "name": "stderr",
+          "text": "<span class=\"codehilite\"><div class=\"highlight\"><pre><span></span><span class=\"gt\">Traceback (most recent call last):</span>\n  File <span class=\"nb\">&quot;/var/folders/zv/p_57kc9j1fb9xtj06cw1qb1c0000gn/T/marimo_49655/__marimo__cell_PKri_.py&quot;</span>, line <span class=\"m\">1</span>, in <span class=\"n\">&lt;module&gt;</span>\n<span class=\"w\">    </span><span class=\"n\">scenario</span> <span class=\"o\">=</span> <span class=\"n\">mo</span><span class=\"o\">.</span><span class=\"n\">ui</span><span class=\"o\">.</span><span class=\"n\">dropdown</span><span class=\"p\">(</span>\n<span class=\"w\">    </span>    <span class=\"n\">options</span><span class=\"o\">=</span><span class=\"p\">{</span>\n<span class=\"w\">    </span><span class=\"o\">...&lt;</span><span class=\"mi\">5</span> <span class=\"n\">lines</span><span class=\"o\">&gt;...</span>\n<span class=\"w\">    </span>    <span class=\"n\">label</span><span class=\"o\">=</span><span class=\"s2\">&quot;Risk scenario&quot;</span><span class=\"p\">,</span>\n<span class=\"w\">    </span><span class=\"p\">)</span>\n  File <span class=\"nb\">&quot;/Users/minghao/Desktop/personal/uncertainty_flow/.venv/lib/python3.13/site-packages/marimo/_plugins/ui/_impl/input.py&quot;</span>, line <span class=\"m\">1044</span>, in <span class=\"n\">__init__</span>\n<span class=\"w\">    </span><span class=\"nb\">super</span><span class=\"p\">()</span><span class=\"o\">.</span><span class=\"fm\">__init__</span><span class=\"p\">(</span>\n<span class=\"w\">    </span><span class=\"pm\">~~~~~~~~~~~~~~~~^</span>\n<span class=\"w\">    </span>    <span class=\"n\">component_name</span><span class=\"o\">=</span><span class=\"n\">dropdown</span><span class=\"o\">.</span><span class=\"n\">_name</span><span class=\"p\">,</span>\n<span class=\"w\">        </span><span class=\"pm\">^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^</span>\n<span class=\"w\">    </span><span class=\"o\">...&lt;</span><span class=\"mi\">8</span> <span class=\"n\">lines</span><span class=\"o\">&gt;...</span>\n<span class=\"w\">    </span>    <span class=\"n\">on_change</span><span class=\"o\">=</span><span class=\"n\">on_change</span><span class=\"p\">,</span>\n<span class=\"w\">        </span><span class=\"pm\">^^^^^^^^^^^^^^^^^^^^</span>\n<span class=\"w\">    </span><span class=\"p\">)</span>\n<span class=\"w\">    </span><span class=\"pm\">^</span>\n  File <span class=\"nb\">&quot;/Users/minghao/Desktop/personal/uncertainty_flow/.venv/lib/python3.13/site-packages/marimo/_plugins/ui/_core/ui_element.py&quot;</span>, line <span class=\"m\">165</span>, in <span class=\"n\">__init__</span>\n<span class=\"w\">    </span><span class=\"bp\">self</span><span class=\"o\">.</span><span class=\"n\">_initialize</span><span class=\"p\">(</span><span class=\"bp\">self</span><span class=\"o\">.</span><span class=\"n\">_args</span><span class=\"p\">)</span>\n<span class=\"w\">    </span><span class=\"pm\">~~~~~~~~~~~~~~~~^^^^^^^^^^^^</span>\n  File <span class=\"nb\">&quot;/Users/minghao/Desktop/personal/uncertainty_flow/.venv/lib/python3.13/site-packages/marimo/_plugins/ui/_core/ui_element.py&quot;</span>, line <span class=\"m\">272</span>, in <span class=\"n\">_initialize</span>\n<span class=\"w\">    </span><span class=\"bp\">self</span><span class=\"o\">.</span><span class=\"n\">_value</span> <span class=\"o\">=</span> <span class=\"bp\">self</span><span class=\"o\">.</span><span class=\"n\">_initial_value</span> <span class=\"o\">=</span> <span class=\"bp\">self</span><span class=\"o\">.</span><span class=\"n\">_convert_value</span><span class=\"p\">(</span><span class=\"n\">initial_value</span><span class=\"p\">)</span>\n<span class=\"w\">                                        </span><span class=\"pm\">~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^</span>\n  File <span class=\"nb\">&quot;/Users/minghao/Desktop/personal/uncertainty_flow/.venv/lib/python3.13/site-packages/marimo/_plugins/ui/_impl/input.py&quot;</span>, line <span class=\"m\">1070</span>, in <span class=\"n\">_convert_value</span>\n<span class=\"w\">    </span><span class=\"k\">raise</span> <span class=\"ne\">ValueError</span><span class=\"p\">(</span>\n<span class=\"w\">    </span><span class=\"o\">...&lt;</span><span class=\"mi\">4</span> <span class=\"n\">lines</span><span class=\"o\">&gt;...</span>\n<span class=\"w\">    </span><span class=\"p\">)</span>\n<span class=\"gr\">ValueError</span>: <span class=\"n\">The option name &#39;inventory&#39; is not a valid option. Please use one of the following options: [&#39;Inventory Cost (stockout=10x)&#39;, &#39;Asymmetric Loss (underpredict=3x)&#39;, &#39;Threshold Penalty (large errors)&#39;]</span>\n</pre></div>\n</span>",
+          "mimetype": "application/vnd.marimo+traceback"
+        }
+      ]
+    },
+    {
+      "id": "Xref",
+      "code_hash": "c91f3276aeb4e0b96489de91b1aeff01",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "SFPL",
+      "code_hash": "c0b203729cef4cc63adfcb6ce6e34bed",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "BYtC",
+      "code_hash": "947925fd109e8e2e7aa7325f3aeabf08",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "RGSE",
+      "code_hash": "9c6aa743fe572bd58b586b71878d70d3",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "Kclp",
+      "code_hash": "007bf0ccf9ec8beae7259b75ee5d356b",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    },
+    {
+      "id": "emfo",
+      "code_hash": "05016a61d754e4e154f99e015643c634",
+      "outputs": [
+        {
+          "type": "error",
+          "ename": "exception",
+          "evalue": "An ancestor raised an exception (ValueError): ",
+          "traceback": null
+        }
+      ],
+      "console": []
+    }
+  ]
+}

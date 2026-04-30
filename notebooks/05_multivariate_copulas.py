@@ -11,7 +11,7 @@
 
 import marimo
 
-__generated_with = "0.20.4"
+__generated_with = "0.23.4"
 app = marimo.App(width="medium")
 
 
@@ -24,19 +24,20 @@ def _():
 
 @app.cell
 def _(mo):
-    mo.md(r"""# Multivariate Copulas & Cross-Modal Aggregation
+    mo.md(r"""
+    # Multivariate Copulas & Cross-Modal Aggregation
 
-When forecasting **multiple targets simultaneously**, their joint distribution matters.
+    When forecasting **multiple targets simultaneously**, their joint distribution matters.
 
-This notebook explores:
+    This notebook explores:
 
-1. **Copula families** — model different types of inter-target dependence
-2. **Auto-selection** — let BIC choose the best copula from data
-3. **Joint sampling** — generate correlated samples from copula-aware predictions
-4. **Cross-modal aggregation** — combine predictions from different feature groups
+    1. **Copula families** — model different types of inter-target dependence
+    2. **Auto-selection** — let BIC choose the best copula from data
+    3. **Joint sampling** — generate correlated samples from copula-aware predictions
+    4. **Cross-modal aggregation** — combine predictions from different feature groups
 
-We use the **synthetic multivariate** dataset with 3 target columns (y1, y2, y3).
-""")
+    We use the **synthetic multivariate** dataset with 3 target columns (y1, y2, y3).
+    """)
     return
 
 
@@ -73,19 +74,21 @@ def _(pl):
 
 
 @app.cell
-def _(df, pl):
+def _(df):
     targets = ["y1", "y2", "y3"]
     features = [c for c in df.columns if c not in targets]
     n = df.height
     train = df[: int(n * 0.8)]
     test = df[int(n * 0.8) :]
     f"Features: {features} | Targets: {targets} | Train: {train.height} | Test: {test.height}"
-    return features, n, targets, test, train
+    return targets, test, train
 
 
 @app.cell
 def _(mo):
-    mo.md(r"## 1. Copula Family Comparison")
+    mo.md(r"""
+    ## 1. Copula Family Comparison
+    """)
     return
 
 
@@ -95,10 +98,9 @@ def _(
     FrankCopula,
     GaussianCopula,
     GumbelCopula,
-    np,
     pl,
-    train,
     targets,
+    train,
 ):
     residuals = train.select(targets).to_numpy()
 
@@ -128,19 +130,21 @@ def _(
             results.append({"family": name, "theta": None, "log_likelihood": None})
 
     pl.DataFrame(results)
-    return copula, families, fitted, residuals, results
+    return (residuals,)
 
 
 @app.cell
 def _(auto_select_copula, residuals):
     best_family = auto_select_copula(residuals[:, :2])
     f"BIC-selected copula family: **{best_family}**"
-    return (best_family,)
+    return
 
 
 @app.cell
 def _(mo):
-    mo.md(r"## 2. Joint Sampling from Copulas")
+    mo.md(r"""
+    ## 2. Joint Sampling from Copulas
+    """)
     return
 
 
@@ -178,11 +182,11 @@ def _(GaussianCopula, np, residuals):
     _ax.set_title(f"Gaussian Copula Joint Samples (n={len(s1)})")
     _plt.tight_layout()
     _fig
-    return copula_gauss, joint_samples, marginals, n_q, quantile_levels
+    return
 
 
 @app.cell
-def _(GaussianCopula, np, residuals):
+def _(GaussianCopula, residuals):
     import matplotlib.pyplot as _plt2
 
     copula_full = GaussianCopula()
@@ -199,12 +203,14 @@ def _(GaussianCopula, np, residuals):
     _fig2.colorbar(_im, ax=_ax2)
     _plt2.tight_layout()
     _fig2
-    return copula_full, corr
+    return
 
 
 @app.cell
 def _(mo):
-    mo.md(r"## 3. QuantileForestForecaster with Copula-Aware Joint Forecasts")
+    mo.md(r"""
+    ## 3. QuantileForestForecaster with Copula-Aware Joint Forecasts
+    """)
     return
 
 
@@ -216,15 +222,7 @@ def _(mo):
 
 
 @app.cell
-def _(
-    QuantileForestForecaster,
-    np,
-    pl,
-    run_qf,
-    targets,
-    test,
-    train,
-):
+def _(run_qf, targets, test, train):
     if run_qf.value:
         from uncertainty_flow.models import QuantileForestForecaster
 
@@ -246,7 +244,7 @@ def _(
         mv_interval = None
         mv_samples = None
     f"Multivariate model fitted: {mv_model is not None}"
-    return mv_interval, mv_model, mv_pred, mv_samples
+    return mv_interval, mv_pred
 
 
 @app.cell
