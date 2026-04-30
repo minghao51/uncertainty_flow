@@ -44,6 +44,19 @@ jobs:
       - run: uv sync --extra dev
       - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
 
+  docs-check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --extra docs
+      - name: Generate notebook doc stubs
+        run: uv run python scripts/generate_notebook_docs.py
+      - name: Build documentation
+        run: uv run mkdocs build
+
   security:
     runs-on: ubuntu-24.04
     steps:

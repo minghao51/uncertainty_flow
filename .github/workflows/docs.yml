@@ -3,10 +3,16 @@ name: Deploy Docs
 on:
   push:
     branches: [main]
+    paths:
+      - 'mkdocs.yml'
+      - 'docs/**'
+      - 'notebooks/**'
+      - 'scripts/generate_notebook_docs.py'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -24,9 +30,38 @@ jobs:
         with:
           enable-cache: true
 
-      - run: uv sync --extra docs
+      - name: Cache MkDocs site
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: site/
+          key: mkdocs-${{ hashFiles('mkdocs.yml', 'docs/**', 'notebooks/**', 'scripts/generate_notebook_docs.py', '.github/workflows/docs.yml') }}
 
-      - run: uv run mkdocs build
+      - name: Generate notebook doc stubs
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: uv run python scripts/generate_notebook_docs.py
+
+      - name: Install dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: uv sync --extra docs
+
+      - name: Check for notebook changes
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: notebook_check
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && git cat-file -e "${{ github.event.before }}" 2>/dev/null; then
+            git diff --name-only "${{ github.event.before }}" HEAD | grep -q "^notebooks/" && \
+              echo "changed=true" >> $GITHUB_OUTPUT || \
+              echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build MkDocs
+        if: steps.cache.outputs.cache-hit != 'true'
+        id: build
+        continue-on-error: true
+        run: uv run mkdocs build
 
       - uses: actions/upload-pages-artifact@v3
         with:

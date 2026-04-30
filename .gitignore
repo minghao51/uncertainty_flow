@@ -70,3 +70,7 @@ results/
 
 # Data files
 data/*.parquet
+
+# Auto-generated notebook doc stubs (source of truth = notebooks/*.py)
+docs/notebooks/
+!docs/notebooks/.gitkeep

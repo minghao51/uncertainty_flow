@@ -27,6 +27,11 @@ theme:
 
 plugins:
   - search
+  - marimo:
+      enabled: true
+      display_code: true
+      display_output: true
+      is_reactive: true
   - mkdocstrings:
       handlers:
         python:
@@ -64,6 +69,14 @@ nav:
       - Utils: api/utils.md
       - Viz: api/viz.md
       - CLI: api/cli.md
+  - Notebooks:
+      - Overview: notebooks/index.md
+      - Quick Start: notebooks/01-quick-start-conformal-regression.md
+      - Time Series Forecasting: notebooks/02-time-series-forecasting.md
+      - Uncertainty Decomposition: notebooks/03-uncertainty-decomposition.md
+      - Risk-Aware Decisions: notebooks/04-risk-aware-decisions.md
+      - Multivariate Copulas: notebooks/05-multivariate-copulas.md
+      - Methods & Benchmarks: notebooks/06-methods-and-benchmarks.md
   - Benchmarks: benchmarks/README.md
   - Project:
       - Contributing: project/contributing.md
@@ -78,3 +91,5 @@ markdown_extensions:
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
+  - pymdownx.blocks.caption
+  - md_in_html
