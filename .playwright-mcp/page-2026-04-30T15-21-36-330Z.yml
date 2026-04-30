@@ -1,0 +1,448 @@
+- generic [active] [ref=e1]:
+  - link "Skip to content" [ref=e2] [cursor=pointer]:
+    - /url: "#time-series-forecasting-with-uncertainty"
+  - banner [ref=e3]:
+    - navigation "Header" [ref=e4]:
+      - img [ref=e6] [cursor=pointer]
+      - generic [ref=e9]:
+        - generic [ref=e11]: Uncertainty Flow
+        - generic:
+          - generic: Time Series Forecasting
+      - generic [ref=e12]:
+        - radio "Switch to dark mode"
+        - generic "Switch to dark mode" [ref=e13] [cursor=pointer]:
+          - img [ref=e14]
+        - radio "Switch to light mode"
+      - dialog [ref=e16]:
+        - search [ref=e17]:
+          - generic [ref=e18]:
+            - textbox "Search" [ref=e19]
+            - generic:
+              - img
+            - navigation "Search":
+              - button "Clear":
+                - img
+          - generic [ref=e22]: Type to start searching
+      - link "minghao51/uncertainty_flow 0 0" [ref=e24] [cursor=pointer]:
+        - /url: https://github.com/minghao51/uncertainty_flow
+        - img [ref=e26]
+        - generic [ref=e28]:
+          - text: minghao51/uncertainty_flow
+          - list [ref=e29]:
+            - listitem [ref=e30]: "0"
+            - listitem [ref=e31]: "0"
+  - main [ref=e33]:
+    - generic [ref=e34]:
+      - navigation "Navigation" [ref=e37]:
+        - generic [ref=e38] [cursor=pointer]:
+          - link "Uncertainty Flow" [ref=e39]:
+            - /url: ../..
+            - img [ref=e40]
+          - text: Uncertainty Flow
+        - list [ref=e42]:
+          - listitem [ref=e43]:
+            - link "Home" [ref=e44] [cursor=pointer]:
+              - /url: ../..
+              - generic [ref=e45]: Home
+          - listitem [ref=e46]:
+            - generic [ref=e48]: Guides
+            - navigation "Guides" [ref=e50]:
+              - generic [ref=e51] [cursor=pointer]: Guides
+              - list [ref=e53]:
+                - listitem [ref=e54]:
+                  - link "Distribution Approach" [ref=e55] [cursor=pointer]:
+                    - /url: ../../guides/distribution-approach/
+                    - generic [ref=e56]: Distribution Approach
+                - listitem [ref=e57]:
+                  - link "Models" [ref=e58] [cursor=pointer]:
+                    - /url: ../../guides/models/
+                    - generic [ref=e59]: Models
+                - listitem [ref=e60]:
+                  - link "Calibration" [ref=e61] [cursor=pointer]:
+                    - /url: ../../guides/calibration/
+                    - generic [ref=e62]: Calibration
+                - listitem [ref=e63]:
+                  - link "Charting" [ref=e64] [cursor=pointer]:
+                    - /url: ../../guides/charting/
+                    - generic [ref=e65]: Charting
+                - listitem [ref=e66]:
+                  - link "Benchmarking" [ref=e67] [cursor=pointer]:
+                    - /url: ../../guides/benchmarking/
+                    - generic [ref=e68]: Benchmarking
+                - listitem [ref=e69]:
+                  - link "Design Principles" [ref=e70] [cursor=pointer]:
+                    - /url: ../../guides/design/
+                    - generic [ref=e71]: Design Principles
+          - listitem [ref=e72]:
+            - link "Architecture" [ref=e73] [cursor=pointer]:
+              - /url: ../../architecture/overview/
+              - generic [ref=e74]: Architecture
+          - listitem [ref=e75]:
+            - generic [ref=e77]: API Reference
+            - navigation "API Reference" [ref=e79]:
+              - generic [ref=e80] [cursor=pointer]: API Reference
+              - list [ref=e82]:
+                - listitem [ref=e83]:
+                  - link "Core" [ref=e84] [cursor=pointer]:
+                    - /url: ../../api/core/
+                    - generic [ref=e85]: Core
+                - listitem [ref=e86]:
+                  - link "Metrics" [ref=e87] [cursor=pointer]:
+                    - /url: ../../api/metrics/
+                    - generic [ref=e88]: Metrics
+                - listitem [ref=e89]:
+                  - link "Models" [ref=e90] [cursor=pointer]:
+                    - /url: ../../api/models/
+                    - generic [ref=e91]: Models
+                - listitem [ref=e92]:
+                  - link "Wrappers" [ref=e93] [cursor=pointer]:
+                    - /url: ../../api/wrappers/
+                    - generic [ref=e94]: Wrappers
+                - listitem [ref=e95]:
+                  - link "Risk" [ref=e96] [cursor=pointer]:
+                    - /url: ../../api/risk/
+                    - generic [ref=e97]: Risk
+                - listitem [ref=e98]:
+                  - link "Causal" [ref=e99] [cursor=pointer]:
+                    - /url: ../../api/causal/
+                    - generic [ref=e100]: Causal
+                - listitem [ref=e101]:
+                  - link "Analysis" [ref=e102] [cursor=pointer]:
+                    - /url: ../../api/analysis/
+                    - generic [ref=e103]: Analysis
+                - listitem [ref=e104]:
+                  - link "Decomposition" [ref=e105] [cursor=pointer]:
+                    - /url: ../../api/decomposition/
+                    - generic [ref=e106]: Decomposition
+                - listitem [ref=e107]:
+                  - link "Counterfactual" [ref=e108] [cursor=pointer]:
+                    - /url: ../../api/counterfactual/
+                    - generic [ref=e109]: Counterfactual
+                - listitem [ref=e110]:
+                  - link "Multivariate" [ref=e111] [cursor=pointer]:
+                    - /url: ../../api/multivariate/
+                    - generic [ref=e112]: Multivariate
+                - listitem [ref=e113]:
+                  - link "Multimodal" [ref=e114] [cursor=pointer]:
+                    - /url: ../../api/multimodal/
+                    - generic [ref=e115]: Multimodal
+                - listitem [ref=e116]:
+                  - link "Bayesian" [ref=e117] [cursor=pointer]:
+                    - /url: ../../api/bayesian/
+                    - generic [ref=e118]: Bayesian
+                - listitem [ref=e119]:
+                  - link "Calibration Module" [ref=e120] [cursor=pointer]:
+                    - /url: ../../api/calibration-module/
+                    - generic [ref=e121]: Calibration Module
+                - listitem [ref=e122]:
+                  - link "Utils" [ref=e123] [cursor=pointer]:
+                    - /url: ../../api/utils/
+                    - generic [ref=e124]: Utils
+                - listitem [ref=e125]:
+                  - link "Viz" [ref=e126] [cursor=pointer]:
+                    - /url: ../../api/viz/
+                    - generic [ref=e127]: Viz
+                - listitem [ref=e128]:
+                  - link "CLI" [ref=e129] [cursor=pointer]:
+                    - /url: ../../api/cli/
+                    - generic [ref=e130]: CLI
+          - listitem [ref=e131]:
+            - generic [ref=e133]: Notebooks
+            - navigation "Notebooks" [ref=e135]:
+              - generic [ref=e136] [cursor=pointer]: Notebooks
+              - list [ref=e138]:
+                - listitem [ref=e139]:
+                  - link "Overview" [ref=e140] [cursor=pointer]:
+                    - /url: ../
+                    - generic [ref=e141]: Overview
+                - listitem [ref=e142]:
+                  - link "Quick Start" [ref=e143] [cursor=pointer]:
+                    - /url: ../01-quick-start-conformal-regression/
+                    - generic [ref=e144]: Quick Start
+                - listitem [ref=e145]:
+                  - link "Time Series Forecasting" [ref=e146] [cursor=pointer]:
+                    - /url: ./
+                    - generic [ref=e147]: Time Series Forecasting
+                - listitem [ref=e148]:
+                  - link "Uncertainty Decomposition" [ref=e149] [cursor=pointer]:
+                    - /url: ../03-uncertainty-decomposition/
+                    - generic [ref=e150]: Uncertainty Decomposition
+                - listitem [ref=e151]:
+                  - link "Risk-Aware Decisions" [ref=e152] [cursor=pointer]:
+                    - /url: ../04-risk-aware-decisions/
+                    - generic [ref=e153]: Risk-Aware Decisions
+                - listitem [ref=e154]:
+                  - link "Multivariate Copulas" [ref=e155] [cursor=pointer]:
+                    - /url: ../05-multivariate-copulas/
+                    - generic [ref=e156]: Multivariate Copulas
+                - listitem [ref=e157]:
+                  - link "Methods & Benchmarks" [ref=e158] [cursor=pointer]:
+                    - /url: ../06-methods-and-benchmarks/
+                    - generic [ref=e159]: Methods & Benchmarks
+          - listitem [ref=e160]:
+            - link "Benchmarks" [ref=e161] [cursor=pointer]:
+              - /url: ../../benchmarks/
+              - generic [ref=e162]: Benchmarks
+          - listitem [ref=e163]:
+            - generic [ref=e165]: Project
+            - navigation "Project" [ref=e167]:
+              - generic [ref=e168] [cursor=pointer]: Project
+              - list [ref=e170]:
+                - listitem [ref=e171]:
+                  - link "Contributing" [ref=e172] [cursor=pointer]:
+                    - /url: ../../project/contributing/
+                    - generic [ref=e173]: Contributing
+                - listitem [ref=e174]:
+                  - link "Changelog" [ref=e175] [cursor=pointer]:
+                    - /url: ../../project/changelog/
+                    - generic [ref=e176]: Changelog
+                - listitem [ref=e177]:
+                  - link "Roadmap" [ref=e178] [cursor=pointer]:
+                    - /url: ../../project/roadmap/
+                    - generic [ref=e179]: Roadmap
+      - generic [ref=e181]:
+        - generic:
+          - navigation "Table of contents"
+      - article [ref=e183]:
+        - heading "Time Series Forecasting with Uncertainty ¶" [level=1] [ref=e184]:
+          - text: Time Series Forecasting with Uncertainty
+          - link "¶" [ref=e185] [cursor=pointer]:
+            - /url: "#time-series-forecasting-with-uncertainty"
+        - paragraph [ref=e186]:
+          - text: Forecast temperature using the
+          - strong [ref=e187]: weather dataset
+          - text: (36K+ hourly measurements) with conformal prediction bands.
+        - blockquote [ref=e188]:
+          - paragraph [ref=e189]:
+            - strong [ref=e190]: "Note:"
+            - text: Some cells failed to execute during static export. Use the molab badge below for full interactivity.
+        - iframe [ref=e192]:
+          - generic [active] [ref=f2e1]:
+            - banner [ref=f2e2]:
+              - navigation "Header" [ref=f2e3]:
+                - img [ref=f2e5] [cursor=pointer]
+                - generic [ref=f2e10]: Uncertainty Flow
+                - generic [ref=f2e11]:
+                  - radio "Switch to dark mode"
+                  - generic "Switch to dark mode" [ref=f2e12] [cursor=pointer]:
+                    - img [ref=f2e13]
+                  - radio "Switch to light mode"
+                - img [ref=f2e16] [cursor=pointer]
+                - dialog:
+                  - search:
+                    - generic:
+                      - textbox "Search" [ref=f2e18]
+                      - img [ref=f2e20] [cursor=pointer]
+                      - navigation "Search":
+                        - button "Clear":
+                          - img
+                    - generic [ref=f2e23]: Initializing search
+            - generic [ref=f2e24]:
+              - main [ref=f2e25]:
+                - generic [ref=f2e26]:
+                  - navigation "Navigation" [ref=f2e29]:
+                    - generic [ref=f2e30] [cursor=pointer]:
+                      - link "Uncertainty Flow" [ref=f2e31]:
+                        - /url: /uncertainty_flow/.
+                        - img [ref=f2e32]
+                      - text: Uncertainty Flow
+                    - link "minghao51/uncertainty_flow 0 0" [ref=f2e35] [cursor=pointer]:
+                      - /url: https://github.com/minghao51/uncertainty_flow
+                      - img [ref=f2e37]
+                      - generic [ref=f2e39]:
+                        - text: minghao51/uncertainty_flow
+                        - list [ref=f2e40]:
+                          - listitem [ref=f2e41]: "0"
+                          - listitem [ref=f2e42]: "0"
+                    - list [ref=f2e43]:
+                      - listitem [ref=f2e44]:
+                        - link "Home" [ref=f2e45] [cursor=pointer]:
+                          - /url: /uncertainty_flow/.
+                          - generic [ref=f2e46]: Home
+                      - listitem [ref=f2e47]:
+                        - generic [ref=f2e49]: Guides
+                        - navigation "Guides" [ref=f2e51]:
+                          - generic [ref=f2e52] [cursor=pointer]: Guides
+                          - list [ref=f2e54]:
+                            - listitem [ref=f2e55]:
+                              - link "Distribution Approach" [ref=f2e56] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/distribution-approach/
+                                - generic [ref=f2e57]: Distribution Approach
+                            - listitem [ref=f2e58]:
+                              - link "Models" [ref=f2e59] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/models/
+                                - generic [ref=f2e60]: Models
+                            - listitem [ref=f2e61]:
+                              - link "Calibration" [ref=f2e62] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/calibration/
+                                - generic [ref=f2e63]: Calibration
+                            - listitem [ref=f2e64]:
+                              - link "Charting" [ref=f2e65] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/charting/
+                                - generic [ref=f2e66]: Charting
+                            - listitem [ref=f2e67]:
+                              - link "Benchmarking" [ref=f2e68] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/benchmarking/
+                                - generic [ref=f2e69]: Benchmarking
+                            - listitem [ref=f2e70]:
+                              - link "Design Principles" [ref=f2e71] [cursor=pointer]:
+                                - /url: /uncertainty_flow/guides/design/
+                                - generic [ref=f2e72]: Design Principles
+                      - listitem [ref=f2e73]:
+                        - link "Architecture" [ref=f2e74] [cursor=pointer]:
+                          - /url: /uncertainty_flow/architecture/overview/
+                          - generic [ref=f2e75]: Architecture
+                      - listitem [ref=f2e76]:
+                        - generic [ref=f2e78]: API Reference
+                        - navigation "API Reference" [ref=f2e80]:
+                          - generic [ref=f2e81] [cursor=pointer]: API Reference
+                          - list [ref=f2e83]:
+                            - listitem [ref=f2e84]:
+                              - link "Core" [ref=f2e85] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/core/
+                                - generic [ref=f2e86]: Core
+                            - listitem [ref=f2e87]:
+                              - link "Metrics" [ref=f2e88] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/metrics/
+                                - generic [ref=f2e89]: Metrics
+                            - listitem [ref=f2e90]:
+                              - link "Models" [ref=f2e91] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/models/
+                                - generic [ref=f2e92]: Models
+                            - listitem [ref=f2e93]:
+                              - link "Wrappers" [ref=f2e94] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/wrappers/
+                                - generic [ref=f2e95]: Wrappers
+                            - listitem [ref=f2e96]:
+                              - link "Risk" [ref=f2e97] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/risk/
+                                - generic [ref=f2e98]: Risk
+                            - listitem [ref=f2e99]:
+                              - link "Causal" [ref=f2e100] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/causal/
+                                - generic [ref=f2e101]: Causal
+                            - listitem [ref=f2e102]:
+                              - link "Analysis" [ref=f2e103] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/analysis/
+                                - generic [ref=f2e104]: Analysis
+                            - listitem [ref=f2e105]:
+                              - link "Decomposition" [ref=f2e106] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/decomposition/
+                                - generic [ref=f2e107]: Decomposition
+                            - listitem [ref=f2e108]:
+                              - link "Counterfactual" [ref=f2e109] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/counterfactual/
+                                - generic [ref=f2e110]: Counterfactual
+                            - listitem [ref=f2e111]:
+                              - link "Multivariate" [ref=f2e112] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/multivariate/
+                                - generic [ref=f2e113]: Multivariate
+                            - listitem [ref=f2e114]:
+                              - link "Multimodal" [ref=f2e115] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/multimodal/
+                                - generic [ref=f2e116]: Multimodal
+                            - listitem [ref=f2e117]:
+                              - link "Bayesian" [ref=f2e118] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/bayesian/
+                                - generic [ref=f2e119]: Bayesian
+                            - listitem [ref=f2e120]:
+                              - link "Calibration Module" [ref=f2e121] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/calibration-module/
+                                - generic [ref=f2e122]: Calibration Module
+                            - listitem [ref=f2e123]:
+                              - link "Utils" [ref=f2e124] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/utils/
+                                - generic [ref=f2e125]: Utils
+                            - listitem [ref=f2e126]:
+                              - link "Viz" [ref=f2e127] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/viz/
+                                - generic [ref=f2e128]: Viz
+                            - listitem [ref=f2e129]:
+                              - link "CLI" [ref=f2e130] [cursor=pointer]:
+                                - /url: /uncertainty_flow/api/cli/
+                                - generic [ref=f2e131]: CLI
+                      - listitem [ref=f2e132]:
+                        - generic [ref=f2e134]: Notebooks
+                        - navigation "Notebooks" [ref=f2e136]:
+                          - generic [ref=f2e137] [cursor=pointer]: Notebooks
+                          - list [ref=f2e139]:
+                            - listitem [ref=f2e140]:
+                              - link "Overview" [ref=f2e141] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/
+                                - generic [ref=f2e142]: Overview
+                            - listitem [ref=f2e143]:
+                              - link "Quick Start" [ref=f2e144] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/01-quick-start-conformal-regression/
+                                - generic [ref=f2e145]: Quick Start
+                            - listitem [ref=f2e146]:
+                              - link "Time Series Forecasting" [ref=f2e147] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/02-time-series-forecasting/
+                                - generic [ref=f2e148]: Time Series Forecasting
+                            - listitem [ref=f2e149]:
+                              - link "Uncertainty Decomposition" [ref=f2e150] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/03-uncertainty-decomposition/
+                                - generic [ref=f2e151]: Uncertainty Decomposition
+                            - listitem [ref=f2e152]:
+                              - link "Risk-Aware Decisions" [ref=f2e153] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/04-risk-aware-decisions/
+                                - generic [ref=f2e154]: Risk-Aware Decisions
+                            - listitem [ref=f2e155]:
+                              - link "Multivariate Copulas" [ref=f2e156] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/05-multivariate-copulas/
+                                - generic [ref=f2e157]: Multivariate Copulas
+                            - listitem [ref=f2e158]:
+                              - link "Methods & Benchmarks" [ref=f2e159] [cursor=pointer]:
+                                - /url: /uncertainty_flow/notebooks/06-methods-and-benchmarks/
+                                - generic [ref=f2e160]: Methods & Benchmarks
+                      - listitem [ref=f2e161]:
+                        - link "Benchmarks" [ref=f2e162] [cursor=pointer]:
+                          - /url: /uncertainty_flow/benchmarks/
+                          - generic [ref=f2e163]: Benchmarks
+                      - listitem [ref=f2e164]:
+                        - generic [ref=f2e166]: Project
+                        - navigation "Project" [ref=f2e168]:
+                          - generic [ref=f2e169] [cursor=pointer]: Project
+                          - list [ref=f2e171]:
+                            - listitem [ref=f2e172]:
+                              - link "Contributing" [ref=f2e173] [cursor=pointer]:
+                                - /url: /uncertainty_flow/project/contributing/
+                                - generic [ref=f2e174]: Contributing
+                            - listitem [ref=f2e175]:
+                              - link "Changelog" [ref=f2e176] [cursor=pointer]:
+                                - /url: /uncertainty_flow/project/changelog/
+                                - generic [ref=f2e177]: Changelog
+                            - listitem [ref=f2e178]:
+                              - link "Roadmap" [ref=f2e179] [cursor=pointer]:
+                                - /url: /uncertainty_flow/project/roadmap/
+                                - generic [ref=f2e180]: Roadmap
+                  - article [ref=f2e182]:
+                    - heading "404 - Not found" [level=1] [ref=f2e183]
+                - button "Back to top":
+                  - img
+                  - text: Back to top
+              - contentinfo [ref=f2e184]:
+                - generic [ref=f2e187]:
+                  - text: Made with
+                  - link "Material for MkDocs" [ref=f2e188] [cursor=pointer]:
+                    - /url: https://squidfunk.github.io/mkdocs-material/
+        - paragraph [ref=e193]:
+          - link "Open in molab" [ref=e194] [cursor=pointer]:
+            - /url: https://molab.marimo.io/github/minghao51/uncertainty_flow/blob/main/notebooks/02_time_series_forecasting.py
+            - img "Open in molab" [ref=e195]
+          - text: loading="lazy"
+        - blockquote:
+          - paragraph
+      - paragraph
+      - paragraph [ref=e196]:
+        - link "Open in molab" [ref=e197] [cursor=pointer]:
+          - /url: https://molab.marimo.io/github/minghao51/uncertainty_flow/blob/main/notebooks/02_time_series_forecasting.py
+          - img "Open in molab" [ref=e198]
+      - code [ref=e201]: uv run marimo run notebooks/02_time_series_forecasting.py
+  - button "Back to top":
+    - img
+    - text: Back to top
+  - contentinfo [ref=e202]:
+    - generic [ref=e205]:
+      - text: Made with
+      - link "Material for MkDocs" [ref=e206] [cursor=pointer]:
+        - /url: https://squidfunk.github.io/mkdocs-material/

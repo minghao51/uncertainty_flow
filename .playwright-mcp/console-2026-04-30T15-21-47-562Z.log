@@ -1,0 +1,32 @@
+[    1129ms] [LOG] [iframe] Running in embedded context @ https://cdn.jsdelivr.net/npm/@marimo-team/frontend@0.23.4/dist/assets/useEventListener-BR0C1MaI.js:0
+[    1648ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    1819ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    2005ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    2210ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    2441ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    2708ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    3023ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    3389ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    3792ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    4282ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    4855ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    5538ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    6348ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    7367ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    8502ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[    9849ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   11449ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   13358ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   15424ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   17482ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   19534ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   21606ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   23671ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   25886ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   27961ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   30021ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html/health:0
+[   30021ms] [ERROR] Failed to connect after 25 retries @ https://cdn.jsdelivr.net/npm/@marimo-team/frontend@0.23.4/dist/assets/useEventListener-BR0C1MaI.js:0
+[   30021ms] Error: Failed to connect after 25 retries
+    at x.init (https://cdn.jsdelivr.net/npm/@marimo-team/frontend@0.23.4/dist/assets/config-ChCHm539.js:1:4158)
+[   33074ms] [WARNING] The resource https://cdn.jsdelivr.net/npm/@marimo-team/frontend@0.23.4/dist/assets/gradient-yHQUC_QB.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html:0
+[   33074ms] [WARNING] The resource https://cdn.jsdelivr.net/npm/@marimo-team/frontend@0.23.4/dist/assets/noise-60BoTA8O.png was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ https://minghao51.github.io/uncertainty_flow/notebooks/html/02-time-series-forecasting.html:0
