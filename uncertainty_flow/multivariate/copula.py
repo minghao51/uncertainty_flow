@@ -84,6 +84,16 @@ class BaseCopula:
         """
         return -np.inf
 
+    def _to_copula_space(self, residuals: np.ndarray) -> np.ndarray:
+        """Transform residuals to uniform copula space via empirical CDF."""
+        n_samples, n_targets = residuals.shape
+        uniform = np.zeros_like(residuals)
+        for t in range(n_targets):
+            sorted_vals = np.sort(residuals[:, t])
+            ranks = np.searchsorted(sorted_vals, residuals[:, t])
+            uniform[:, t] = (ranks + 1) / (n_samples + 1)
+        return uniform
+
 
 def _resolve_rng(
     random_state: int | np.random.Generator | None,
@@ -275,18 +285,6 @@ class GaussianCopula(BaseCopula):
 
         return float(ll)
 
-    def _to_copula_space(self, residuals: np.ndarray) -> np.ndarray:
-        """Transform residuals to uniform copula space via empirical CDF."""
-        n_samples, n_targets = residuals.shape
-        uniform = np.zeros_like(residuals)
-
-        for t in range(n_targets):
-            sorted_vals = np.sort(residuals[:, t])
-            ranks = np.searchsorted(sorted_vals, residuals[:, t])
-            uniform[:, t] = (ranks + 1) / (n_samples + 1)
-
-        return uniform
-
     def sample(
         self,
         marginals: np.ndarray,
@@ -414,18 +412,6 @@ class ClaytonCopula(BaseCopula):
         self.fitted_ = True
 
         return self
-
-    def _to_copula_space(self, residuals: np.ndarray) -> np.ndarray:
-        """Transform residuals to uniform copula space."""
-        n_samples, n_targets = residuals.shape
-        uniform = np.zeros_like(residuals)
-
-        for t in range(n_targets):
-            sorted_vals = np.sort(residuals[:, t])
-            ranks = np.searchsorted(sorted_vals, residuals[:, t])
-            uniform[:, t] = (ranks + 1) / (n_samples + 1)
-
-        return uniform
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
@@ -560,18 +546,6 @@ class GumbelCopula(BaseCopula):
         self.fitted_ = True
 
         return self
-
-    def _to_copula_space(self, residuals: np.ndarray) -> np.ndarray:
-        """Transform residuals to uniform copula space."""
-        n_samples, n_targets = residuals.shape
-        uniform = np.zeros_like(residuals)
-
-        for t in range(n_targets):
-            sorted_vals = np.sort(residuals[:, t])
-            ranks = np.searchsorted(sorted_vals, residuals[:, t])
-            uniform[:, t] = (ranks + 1) / (n_samples + 1)
-
-        return uniform
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""
@@ -713,18 +687,6 @@ class FrankCopula(BaseCopula):
         self.fitted_ = True
 
         return self
-
-    def _to_copula_space(self, residuals: np.ndarray) -> np.ndarray:
-        """Transform residuals to uniform copula space."""
-        n_samples, n_targets = residuals.shape
-        uniform = np.zeros_like(residuals)
-
-        for t in range(n_targets):
-            sorted_vals = np.sort(residuals[:, t])
-            ranks = np.searchsorted(sorted_vals, residuals[:, t])
-            uniform[:, t] = (ranks + 1) / (n_samples + 1)
-
-        return uniform
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """Compute log-likelihood for BIC calculation."""

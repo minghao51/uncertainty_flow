@@ -119,6 +119,21 @@ class TestGaussianCopula:
         assert samples.shape == (100, 2)
         assert np.all(np.isfinite(samples))
 
+    def test_fit_triggers_ridge_conditioning_on_near_singular(self):
+        np.random.seed(42)
+        n_samples = 1000
+        z = np.random.randn(n_samples)
+        residuals = np.column_stack([z, z + 1e-6 * np.random.randn(n_samples)])
+        copula = GaussianCopula()
+        copula.fit(residuals)
+        assert copula.fitted_
+        assert copula.correlation_matrix_ is not None
+        eigenvals = np.linalg.eigvals(copula.correlation_matrix_)
+        assert np.all(eigenvals >= 1e-6)
+        marginals = np.random.rand(1, 2, 11)
+        samples = copula.sample(marginals, n_samples=100, random_state=42)
+        assert np.all(np.isfinite(samples))
+
 
 class TestClaytonCopula:
     """Test ClaytonCopula."""
@@ -168,6 +183,49 @@ class TestClaytonCopula:
         assert "ClaytonCopula" in repr(copula)
         copula.fit(bivariate_residuals)
         assert "fitted=True" in repr(copula)
+
+
+class TestGumbelConditionalCdf:
+    """Unit tests for _gumbel_conditional_cdf helper."""
+
+    def test_output_in_unit_interval(self):
+        from uncertainty_flow.multivariate.copula import _gumbel_conditional_cdf
+
+        theta = 2.0
+        u = np.array([0.1, 0.3, 0.5, 0.7, 0.9])
+        v = np.array([0.2, 0.4, 0.6, 0.8, 0.95])
+        result = _gumbel_conditional_cdf(v, u, theta)
+        assert np.all(result >= 0)
+        assert np.all(result <= 1)
+
+    def test_monotonic_in_v(self):
+        from uncertainty_flow.multivariate.copula import _gumbel_conditional_cdf
+
+        theta = 2.5
+        v = np.linspace(0.01, 0.99, 100)
+        u = np.full_like(v, 0.5)
+        cdf_vals = _gumbel_conditional_cdf(v, u, theta)
+        diffs = np.diff(cdf_vals)
+        assert np.all(diffs >= -1e-10)
+
+    def test_boundary_values(self):
+        from uncertainty_flow.multivariate.copula import _gumbel_conditional_cdf
+
+        theta = 2.0
+        u = np.array([0.5])
+        near_one = _gumbel_conditional_cdf(np.array([0.9999]), u, theta)
+        near_zero = _gumbel_conditional_cdf(np.array([0.0001]), u, theta)
+        assert near_one[0] > 0.99
+        assert near_zero[0] < 0.01
+
+    def test_theta_equals_one_is_independent(self):
+        from uncertainty_flow.multivariate.copula import _gumbel_conditional_cdf
+
+        theta = 1.0
+        u = np.array([0.3])
+        v = np.array([0.6])
+        result = _gumbel_conditional_cdf(v, u, theta)
+        assert np.isclose(result[0], v[0], atol=1e-6)
 
 
 class TestGumbelCopula:
@@ -336,6 +394,16 @@ class TestGaussianCopulaErrors:
         residuals_nan = np.full((100, 2), np.nan)
         with pytest.raises(InvalidDataError, match="infs or NaNs"):
             copula.fit(residuals_nan)
+
+    def test_conditioning_handles_perfectly_singular_correlation(self):
+        """Conditioning should fix a perfectly singular correlation matrix."""
+        copula = GaussianCopula()
+        residuals = np.column_stack([np.arange(100, dtype=float), np.arange(100, dtype=float)])
+        copula.fit(residuals)
+        assert copula.fitted_
+        eigenvals = np.linalg.eigvals(copula.correlation_matrix_)
+        assert np.all(eigenvals >= 1e-6)
+        assert np.all(np.isfinite(eigenvals))
 
 
 class TestCopulaFamilies:
