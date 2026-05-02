@@ -82,6 +82,7 @@ class BenchmarkConfig:
     tune_timeout: int = 120
     test_size: float = 0.2
     dataset_revision: str | None = None
+    hybrid_validation: bool = False
 
     def __post_init__(self):
         if self.confidence_levels is None:
@@ -104,6 +105,13 @@ class ModelResult:
     n_samples: int
     tuned_params: dict[str, Any] = field(default_factory=dict)
     was_tuned: bool = False
+    validation_coverage_90: float | None = None
+    validation_sharpness_90: float | None = None
+    validation_winkler_90: float | None = None
+    validation_split_type: str | None = None
+    validation_strategy: str | None = None
+    validation_n_splits: int | None = None
+    test_split_type: str = "out_of_time"
 
 
 @dataclass
@@ -250,6 +258,7 @@ class BenchmarkRunner:
         self.errors: list[dict[str, str]] = []
         self._run_result: BenchmarkResult | None = None
         self._tuning_cache: dict[str, dict[str, Any]] = {}
+        self._tuning_result_cache: dict[str, Any] = {}
 
     def load_data(self) -> None:
         """Load the dataset."""
@@ -263,34 +272,33 @@ class BenchmarkRunner:
         else:
             self.target = self.ds_info.default_target
 
-    def _get_tuned_params(self, model_name: str) -> dict[str, Any]:
-        """Get tuned parameters for a model, running tuning if needed."""
-        if model_name in self._tuning_cache:
-            return self._tuning_cache[model_name]
+    def _get_tuning_result(self, model_name: str, tune_df: pl.DataFrame) -> Any | None:
+        """Get tuning result for a model, running tuning if needed."""
+        if model_name in self._tuning_result_cache:
+            return self._tuning_result_cache[model_name]
 
         if not self.config.auto_tune:
-            return {}
-
-        if self.df is None:
-            raise DataError("Data not loaded. Call load_data() first.")
+            return None
 
         logger.info("Auto-tuning model '%s'", model_name)
         tune_config = TuningConfig(
             target_coverage=self.config.target_coverage,
             n_samples=self.config.tune_samples,
             timeout=self.config.tune_timeout,
+            hybrid_validation=self.config.hybrid_validation,
         )
 
         tuning_result = auto_tune_model(
             model_name=model_name,
-            df=self.df,
+            df=tune_df,
             target=self.target,
             horizon=self.config.horizon,
             config=tune_config,
         )
 
         self._tuning_cache[model_name] = tuning_result.best_params
-        return tuning_result.best_params
+        self._tuning_result_cache[model_name] = tuning_result
+        return tuning_result
 
     def run_model(self, model_name: str) -> ModelResult:
         """Run a single model benchmark with optional auto-tuning."""
@@ -301,15 +309,6 @@ class BenchmarkRunner:
 
         if self.df is None:
             raise DataError("Data not loaded. Call load_data() first.")
-
-        tuned_params = self._get_tuned_params(model_name)
-        was_tuned = bool(tuned_params)
-
-        if was_tuned:
-            logger.info("Using tuned params for '%s': %s", model_name, tuned_params)
-
-        model_cls = MODEL_REGISTRY[model_name]
-        benchmark = model_cls(self.config, tuned_params)
 
         # Temporal train/test split to prevent data leakage
         n_total = len(self.df)
@@ -328,6 +327,16 @@ class BenchmarkRunner:
             )
         train_df = self.df.head(n_total - n_test)
         test_df = self.df.tail(n_test)
+
+        tuning_result = self._get_tuning_result(model_name, train_df)
+        tuned_params = tuning_result.best_params if tuning_result is not None else {}
+        was_tuned = bool(tuned_params)
+
+        if was_tuned:
+            logger.info("Using tuned params for '%s': %s", model_name, tuned_params)
+
+        model_cls = MODEL_REGISTRY[model_name]
+        benchmark = model_cls(self.config, tuned_params)
 
         logger.info("Fitting benchmark model '%s'", model_name)
         benchmark.fit(train_df, self.target)
@@ -379,6 +388,36 @@ class BenchmarkRunner:
             n_samples=n_pred,
             tuned_params=tuned_params,
             was_tuned=was_tuned,
+            validation_coverage_90=(
+                round(float(getattr(tuning_result, "coverage_90")), 4)
+                if tuning_result is not None and hasattr(tuning_result, "coverage_90")
+                else None
+            ),
+            validation_sharpness_90=(
+                round(float(getattr(tuning_result, "sharpness_90")), 4)
+                if tuning_result is not None and hasattr(tuning_result, "sharpness_90")
+                else None
+            ),
+            validation_winkler_90=(
+                round(float(getattr(tuning_result, "winkler_90")), 4)
+                if tuning_result is not None and hasattr(tuning_result, "winkler_90")
+                else None
+            ),
+            validation_split_type=(
+                str(getattr(tuning_result, "validation_split_type"))
+                if tuning_result is not None and hasattr(tuning_result, "validation_split_type")
+                else None
+            ),
+            validation_strategy=(
+                str(getattr(tuning_result, "validation_strategy"))
+                if tuning_result is not None and hasattr(tuning_result, "validation_strategy")
+                else None
+            ),
+            validation_n_splits=(
+                int(getattr(tuning_result, "validation_n_splits"))
+                if tuning_result is not None and hasattr(tuning_result, "validation_n_splits")
+                else None
+            ),
         )
 
     def run_all(
@@ -452,6 +491,13 @@ class BenchmarkRunner:
                     "n_samples": r.n_samples,
                     "tuned_params": r.tuned_params,
                     "was_tuned": r.was_tuned,
+                    "validation_coverage_90": r.validation_coverage_90,
+                    "validation_sharpness_90": r.validation_sharpness_90,
+                    "validation_winkler_90": r.validation_winkler_90,
+                    "validation_split_type": r.validation_split_type,
+                    "validation_strategy": r.validation_strategy,
+                    "validation_n_splits": r.validation_n_splits,
+                    "test_split_type": r.test_split_type,
                 }
                 for r in self._run_result.models
             ],
@@ -481,6 +527,13 @@ class BenchmarkRunner:
                     "n_samples": r.n_samples,
                     "tuned_params": r.tuned_params,
                     "was_tuned": r.was_tuned,
+                    "validation_coverage_90": r.validation_coverage_90,
+                    "validation_sharpness_90": r.validation_sharpness_90,
+                    "validation_winkler_90": r.validation_winkler_90,
+                    "validation_split_type": r.validation_split_type,
+                    "validation_strategy": r.validation_strategy,
+                    "validation_n_splits": r.validation_n_splits,
+                    "test_split_type": r.test_split_type,
                 }
                 for r in self._run_result.models
             ],
@@ -515,6 +568,13 @@ class BenchmarkRunner:
                     "train_time_sec": r.train_time_sec,
                     "was_tuned": r.was_tuned,
                     "tuned_params": str(r.tuned_params),
+                    "validation_coverage_90": r.validation_coverage_90,
+                    "validation_sharpness_90": r.validation_sharpness_90,
+                    "validation_winkler_90": r.validation_winkler_90,
+                    "validation_split_type": r.validation_split_type,
+                    "validation_strategy": r.validation_strategy,
+                    "validation_n_splits": r.validation_n_splits,
+                    "test_split_type": r.test_split_type,
                 }
             )
 

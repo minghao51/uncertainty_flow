@@ -49,6 +49,7 @@ def _():
         inventory_cost,
         threshold_penalty,
     )
+    from uncertainty_flow.utils.split import select_validation_plan
     from uncertainty_flow.wrappers import ConformalRegressor
 
     return (
@@ -59,6 +60,7 @@ def _():
         inventory_cost,
         np,
         pl,
+        select_validation_plan,
         threshold_penalty,
     )
 
@@ -72,17 +74,16 @@ def _(pl):
 
 
 @app.cell
-def _(df):
+def _(df, select_validation_plan):
     cols = df.columns
     target_col = cols[-1]
-    n = df.height
-    split = int(n * 0.7)
-    split2 = int(n * 0.85)
-    train_df = df[:split]
-    calib_df = df[split:split2]
-    test_df = df[split2:]
-    f"Target: {target_col} | Train: {train_df.height} | Calib: {calib_df.height} | Test: {test_df.height}"
-    return calib_df, target_col, test_df, train_df
+    plan = select_validation_plan(df, task_type="tabular", holdout_fraction=0.15, random_state=42)
+    train_val, test_df = plan.outer_split
+    n_calib = len(train_val) * 15 // 85
+    train_df = train_val[:-n_calib] if n_calib else train_val
+    calib_df = train_val[-n_calib:] if n_calib else train_val[:0]
+    f"Plan: {plan.metadata.strategy_name} | Train: {len(train_df)} | Calib: {len(calib_df)} | Test: {len(test_df)}"
+    return calib_df, plan, target_col, test_df, train_df
 
 
 @app.cell

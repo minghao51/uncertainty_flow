@@ -22,7 +22,14 @@ from .exceptions import (
     warn_quantile_crossing,
 )
 from .polars_bridge import to_numpy, to_polars
-from .split import BaseSplit, RandomHoldoutSplit, TemporalHoldoutSplit
+from .split import (
+    BaseSplit,
+    RandomHoldoutSplit,
+    SplitPlanMetadata,
+    TemporalHoldoutSplit,
+    ValidationSplitPlan,
+    select_validation_plan,
+)
 
 __all__ = [
     "to_numpy",
@@ -30,6 +37,9 @@ __all__ = [
     "BaseSplit",
     "RandomHoldoutSplit",
     "TemporalHoldoutSplit",
+    "SplitPlanMetadata",
+    "ValidationSplitPlan",
+    "select_validation_plan",
     "UncertaintyFlowWarning",
     "UncertaintyFlowError",
     "CalibrationError",

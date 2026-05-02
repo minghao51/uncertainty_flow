@@ -166,6 +166,11 @@ def list_datasets_cmd(domain: str | None) -> None:
     default=None,
     help="Pinned HuggingFace dataset revision (commit hash).",
 )
+@click.option(
+    "--hybrid-validation/--no-hybrid-validation",
+    default=False,
+    help="Use hybrid validation (outer split + inner out-of-sample CV) during auto-tuning.",
+)
 def benchmark(
     dataset: str,
     model: str,
@@ -182,6 +187,7 @@ def benchmark(
     allow_partial: bool,
     test_size: float,
     dataset_revision: str | None,
+    hybrid_validation: bool,
 ) -> None:
     """Run benchmark on a dataset with optional auto-tuning.
 
@@ -218,6 +224,7 @@ def benchmark(
         tune_samples=tune_samples,
         test_size=test_size,
         dataset_revision=dataset_revision,
+        hybrid_validation=hybrid_validation,
     )
 
     if model == "all":

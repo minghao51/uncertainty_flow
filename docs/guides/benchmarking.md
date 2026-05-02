@@ -131,8 +131,22 @@ Auto-tuning is **enabled by default** and automatically finds optimal hyperparam
 ### How It Works
 
 1. For each model, the tuner tests multiple parameter combinations
-2. Parameters are scored based on coverage calibration and interval sharpness
-3. The best parameters are used for the final benchmark
+2. Parameters are scored on validation splits only (no fit/predict on the same rows)
+3. The best parameters are used for the final benchmark on a separate untouched test holdout
+
+### Validation Strategy (Leakage-Safe)
+
+- Tabular tuning defaults to random holdout; for small datasets it uses CV.
+- Time-series tuning defaults to temporal holdout.
+- Optional hybrid validation uses outer holdout + inner out-of-sample CV on outer-train only.
+- The selector is deterministic and logs chosen strategy and rationale.
+
+Example strategy logs:
+
+```text
+validation_strategy strategy=temporal_holdout reason=time_series task defaults to temporal holdout ...
+tuning_validation_plan model=conformal-forecaster strategy=temporal_holdout reason=time_series task defaults...
+```
 
 ### Search Space
 

@@ -13,6 +13,8 @@ dependencies = [
     "click>=8.0.0",
     "pydantic>=2.0.0",
     "pydantic-settings>=2.13.1",
+    "marimo>=0.23.4",
+    "matplotlib>=3.7.0",
 ]
 
 [project.optional-dependencies]

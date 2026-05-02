@@ -3,7 +3,11 @@
 import polars as pl
 import pytest
 
-from uncertainty_flow.utils import RandomHoldoutSplit, TemporalHoldoutSplit
+from uncertainty_flow.utils import (
+    RandomHoldoutSplit,
+    TemporalHoldoutSplit,
+    select_validation_plan,
+)
 
 
 class TestRandomHoldoutSplit:
@@ -145,3 +149,51 @@ class TestTemporalHoldoutSplit:
         splitter = TemporalHoldoutSplit()
         with pytest.warns(UserWarning, match="Calibration set has only"):
             splitter.split(df, 0.4)  # 40 samples
+
+
+class TestValidationPlanSelector:
+    """Test composable validation plan selection."""
+
+    def test_tabular_medium_uses_random_holdout(self):
+        df = pl.DataFrame({"x": range(300), "y": range(300)})
+        plan = select_validation_plan(df, task_type="tabular", random_state=7)
+        assert plan.metadata.strategy_name == "random_holdout"
+        assert len(plan.inner_splits) == 0
+
+    def test_tabular_small_uses_cv(self):
+        df = pl.DataFrame({"x": range(120), "y": range(120)})
+        plan = select_validation_plan(df, task_type="tabular", random_state=7)
+        assert plan.metadata.strategy_name == "kfold_cv"
+        assert len(plan.inner_splits) >= 2
+
+    def test_time_series_uses_temporal_holdout(self):
+        df = pl.DataFrame({"x": range(300), "y": range(300)})
+        plan = select_validation_plan(df, task_type="time_series", random_state=7)
+        assert plan.metadata.strategy_name == "temporal_holdout"
+        train_df, val_df = plan.outer_split
+        assert train_df["x"].to_list()[-1] < val_df["x"].to_list()[0]
+
+    def test_hybrid_time_series_has_inner_oos_splits(self):
+        df = pl.DataFrame({"x": range(300), "y": range(300)})
+        plan = select_validation_plan(
+            df,
+            task_type="time_series",
+            random_state=7,
+            hybrid_mode=True,
+        )
+        assert plan.metadata.strategy_name == "temporal_outer_plus_oos_inner_cv"
+        assert len(plan.inner_splits) >= 2
+
+    def test_determinism_same_seed_same_splits(self):
+        df = pl.DataFrame({"x": range(120), "y": range(120)})
+        plan1 = select_validation_plan(df, task_type="tabular", random_state=11)
+        plan2 = select_validation_plan(df, task_type="tabular", random_state=11)
+        assert plan1.metadata == plan2.metadata
+        assert plan1.outer_split[1]["x"].to_list() == plan2.outer_split[1]["x"].to_list()
+
+    def test_selector_logs_strategy_and_folds(self, caplog):
+        caplog.set_level("DEBUG")
+        df = pl.DataFrame({"x": range(120), "y": range(120)})
+        select_validation_plan(df, task_type="tabular", random_state=7)
+        assert "validation_strategy strategy=" in caplog.text
+        assert "validation_strategy_fold strategy=" in caplog.text

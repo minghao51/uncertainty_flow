@@ -42,6 +42,7 @@ def _():
 
     from uncertainty_flow.metrics import coverage_score, winkler_score
     from uncertainty_flow.models import QuantileForestForecaster
+    from uncertainty_flow.utils.split import select_validation_plan
     from uncertainty_flow.wrappers import ConformalForecaster
 
     return (
@@ -50,6 +51,7 @@ def _():
         QuantileForestForecaster,
         coverage_score,
         pl,
+        select_validation_plan,
         winkler_score,
     )
 
@@ -75,14 +77,13 @@ def _(mo):
 
 
 @app.cell
-def _(target_col, weather_clean):
+def _(select_validation_plan, target_col, weather_clean):
     df = weather_clean.select([target_col.value])
-    n = df.height
-    split_idx = int(n * 0.85)
-    train_ts = df[:split_idx]
-    test_ts = df[split_idx:]
-    f"Train: {train_ts.height:,} | Test: {test_ts.height:,}"
-    return split_idx, test_ts, train_ts
+    plan = select_validation_plan(df, task_type="time_series", holdout_fraction=0.15, random_state=42)
+    train_ts, test_ts = plan.outer_split
+    split_idx = len(train_ts)
+    f"Strategy: {plan.metadata.strategy_name} | Train: {train_ts.height:,} | Test: {test_ts.height:,}"
+    return plan, split_idx, test_ts, train_ts
 
 
 @app.cell

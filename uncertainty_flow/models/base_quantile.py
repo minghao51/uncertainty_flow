@@ -37,6 +37,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         self,
         hidden_layer_sizes: tuple[int, ...] = (100, 50),
         quantile_levels: list[float] | None = None,
+        calibration_size: float = 0.2,
         random_state: int | None = None,
     ):
         """
@@ -45,10 +46,12 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         Args:
             hidden_layer_sizes: Tuple of hidden layer sizes.
             quantile_levels: Quantile levels to predict. Defaults to DEFAULT_QUANTILES.
+            calibration_size: Fraction of data to hold out for calibration (0-1).
             random_state: Random seed for reproducibility.
         """
         self.hidden_layer_sizes = hidden_layer_sizes
         self.quantile_levels: list[float] = quantile_levels or list(DEFAULT_QUANTILES)
+        self.calibration_size = calibration_size
         self.random_state = self._validate_random_state(random_state)
 
         # Fitted attributes
@@ -95,12 +98,28 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         if not np.all(np.isfinite(y)):
             error_invalid_data("Target vector contains NaN or Inf values")
 
-        # Fit scaler
+        # Split into train and calibration sets
+        n_total = len(y)
+        n_calib = int(n_total * self.calibration_size)
+        if n_calib > 0 and n_calib < n_total:
+            rng = np.random.RandomState(self.random_state)
+            indices = rng.permutation(n_total)
+            train_idx = indices[:-n_calib]
+            calib_idx = indices[-n_calib:]
+            x_train, y_train = x[train_idx], y[train_idx]
+            self._x_calib_: np.ndarray = x[calib_idx]
+            self._y_calib_: np.ndarray = y[calib_idx]
+        else:
+            x_train, y_train = x, y
+            self._x_calib_ = np.array([])
+            self._y_calib_ = np.array([])
+
+        # Fit scaler on training data only
         self._scaler_ = StandardScaler()
-        x_scaled = self._scaler_.fit_transform(x)
+        x_scaled = self._scaler_.fit_transform(x_train)
 
         # Backend-specific training
-        self._fit_backend(x_scaled, y, **kwargs)
+        self._fit_backend(x_scaled, y_train, **kwargs)
 
         self._fitted = True
         return self

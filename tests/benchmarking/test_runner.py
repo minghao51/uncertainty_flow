@@ -129,3 +129,33 @@ class TestBenchmarkRunner:
             data = json.load(handle)
         assert "metadata" in data
         assert "results" in data
+        assert "test_split_type" in data["results"][0]
+        assert "validation_split_type" in data["results"][0]
+
+    def test_tuning_uses_train_split_only(self, sample_benchmark_config, mock_dataset, monkeypatch):
+        seen = {"rows": None}
+
+        def _fake_load_dataset(name, n_samples=None, split="train", **kwargs):
+            del split, kwargs
+            df = mock_dataset
+            if n_samples is not None:
+                df = df.head(n_samples)
+            return df, _dataset_info(name)
+
+        def _fake_auto_tune_model(model_name, df, target, horizon, config):
+            del model_name, target, horizon, config
+            seen["rows"] = len(df)
+            return type("TuneResult", (), {"best_params": {"n_estimators": 10}})()
+
+        monkeypatch.setattr("uncertainty_flow.benchmarking.runner.load_dataset", _fake_load_dataset)
+        monkeypatch.setattr(
+            "uncertainty_flow.benchmarking.runner.auto_tune_model", _fake_auto_tune_model
+        )
+
+        sample_benchmark_config.auto_tune = True
+        sample_benchmark_config.test_size = 0.2
+        runner = BenchmarkRunner(sample_benchmark_config)
+        runner.load_data()
+        runner.run_model("quantile-forest")
+
+        assert seen["rows"] == int(len(runner.df) * (1 - sample_benchmark_config.test_size))

@@ -53,6 +53,7 @@ def _():
         GumbelCopula,
         auto_select_copula,
     )
+    from uncertainty_flow.utils.split import select_validation_plan
 
     return (
         ClaytonCopula,
@@ -62,6 +63,7 @@ def _():
         auto_select_copula,
         np,
         pl,
+        select_validation_plan,
     )
 
 
@@ -74,14 +76,13 @@ def _(pl):
 
 
 @app.cell
-def _(df):
+def _(df, select_validation_plan):
     targets = ["y1", "y2", "y3"]
     features = [c for c in df.columns if c not in targets]
-    n = df.height
-    train = df[: int(n * 0.8)]
-    test = df[int(n * 0.8) :]
-    f"Features: {features} | Targets: {targets} | Train: {train.height} | Test: {test.height}"
-    return targets, test, train
+    plan = select_validation_plan(df, task_type="tabular", holdout_fraction=0.2, random_state=42)
+    train, test = plan.outer_split
+    f"Plan: {plan.metadata.strategy_name} | Features: {features} | Targets: {targets} | Train: {len(train)} | Test: {len(test)}"
+    return plan, targets, test, train
 
 
 @app.cell

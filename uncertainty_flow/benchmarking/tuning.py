@@ -1,7 +1,8 @@
 """Hyperparameter tuning for benchmark models."""
 
+import logging
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import polars as pl
@@ -9,9 +10,13 @@ from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow.metrics import coverage_score, winkler_score
 from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.utils.auto_tuning import valid_calibration_candidates
 from uncertainty_flow.utils.exceptions import ConfigurationError
 from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
+from uncertainty_flow.utils.split import select_validation_plan
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
+
+logger = logging.getLogger(__name__)
 
 SEARCH_SPACE: dict[str, dict[str, list[Any]]] = {
     "quantile-forest": {
@@ -43,6 +48,7 @@ class TuningConfig:
     target_coverage: float = 0.9
     n_samples: int = 500
     timeout: int = 120
+    hybrid_validation: bool = False
 
 
 @dataclass
@@ -57,6 +63,9 @@ class TuningResult:
     winkler_90: float
     train_time_sec: float
     trials: int
+    validation_strategy: str = "unknown"
+    validation_split_type: str = "unknown"
+    validation_n_splits: int = 1
 
 
 def _score_result(
@@ -76,7 +85,8 @@ def _score_result(
 
 
 def tune_quantile_forest(
-    df: pl.DataFrame,
+    train_df: pl.DataFrame,
+    val_df: pl.DataFrame,
     target: str,
     horizon: int,
     n_estimators: int,
@@ -85,19 +95,22 @@ def tune_quantile_forest(
     import time
 
     start = time.time()
+    min_calibration_size = min(0.5, max(0.25, 20 / max(1, len(train_df)) + 0.01))
     model = QuantileForestForecaster(
         targets=target,
         horizon=horizon,
         n_estimators=n_estimators,
+        calibration_size=min_calibration_size,
+        auto_tune=False,
         random_state=42,
     )
-    model.fit(df)
-    pred = model.predict(df)
+    model.fit(train_df)
+    pred = model.predict(val_df)
     train_time = time.time() - start
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
     lower = to_numpy_series_zero_copy(interval_90["lower"])
     upper = to_numpy_series_zero_copy(interval_90["upper"])
 
@@ -109,7 +122,8 @@ def tune_quantile_forest(
 
 
 def tune_conformal_regressor(
-    df: pl.DataFrame,
+    train_df: pl.DataFrame,
+    val_df: pl.DataFrame,
     target: str,
     n_estimators: int,
     calibration_size: float,
@@ -124,15 +138,16 @@ def tune_conformal_regressor(
             random_state=42,
         ),
         calibration_size=calibration_size,
+        auto_tune=False,
         random_state=42,
     )
-    model.fit(df, target=target)
-    pred = model.predict(df)
+    model.fit(train_df, target=target)
+    pred = model.predict(val_df)
     train_time = time.time() - start
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
     lower = to_numpy_series_zero_copy(interval_90["lower"])
     upper = to_numpy_series_zero_copy(interval_90["upper"])
 
@@ -144,7 +159,8 @@ def tune_conformal_regressor(
 
 
 def tune_conformal_forecaster(
-    df: pl.DataFrame,
+    train_df: pl.DataFrame,
+    val_df: pl.DataFrame,
     target: str,
     horizon: int,
     n_estimators: int,
@@ -164,15 +180,16 @@ def tune_conformal_forecaster(
         targets=target,
         lags=lags,
         calibration_size=calibration_size,
+        auto_tune=False,
         random_state=42,
     )
-    model.fit(df)
-    pred = model.predict(df)
+    model.fit(train_df)
+    pred = model.predict(val_df)
     train_time = time.time() - start
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
+    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
     lower = to_numpy_series_zero_copy(interval_90["lower"])
     upper = to_numpy_series_zero_copy(interval_90["upper"])
 
@@ -219,12 +236,63 @@ def auto_tune_model(
 
     trials = 0
 
+    task_type: Literal["tabular", "time_series"] = (
+        "time_series" if model_name in {"quantile-forest", "conformal-forecaster"} else "tabular"
+    )
+    validation_plan = select_validation_plan(
+        df,
+        task_type=task_type,
+        random_state=42,
+        holdout_fraction=0.2,
+        hybrid_mode=config.hybrid_validation,
+    )
+    train_df, val_df = validation_plan.outer_split
+    evaluation_splits = (
+        validation_plan.inner_splits
+        if validation_plan.inner_splits
+        else [validation_plan.outer_split]
+    )
+
+    logger.info(
+        "tuning_validation_plan model=%s strategy=%s reason=%s eval_splits=%d",
+        model_name,
+        validation_plan.metadata.strategy_name,
+        validation_plan.metadata.reason,
+        len(evaluation_splits),
+    )
+
     if model_name == "quantile-forest":
         for n_est in search_space.get("n_estimators", [30]):
             for h in search_space.get("horizon", [3]):
                 trials += 1
-                cov, sharp, wink, train_time = tune_quantile_forest(df, target, h, n_est)
-                score = _score_result(cov, sharp, wink, config.target_coverage)
+                split_scores: list[float] = []
+                split_cov: list[float] = []
+                split_sharp: list[float] = []
+                split_wink: list[float] = []
+                split_train_time: list[float] = []
+                for split_idx, (split_train_df, split_val_df) in enumerate(
+                    evaluation_splits, start=1
+                ):
+                    logger.debug(
+                        "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
+                        model_name,
+                        split_idx,
+                        len(split_train_df),
+                        len(split_val_df),
+                    )
+                    cov, sharp, wink, train_time = tune_quantile_forest(
+                        split_train_df, split_val_df, target, h, n_est
+                    )
+                    split_cov.append(cov)
+                    split_sharp.append(sharp)
+                    split_wink.append(wink)
+                    split_train_time.append(train_time)
+                    split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
+                cov = float(np.mean(split_cov))
+                sharp = float(np.mean(split_sharp))
+                wink = float(np.mean(split_wink))
+                train_time = float(np.mean(split_train_time))
+                score = float(np.mean(split_scores))
                 if score < best_score:
                     best_score = score
                     best_params = {"n_estimators": n_est, "horizon": h}
@@ -237,10 +305,42 @@ def auto_tune_model(
 
     elif model_name == "conformal-regressor":
         for n_est in search_space.get("n_estimators", [30]):
-            for calib in search_space.get("calibration_size", [0.2]):
+            min_train_rows = min(len(split_train_df) for split_train_df, _ in evaluation_splits)
+            calib_candidates = valid_calibration_candidates(
+                min_train_rows,
+                0.2,
+                search_space.get("calibration_size", [0.2]),
+            )
+            for calib in calib_candidates:
                 trials += 1
-                cov, sharp, wink, train_time = tune_conformal_regressor(df, target, n_est, calib)
-                score = _score_result(cov, sharp, wink, config.target_coverage)
+                split_scores = []
+                split_cov = []
+                split_sharp = []
+                split_wink = []
+                split_train_time = []
+                for split_idx, (split_train_df, split_val_df) in enumerate(
+                    evaluation_splits, start=1
+                ):
+                    logger.debug(
+                        "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
+                        model_name,
+                        split_idx,
+                        len(split_train_df),
+                        len(split_val_df),
+                    )
+                    cov, sharp, wink, train_time = tune_conformal_regressor(
+                        split_train_df, split_val_df, target, n_est, calib
+                    )
+                    split_cov.append(cov)
+                    split_sharp.append(sharp)
+                    split_wink.append(wink)
+                    split_train_time.append(train_time)
+                    split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
+                cov = float(np.mean(split_cov))
+                sharp = float(np.mean(split_sharp))
+                wink = float(np.mean(split_wink))
+                train_time = float(np.mean(split_train_time))
+                score = float(np.mean(split_scores))
                 if score < best_score:
                     best_score = score
                     best_params = {
@@ -256,13 +356,43 @@ def auto_tune_model(
 
     elif model_name == "conformal-forecaster":
         for n_est in search_space.get("n_estimators", [30]):
-            for calib in search_space.get("calibration_size", [0.2]):
+            min_train_rows = min(len(split_train_df) for split_train_df, _ in evaluation_splits)
+            calib_candidates = valid_calibration_candidates(
+                min_train_rows,
+                0.2,
+                search_space.get("calibration_size", [0.2]),
+            )
+            for calib in calib_candidates:
                 for lags in search_space.get("lags", [2]):
                     trials += 1
-                    cov, sharp, wink, train_time = tune_conformal_forecaster(
-                        df, target, horizon, n_est, calib, lags
-                    )
-                    score = _score_result(cov, sharp, wink, config.target_coverage)
+                    split_scores = []
+                    split_cov = []
+                    split_sharp = []
+                    split_wink = []
+                    split_train_time = []
+                    for split_idx, (split_train_df, split_val_df) in enumerate(
+                        evaluation_splits, start=1
+                    ):
+                        logger.debug(
+                            "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
+                            model_name,
+                            split_idx,
+                            len(split_train_df),
+                            len(split_val_df),
+                        )
+                        cov, sharp, wink, train_time = tune_conformal_forecaster(
+                            split_train_df, split_val_df, target, horizon, n_est, calib, lags
+                        )
+                        split_cov.append(cov)
+                        split_sharp.append(sharp)
+                        split_wink.append(wink)
+                        split_train_time.append(train_time)
+                        split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
+                    cov = float(np.mean(split_cov))
+                    sharp = float(np.mean(split_sharp))
+                    wink = float(np.mean(split_wink))
+                    train_time = float(np.mean(split_train_time))
+                    score = float(np.mean(split_scores))
                     if score < best_score:
                         best_score = score
                         best_params = {
@@ -281,6 +411,14 @@ def auto_tune_model(
     sharp_90 = best_metrics.get("sharpness_90", 0)
     wink_90 = best_metrics.get("winkler_90", 0)
     train_time = best_metrics.get("train_time", 0)
+    if validation_plan.metadata.task_type == "time_series":
+        validation_split_type = (
+            "out_of_time_plus_out_of_sample"
+            if validation_plan.metadata.hybrid_mode
+            else "out_of_time"
+        )
+    else:
+        validation_split_type = "out_of_sample"
 
     return TuningResult(
         model_name=model_name,
@@ -291,6 +429,9 @@ def auto_tune_model(
         winkler_90=round(wink_90, 4),
         train_time_sec=round(train_time, 3),
         trials=trials,
+        validation_strategy=validation_plan.metadata.strategy_name,
+        validation_split_type=validation_split_type,
+        validation_n_splits=len(evaluation_splits),
     )
 
 

@@ -51,6 +51,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         self,
         hidden_layer_sizes: tuple[int, ...] = (100, 50),
         quantile_levels: list[float] | None = None,
+        calibration_size: float = 0.2,
         trunk_alpha: float = 0.0001,
         trunk_max_iter: int = 500,
         head_solver: str = "pinball",
@@ -63,6 +64,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
             hidden_layer_sizes: Tuple of hidden layer sizes for the trunk MLP.
                 E.g., (100, 50) means two hidden layers with 100 and 50 units.
             quantile_levels: Quantile levels to predict. Defaults to DEFAULT_QUANTILES.
+            calibration_size: Fraction of data held out as calibration set (0-1).
             trunk_alpha: L2 regularization parameter for the trunk MLP.
             trunk_max_iter: Maximum iterations for the trunk MLP optimizer.
             head_solver: Solver for quantile heads. Currently only "pinball" supported.
@@ -71,6 +73,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         super().__init__(
             hidden_layer_sizes=hidden_layer_sizes,
             quantile_levels=quantile_levels,
+            calibration_size=calibration_size,
             random_state=random_state,
         )
         self.trunk_alpha = trunk_alpha

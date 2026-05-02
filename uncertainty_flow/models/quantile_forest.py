@@ -18,7 +18,7 @@ from ..utils.auto_tuning import (
 )
 from ..utils.exceptions import error_invalid_data, error_model_not_fitted
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
-from ..utils.split import TemporalHoldoutSplit
+from ..utils.split import select_validation_plan
 
 if TYPE_CHECKING:
     pass
@@ -118,11 +118,17 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         return fallback_levels
 
     def _auto_tune(self, data: pl.DataFrame) -> None:
-        """Tune supported params using a temporal validation split."""
-        splitter = TemporalHoldoutSplit()
-        tune_train, tune_val = splitter.split(data, 0.2)
+        """Tune params using validation splits, with CV averaging when inner splits exist."""
+        plan = select_validation_plan(
+            data,
+            task_type="time_series",
+            random_state=self.random_state,
+            holdout_fraction=0.2,
+            hybrid_mode=False,
+        )
+        eval_splits = plan.inner_splits if plan.inner_splits else [plan.outer_split]
         tune_calibration_size = valid_calibration_candidates(
-            len(tune_train), self.calibration_size, [0.25, 0.3]
+            len(eval_splits[0][0]), self.calibration_size, [0.25, 0.3]
         )[0]
 
         best_score = float("inf")
@@ -130,26 +136,32 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
         for n_estimators in candidate_values(self.n_estimators, [20, 30, 50]):
             for min_samples_leaf in candidate_values(self.min_samples_leaf, [3, 5, 10]):
-                candidate = QuantileForestForecaster(
-                    targets=self.targets,
-                    horizon=self.horizon,
-                    n_estimators=n_estimators,
-                    min_samples_leaf=min_samples_leaf,
-                    max_depth=self.max_depth,
-                    copula_family=self.copula_family,
-                    calibration_size=tune_calibration_size,
-                    auto_tune=False,
-                    uncertainty_features=self.uncertainty_features,
-                    random_state=self.random_state,
-                )
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    candidate.fit(tune_train)
-                    pred = candidate.predict(tune_val)
-                actuals = tune_val.select(self.targets)
-                score = score_distribution_prediction(pred, actuals, self.targets, confidence=0.9)
-                if score < best_score:
-                    best_score = score
+                split_scores: list[float] = []
+                for split_train, split_val in eval_splits:
+                    candidate = QuantileForestForecaster(
+                        targets=self.targets,
+                        horizon=self.horizon,
+                        n_estimators=n_estimators,
+                        min_samples_leaf=min_samples_leaf,
+                        max_depth=self.max_depth,
+                        copula_family=self.copula_family,
+                        calibration_size=tune_calibration_size,
+                        auto_tune=False,
+                        uncertainty_features=self.uncertainty_features,
+                        random_state=self.random_state,
+                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        candidate.fit(split_train)
+                        pred = candidate.predict(split_val)
+                    actuals = split_val.select(self.targets)
+                    score = score_distribution_prediction(
+                        pred, actuals, self.targets, confidence=0.9
+                    )
+                    split_scores.append(score)
+                avg_score = float(np.mean(split_scores))
+                if avg_score < best_score:
+                    best_score = avg_score
                     best_params = {
                         "n_estimators": int(n_estimators),
                         "min_samples_leaf": int(min_samples_leaf),
@@ -183,9 +195,14 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         if self.auto_tune:
             self._auto_tune(data)
 
-        # Temporal split
-        splitter = TemporalHoldoutSplit()
-        train, calib = splitter.split(data, self.calibration_size)
+        # Automatic validation split strategy selection
+        plan = select_validation_plan(
+            data,
+            task_type="time_series",
+            random_state=self.random_state,
+            holdout_fraction=self.calibration_size,
+        )
+        train, calib = plan.outer_split
         residual_matrix = []
 
         for target in self.targets:

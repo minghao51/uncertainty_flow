@@ -44,6 +44,7 @@ def _():
     from sklearn.linear_model import Ridge
 
     from uncertainty_flow.metrics import coverage_score, winkler_score
+    from uncertainty_flow.utils.split import select_validation_plan
     from uncertainty_flow.wrappers import ConformalRegressor
 
     return (
@@ -52,6 +53,7 @@ def _():
         Ridge,
         coverage_score,
         pl,
+        select_validation_plan,
         winkler_score,
     )
 
@@ -75,14 +77,12 @@ def _(mo):
 
 
 @app.cell
-def _(df, target_col):
-    n = df.height
-    split = int(n * 0.8)
-    train_df = df[:split]
-    test_df = df[split:]
+def _(df, select_validation_plan, target_col):
+    plan = select_validation_plan(df, task_type="tabular", random_state=42)
+    train_df, test_df = plan.outer_split
     actuals = test_df[target_col.value]
-    train_df.shape, test_df.shape
-    return actuals, test_df, train_df
+    f"Strategy: {plan.metadata.strategy_name} | Train: {len(train_df)} | Test: {len(test_df)}"
+    return actuals, plan, test_df, train_df
 
 
 @app.cell

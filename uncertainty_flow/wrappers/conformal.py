@@ -22,7 +22,7 @@ from ..utils.polars_bridge import (
     to_numpy_series_zero_copy,
     to_numpy_zero_copy,
 )
-from ..utils.split import RandomHoldoutSplit
+from ..utils.split import select_validation_plan
 
 if TYPE_CHECKING:
     pass
@@ -109,9 +109,15 @@ class ConformalRegressor(BaseUncertaintyModel):
         data: pl.DataFrame,
         target: str,
     ) -> None:
-        """Tune supported params using a validation split."""
-        splitter = RandomHoldoutSplit(random_state=self.random_state)
-        tune_train, tune_val = splitter.split(data, 0.2)
+        """Tune params using validation splits, with CV averaging when inner splits exist."""
+        plan = select_validation_plan(
+            data,
+            task_type="tabular",
+            random_state=self.random_state,
+            holdout_fraction=0.2,
+            hybrid_mode=False,
+        )
+        eval_splits = plan.inner_splits if plan.inner_splits else [plan.outer_split]
 
         best_score = float("inf")
         best_params: dict[str, float | int] = {}
@@ -123,29 +129,33 @@ class ConformalRegressor(BaseUncertaintyModel):
                 tuned_base.set_params(**base_params)
 
             for calib_size in valid_calibration_candidates(
-                len(tune_train), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
+                len(eval_splits[0][0]), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
             ):
-                candidate = ConformalRegressor(
-                    base_model=tuned_base,
-                    calibration_method=self.calibration_method,
-                    calibration_size=calib_size,
-                    coverage_target=self.coverage_target,
-                    auto_tune=False,
-                    uncertainty_features=self.uncertainty_features,
-                    random_state=self.random_state,
-                )
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore")
-                    candidate.fit(tune_train, target=target)
-                    pred = candidate.predict(tune_val)
-                score = score_distribution_prediction(
-                    pred,
-                    tune_val[target],
-                    [target],
-                    confidence=self.coverage_target,
-                )
-                if score < best_score:
-                    best_score = score
+                split_scores: list[float] = []
+                for split_train, split_val in eval_splits:
+                    candidate = ConformalRegressor(
+                        base_model=tuned_base,
+                        calibration_method=self.calibration_method,
+                        calibration_size=calib_size,
+                        coverage_target=self.coverage_target,
+                        auto_tune=False,
+                        uncertainty_features=self.uncertainty_features,
+                        random_state=self.random_state,
+                    )
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore")
+                        candidate.fit(split_train, target=target)
+                        pred = candidate.predict(split_val)
+                    score = score_distribution_prediction(
+                        pred,
+                        split_val[target],
+                        [target],
+                        confidence=self.coverage_target,
+                    )
+                    split_scores.append(score)
+                avg_score = float(np.mean(split_scores))
+                if avg_score < best_score:
+                    best_score = avg_score
                     best_model = clone(tuned_base)
                     best_params = {**base_params, "calibration_size": calib_size}
 
@@ -196,9 +206,14 @@ class ConformalRegressor(BaseUncertaintyModel):
             )
         self._feature_cols_ = feature_cols
 
-        # Split data
-        splitter = RandomHoldoutSplit(random_state=self.random_state)
-        train, calib = splitter.split(data, self.calibration_size)
+        # Automatic validation split strategy selection
+        plan = select_validation_plan(
+            data,
+            task_type="tabular",
+            random_state=self.random_state,
+            holdout_fraction=self.calibration_size,
+        )
+        train, calib = plan.outer_split
 
         # Convert to numpy - single collect already done above
         x_train = to_numpy_zero_copy(train, feature_cols)

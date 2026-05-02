@@ -100,6 +100,10 @@ The package supports distinct split strategies depending on the problem shape:
 - `RandomHoldoutSplit` for i.i.d. tabular problems
 - `TemporalHoldoutSplit` for ordered forecasting data
 - cross-conformal style workflows where supported
+- a core validation-plan selector (`select_validation_plan`) that composes:
+  - outer split (required)
+  - optional inner out-of-sample splits for tuning
+  - deterministic strategy metadata for audit logging
 
 Small calibration sets are guarded explicitly so models fail loudly when interval estimates would be unreliable.
 

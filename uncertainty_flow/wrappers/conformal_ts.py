@@ -19,7 +19,7 @@ from ..utils.auto_tuning import (
 )
 from ..utils.exceptions import error_invalid_data, error_model_not_fitted
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
-from ..utils.split import TemporalHoldoutSplit
+from ..utils.split import select_validation_plan
 
 if TYPE_CHECKING:
     pass
@@ -119,9 +119,15 @@ class ConformalForecaster(BaseUncertaintyModel):
         return fallback_levels
 
     def _auto_tune(self, data: pl.DataFrame) -> None:
-        """Tune supported params using a temporal validation split."""
-        splitter = TemporalHoldoutSplit()
-        tune_train, tune_val = splitter.split(data, 0.2)
+        """Tune params using validation splits, with CV averaging when inner splits exist."""
+        plan = select_validation_plan(
+            data,
+            task_type="time_series",
+            random_state=self.random_state,
+            holdout_fraction=0.2,
+            hybrid_mode=False,
+        )
+        eval_splits = plan.inner_splits if plan.inner_splits else [plan.outer_split]
 
         best_score = float("inf")
         best_params: dict[str, float | int] = {}
@@ -133,34 +139,38 @@ class ConformalForecaster(BaseUncertaintyModel):
                 tuned_base.set_params(**base_params)
 
             for calib_size in valid_calibration_candidates(
-                len(tune_train), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
+                len(eval_splits[0][0]), self.calibration_size, [0.15, 0.2, 0.25, 0.3]
             ):
                 for lags in candidate_values(self.lags[0], [1, 2, 3]):
-                    candidate = ConformalForecaster(
-                        base_model=tuned_base,
-                        horizon=self.horizon,
-                        targets=self.targets,
-                        copula_family=self.copula_family,
-                        lags=lags,
-                        calibration_method=self.calibration_method,
-                        calibration_size=calib_size,
-                        auto_tune=False,
-                        uncertainty_features=self.uncertainty_features,
-                        random_state=self.random_state,
-                    )
-                    with warnings.catch_warnings():
-                        warnings.simplefilter("ignore")
-                        candidate.fit(tune_train)
-                        pred = candidate.predict(tune_val)
-                    actuals = tune_val.select(self.targets)
-                    score = score_distribution_prediction(
-                        pred,
-                        actuals,
-                        self.targets,
-                        confidence=0.9,
-                    )
-                    if score < best_score:
-                        best_score = score
+                    split_scores: list[float] = []
+                    for split_train, split_val in eval_splits:
+                        candidate = ConformalForecaster(
+                            base_model=tuned_base,
+                            horizon=self.horizon,
+                            targets=self.targets,
+                            copula_family=self.copula_family,
+                            lags=lags,
+                            calibration_method=self.calibration_method,
+                            calibration_size=calib_size,
+                            auto_tune=False,
+                            uncertainty_features=self.uncertainty_features,
+                            random_state=self.random_state,
+                        )
+                        with warnings.catch_warnings():
+                            warnings.simplefilter("ignore")
+                            candidate.fit(split_train)
+                            pred = candidate.predict(split_val)
+                        actuals = split_val.select(self.targets)
+                        score = score_distribution_prediction(
+                            pred,
+                            actuals,
+                            self.targets,
+                            confidence=0.9,
+                        )
+                        split_scores.append(score)
+                    avg_score = float(np.mean(split_scores))
+                    if avg_score < best_score:
+                        best_score = avg_score
                         best_model = clone(tuned_base)
                         best_params = {
                             **base_params,
@@ -213,9 +223,14 @@ class ConformalForecaster(BaseUncertaintyModel):
         for target in self.targets:
             data_with_lags = self._create_lag_features(data_with_lags, target)
 
-        # Temporal split (from END)
-        splitter = TemporalHoldoutSplit()
-        train, calib = splitter.split(data_with_lags, self.calibration_size)
+        # Automatic validation split strategy selection
+        plan = select_validation_plan(
+            data_with_lags,
+            task_type="time_series",
+            random_state=self.random_state,
+            holdout_fraction=self.calibration_size,
+        )
+        train, calib = plan.outer_split
 
         # Fit per target
         residual_matrix = []
