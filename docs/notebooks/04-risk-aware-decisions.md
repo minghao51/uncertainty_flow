@@ -4,7 +4,7 @@ Use ConformalRiskControl with custom risk functions for cost-sensitive predictio
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="html/04_risk_aware_decisions.html"
+    src="../html/04_risk_aware_decisions.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"

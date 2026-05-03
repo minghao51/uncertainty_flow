@@ -4,7 +4,7 @@ Every model in uncertainty_flow, when to use it, and how they compare on real be
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="html/06_methods_benchmarks.html"
+    src="../html/06_methods_benchmarks.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"
