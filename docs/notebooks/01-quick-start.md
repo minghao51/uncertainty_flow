@@ -4,7 +4,7 @@ Wrap any scikit-learn model with statistically rigorous coverage guarantees usin
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="../html/01_quick_start.html"
+    src="/uncertainty_flow/notebooks/html/01_quick_start.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"

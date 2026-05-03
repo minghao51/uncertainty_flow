@@ -4,7 +4,7 @@ Auto-selecting the right validation strategy based on task type and data size
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="../html/07_split_strategies.html"
+    src="/uncertainty_flow/notebooks/html/07_split_strategies.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"

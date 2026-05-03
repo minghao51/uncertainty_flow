@@ -4,7 +4,7 @@ Copula families, auto-selection, joint sampling, and multivariate forecasting
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="../html/05_multivariate_copulas.html"
+    src="/uncertainty_flow/notebooks/html/05_multivariate_copulas.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"

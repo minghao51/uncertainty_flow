@@ -13,6 +13,19 @@ DOCS_DIR = REPO_ROOT / "docs" / "notebooks"
 GITHUB_REPO = "minghao51/uncertainty_flow"
 
 
+def get_base_path() -> str:
+    mkdocs_path = REPO_ROOT / "mkdocs.yml"
+    text = mkdocs_path.read_text()
+    for line in text.splitlines():
+        if line.strip().startswith("site_url:"):
+            url = line.split(":", 1)[1].strip()
+            from urllib.parse import urlparse
+            parsed = urlparse(url)
+            path = parsed.path.strip("/")
+            return f"/{path}" if path else ""
+    return ""
+
+
 def parse_frontmatter(path: Path) -> dict:
     text = path.read_text()
     if not text.startswith("---"):
@@ -43,6 +56,7 @@ def slug_from_filename(qmd_path: Path) -> str:
 def main():
     DOCS_DIR.mkdir(parents=True, exist_ok=True)
     (DOCS_DIR / "html").mkdir(parents=True, exist_ok=True)
+    base = get_base_path()
 
     qmd_files = sorted(NOTEBOOKS_DIR.glob("[0-9]*.qmd"))
     if not qmd_files:
@@ -74,7 +88,7 @@ def main():
 {note}
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="../{html_path}"
+    src="{base}/notebooks/{html_path}"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"

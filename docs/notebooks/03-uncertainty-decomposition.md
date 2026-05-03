@@ -4,7 +4,7 @@ Decompose prediction uncertainty into aleatoric (data noise) and epistemic (mode
 
 <div style="margin: 0 -0.8rem">
   <iframe
-    src="../html/03_uncertainty_decomposition.html"
+    src="/uncertainty_flow/notebooks/html/03_uncertainty_decomposition.html"
     style="width: 100%; height: 600px; border: 1px solid
       var(--md-default-fg-color--lightest); border-radius: 4px;"
     loading="lazy"
