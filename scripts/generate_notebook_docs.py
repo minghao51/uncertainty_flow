@@ -5,7 +5,6 @@ with iframe embeds pointing to Quarto-rendered HTML.
 """
 
 import re
-import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -57,7 +56,8 @@ def main():
         title = meta.get("title", qmd.stem.replace("_", " ").title())
         desc = meta.get("description", title)
 
-        html_path = f"html/{slug}.html"
+        html_stem = qmd.stem
+        html_path = f"html/{html_stem}.html"
         html_exists = (DOCS_DIR / html_path).exists()
 
         if html_exists:
