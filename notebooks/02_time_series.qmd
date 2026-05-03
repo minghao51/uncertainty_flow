@@ -1,0 +1,149 @@
+---
+title: "Time Series Forecasting with Uncertainty"
+description: "Forecast temperature with conformal prediction bands and compare ConformalForecaster vs QuantileForestForecaster"
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+# Time Series Forecasting with Uncertainty
+
+Forecast temperature using the **weather dataset** (36K+ hourly measurements) with conformal prediction bands.
+
+This notebook compares two approaches:
+
+- **ConformalForecaster** — wrap any sklearn model, guaranteed coverage
+- **QuantileForestForecaster** — quantile regression forest, empirical coverage
+
+## Setup
+
+```{python}
+#| label: setup
+#| cache: true
+import polars as pl
+from sklearn.ensemble import GradientBoostingRegressor
+
+from uncertainty_flow.metrics import coverage_score, winkler_score
+from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.utils.split import select_validation_plan
+from uncertainty_flow.wrappers import ConformalForecaster
+```
+
+## Configuration
+
+```{python}
+#| label: config
+target_col = "T (degC)"
+horizon = 6
+```
+
+## Load Data
+
+```{python}
+#| label: load-data
+#| cache: true
+weather = pl.read_parquet("../data/weather.parquet")
+weather_clean = weather.drop_nulls()
+print(f"Rows: {weather_clean.height:,} | Columns: {weather_clean.width}")
+```
+
+## Train / Test Split
+
+```{python}
+#| label: split
+#| cache: true
+df = weather_clean.select([target_col])
+plan = select_validation_plan(df, task_type="time_series", holdout_fraction=0.15, random_state=42)
+train_ts, test_ts = plan.outer_split
+split_idx = len(train_ts)
+print(f"Strategy: {plan.metadata.strategy_name} | Train: {train_ts.height:,} | Test: {test_ts.height:,}")
+```
+
+## Train ConformalForecaster
+
+```{python}
+#| label: train-conformal
+#| cache: true
+ts_model = ConformalForecaster(
+    base_model=GradientBoostingRegressor(random_state=42),
+    targets=target_col,
+    horizon=horizon,
+    lags=[1, 2, 3, 6, 12, 24],
+    copula_family="independent",
+    auto_tune=False,
+    random_state=42,
+)
+ts_model.fit(train_ts)
+ts_pred = ts_model.predict(test_ts)
+print(f"ConformalForecaster fitted: {ts_pred is not None}")
+```
+
+## Conformal Intervals
+
+```{python}
+#| label: conformal-intervals
+interval = ts_pred.interval(confidence=0.9)
+print(interval.head(10))
+```
+
+## Conformal Forecast Plot
+
+```{python}
+#| label: conformal-plot
+actuals_ts = weather_clean[target_col][
+    split_idx + horizon : split_idx + horizon + ts_pred._n_samples
+]
+fig = ts_pred.plot(
+    actuals=actuals_ts[:200],
+    confidence_bands=[0.5, 0.8, 0.9],
+    title=f"Conformal Forecast — {target_col} (h={horizon})",
+)
+fig
+```
+
+## Train QuantileForestForecaster
+
+```{python}
+#| label: train-qf
+#| cache: true
+#| error: true
+qf_model = QuantileForestForecaster(
+    targets=target_col,
+    horizon=horizon,
+    n_estimators=100,
+    calibration_size=0.2,
+    auto_tune=False,
+    random_state=42,
+)
+qf_model.fit(train_ts)
+qf_pred = qf_model.predict(test_ts)
+print(f"QuantileForestForecaster fitted: {qf_pred is not None}")
+```
+
+## Model Comparison
+
+```{python}
+#| label: comparison
+#| error: true
+results = []
+for label, pred in [("ConformalForecaster", ts_pred), ("QuantileForest", qf_pred)]:
+    try:
+        actuals_slice = weather_clean[target_col][
+            split_idx + horizon : split_idx + horizon + pred._n_samples
+        ]
+        interval_df = pred.interval(confidence=0.9)
+        cov = coverage_score(actuals_slice, interval_df["lower"], interval_df["upper"])
+        wink = winkler_score(
+            actuals_slice, interval_df["lower"], interval_df["upper"], confidence=0.9
+        )
+        results.append({"model": label, "coverage": round(cov, 3), "winkler": round(wink, 2)})
+    except Exception:
+        results.append({"model": label, "coverage": None, "winkler": None})
+
+comparison = pl.DataFrame(results)
+print(comparison)
+```

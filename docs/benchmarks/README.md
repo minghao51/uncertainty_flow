@@ -189,7 +189,7 @@ The medium tier (conformal-forecaster, random-forest) provides the best cost-qua
 
 ```bash
 # Install all optional dependencies
-uv sync --extra torch --extra numpyro --extra bench
+uv sync --extra opinion
 
 # Run full benchmark
 uv run python benchmarks/run_benchmarks.py --all-datasets -n 1000 --iterations 3 --warmup 1 -o full_run

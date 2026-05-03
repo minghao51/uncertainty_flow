@@ -73,9 +73,17 @@ results/
 # Data files
 data/*.parquet
 
-# Auto-generated notebook doc stubs + HTML exports (source of truth = notebooks/*.py)
+# Auto-generated notebook doc stubs (source of truth = notebooks/*.qmd)
 docs/notebooks/
 !docs/notebooks/.gitkeep
 
-# marimo runtime session state
+# marimo runtime state (local exploration only)
 notebooks/__marimo__/
+
+# Quarto freeze cache is NOT gitignored — committed for CI
+# notebooks/_freeze/ is tracked
+
+# Quarto intermediate files
+notebooks/*.ipynb
+notebooks/_quarto/*.html
+.freezelock

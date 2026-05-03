@@ -346,7 +346,7 @@ def _register_optional_models() -> None:
                 from uncertainty_flow.models import DeepQuantileNetTorch
             except ImportError:
                 raise ImportError(
-                    "torch is required for deep-quantile-torch. Install with: uv sync --extra torch"
+                    "torch required for deep-quantile-torch. Install: uv sync --extra opinion"
                 )
 
             self.model = DeepQuantileNetTorch(
@@ -377,9 +377,7 @@ def _register_optional_models() -> None:
             try:
                 from uncertainty_flow.models import TransformerForecaster
             except ImportError:
-                raise ImportError(
-                    "chronos-forecasting is required. Install with: uv sync --extra transformers"
-                )
+                raise ImportError("chronos-forecasting required. Install: uv sync --extra opinion")
 
             model_name = self.tuned_params.get("chronos_model", "chronos-bolt-tiny")
             self.model = TransformerForecaster(
@@ -412,7 +410,7 @@ def _register_optional_models() -> None:
             try:
                 from uncertainty_flow.bayesian import BayesianQuantileRegressor
             except ImportError:
-                raise ImportError("numpyro is required. Install with: uv sync --extra numpyro")
+                raise ImportError("numpyro is required. Install with: uv sync --extra opinion")
 
             self.model = BayesianQuantileRegressor(
                 n_warmup=self.tuned_params.get("n_warmup", 1000),

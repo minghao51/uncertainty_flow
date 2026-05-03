@@ -1,0 +1,117 @@
+---
+title: "Uncertainty Decomposition: Aleatoric vs. Epistemic"
+description: "Decompose prediction uncertainty into aleatoric (data noise) and epistemic (model) components using bootstrap ensembles."
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+Not all uncertainty is equal. This notebook decomposes prediction uncertainty into:
+
+- **Aleatoric uncertainty** — irreducible noise in the data (e.g., measurement error)
+- **Epistemic uncertainty** — reducible uncertainty from limited data or model capacity
+
+We use the `EnsembleDecomposition` class with bootstrap refitting to quantify each component
+on the **synthetic heteroscedastic** dataset (where noise varies with input features).
+
+```{python}
+#| label: setup
+#| cache: true
+import numpy as np
+import polars as pl
+from sklearn.ensemble import GradientBoostingRegressor
+
+from uncertainty_flow.decomposition import EnsembleDecomposition
+from uncertainty_flow.wrappers import ConformalRegressor
+```
+
+```{python}
+#| label: load-data
+#| cache: true
+df = pl.read_parquet("../data/synthetic_heteroscedastic.parquet")
+print(f"Shape: {df.shape}")
+df.head(10)
+```
+
+```{python}
+#| label: decomposition
+#| cache: true
+n_bootstrap = 10
+confidence = 0.9
+sample_size = 500
+
+n = df.height
+split_idx = int(n * 0.7)
+train_df = df[:split_idx]
+eval_df = df[split_idx:]
+eval_sample = eval_df.sample(n=min(sample_size, eval_df.height), seed=42)
+
+
+def model_factory():
+    return ConformalRegressor(
+        base_model=GradientBoostingRegressor(random_state=42),
+        auto_tune=False,
+        random_state=42,
+    )
+
+
+decomp = EnsembleDecomposition(
+    model_factory=model_factory,
+    train_data=train_df,
+    target="y",
+    confidence=confidence,
+    n_bootstrap=n_bootstrap,
+    random_state=42,
+)
+
+overall, by_sample = decomp.decompose(eval_sample), decomp.decompose_by_sample(eval_sample)
+print("Decomposition complete")
+```
+
+```{python}
+#| label: overall-results
+aleatoric_pct = overall["aleatoric"] / overall["total"] * 100
+epistemic_pct = overall["epistemic"] / overall["total"] * 100
+print(f"Aleatoric (data noise):   {overall['aleatoric']:.4f}")
+print(f"Epistemic (model):        {overall['epistemic']:.4f}")
+print(f"Total:                    {overall['total']:.4f}")
+print(f"\nAleatoric = {aleatoric_pct:.1f}% of total uncertainty.")
+print(f"Reducible with more data: {epistemic_pct:.1f}%.")
+```
+
+```{python}
+#| label: by-sample-stats
+summary_stats = by_sample.select(
+    [
+        pl.col("aleatoric").mean().alias("mean_aleatoric"),
+        pl.col("epistemic").mean().alias("mean_epistemic"),
+        pl.col("total").mean().alias("mean_total"),
+        pl.col("aleatoric").std().alias("std_aleatoric"),
+        pl.col("epistemic").std().alias("std_epistemic"),
+    ]
+)
+summary_stats
+```
+
+```{python}
+#| label: distribution-histograms
+import matplotlib.pyplot as plt
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+for ax, col in zip(axes, ["aleatoric", "epistemic", "total"]):
+    ax.hist(by_sample[col].to_numpy(), bins=30, alpha=0.7, edgecolor="black")
+    ax.set_title(f"{col.title()} Distribution")
+    ax.set_xlabel("Uncertainty")
+    ax.set_ylabel("Count")
+plt.tight_layout()
+plt.show()
+```
+
+```{python}
+#| label: sorted-table
+by_sample.sort("total", descending=True).head(10)
+```

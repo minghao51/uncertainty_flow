@@ -1,0 +1,157 @@
+---
+title: "Quick Start: Conformal Regression"
+description: "Wrap any scikit-learn model with statistically rigorous coverage guarantees using ConformalRegressor"
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+# Quick Start: Conformal Regression
+
+Wrap any scikit-learn model with **statistically rigorous coverage guarantees** using `ConformalRegressor`.
+
+This notebook demonstrates the core workflow:
+
+1. Load tabular data (concrete compressive strength)
+2. Wrap a GradientBoostingRegressor with conformal prediction
+3. Extract intervals, quantiles, and samples from predictions
+4. Evaluate calibration
+
+## Setup
+
+```{python}
+#| label: setup
+#| cache: true
+import polars as pl
+from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.linear_model import Ridge
+
+from uncertainty_flow.metrics import coverage_score, winkler_score
+from uncertainty_flow.utils.split import select_validation_plan
+from uncertainty_flow.wrappers import ConformalRegressor
+```
+
+## Configuration
+
+```{python}
+#| label: config
+target_col = "strength"
+base_model_choice = "GradientBoosting"
+coverage_target = 0.9
+```
+
+## Load Data
+
+```{python}
+#| label: load-data
+#| cache: true
+df = pl.read_parquet("../data/concrete.parquet")
+print(f"Dataset shape: {df.shape}")
+df.head(10)
+```
+
+## Train / Test Split
+
+```{python}
+#| label: split
+#| cache: true
+plan = select_validation_plan(df, task_type="tabular", random_state=42)
+train_df, test_df = plan.outer_split
+actuals = test_df[target_col]
+print(f"Strategy: {plan.metadata.strategy_name} | Train: {len(train_df)} | Test: {len(test_df)}")
+```
+
+## Train Conformal Model
+
+```{python}
+#| label: train
+#| cache: true
+base_cls = GradientBoostingRegressor if base_model_choice == "GradientBoosting" else Ridge
+base = base_cls(random_state=42)
+
+model = ConformalRegressor(
+    base_model=base,
+    coverage_target=coverage_target,
+    auto_tune=True,
+    random_state=42,
+)
+model.fit(train_df, target=target_col)
+print(model)
+```
+
+## Predict
+
+```{python}
+#| label: predict
+#| cache: true
+pred = model.predict(test_df)
+print(pred)
+```
+
+## Intervals
+
+```{python}
+#| label: intervals
+interval_df = pred.interval(confidence=coverage_target)
+print(interval_df.head(10))
+```
+
+## Quantiles
+
+```{python}
+#| label: quantiles
+quantiles_df = pred.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
+print(quantiles_df.head(10))
+```
+
+## Mean
+
+```{python}
+#| label: mean
+mean_series = pred.mean()
+print(mean_series.head(10))
+```
+
+## Evaluate Coverage
+
+```{python}
+#| label: evaluate
+interval = pred.interval(confidence=coverage_target)
+coverage = coverage_score(actuals, interval["lower"], interval["upper"])
+winkler = winkler_score(
+    actuals, interval["lower"], interval["upper"], confidence=coverage_target
+)
+print(f"Coverage: {coverage:.3f} | Winkler score: {winkler:.2f}")
+```
+
+## Prediction Plot
+
+```{python}
+#| label: plot
+fig = pred.plot(
+    actuals=actuals,
+    confidence_bands=[0.5, 0.8, coverage_target],
+    title=f"Conformal Prediction — {target_col}",
+)
+fig
+```
+
+## Calibration Report
+
+```{python}
+#| label: calibration
+calibration = model.calibration_report(test_df, target_col)
+print(calibration)
+```
+
+## Uncertainty Drivers
+
+```{python}
+#| label: drivers
+drivers = model.uncertainty_drivers_
+print(drivers)
+```

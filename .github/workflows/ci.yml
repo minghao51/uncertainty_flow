@@ -17,7 +17,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra dev
+      - run: uv sync --extra opinion
       - uses: pre-commit/action@v3.0.1
 
   typecheck:
@@ -27,7 +27,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra dev
+      - run: uv sync --extra opinion
       - run: uv run mypy uncertainty_flow/
 
   test:
@@ -41,7 +41,7 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra dev
+      - run: uv sync --extra opinion
       - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
 
   docs-check:
@@ -51,7 +51,10 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - uses: quarto-dev/quarto-action/setup@v2
       - run: uv sync --extra docs
+      - name: Render notebooks (uses _freeze/, no execution)
+        run: uv run quarto render notebooks/
       - name: Generate notebook doc stubs
         run: uv run python scripts/generate_notebook_docs.py
       - name: Build documentation
@@ -64,6 +67,6 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra dev
+      - run: uv sync --extra opinion
       - run: uv run bandit -r uncertainty_flow -s B101,B110,B301,B403
       - run: uv run pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839
