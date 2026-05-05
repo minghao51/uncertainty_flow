@@ -286,12 +286,12 @@ def _render_residuals_tab(predictions, y_true, features, confidence):
     if len(predictions._targets) == 1:
         lower = interval["lower"].to_numpy()
         upper = interval["upper"].to_numpy()
-        mean = predictions.mean().to_numpy()
+        mean = predictions.median().to_numpy()
     else:
         first_target = predictions._targets[0]
         lower = interval[f"{first_target}_lower"].to_numpy()
         upper = interval[f"{first_target}_upper"].to_numpy()
-        mean = predictions.mean().select(first_target).to_numpy().flatten()
+        mean = predictions.median().select(first_target).to_numpy().flatten()
 
     y_true_arr = to_numpy_series_zero_copy(y_true)
 

@@ -135,7 +135,7 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
         batch_size: int = 64,
         learning_rate: float = 0.001,
         weight_decay: float = 0.0,
-        monotonicity_weight: float = 0.0,
+        monotonicity_weight: float = 0.1,
         activation: str = "relu",
         device: str = "auto",
         random_state: int | None = None,
@@ -152,7 +152,9 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
             batch_size: Batch size for training.
             learning_rate: Learning rate for optimizer.
             weight_decay: L2 regularization strength.
-            monotonicity_weight: Weight for monotonicity penalty (0 = no penalty).
+            monotonicity_weight: Weight for monotonicity penalty (default 0.1).
+                0 disables the penalty. Higher values enforce non-crossing
+                more aggressively during training.
             activation: Activation function ('relu' or 'tanh').
             device: Device for training ('auto', 'cpu', 'cuda').
             random_state: Random seed for reproducibility.

@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 def _point_prediction_matrix(prediction: "DistributionPrediction") -> np.ndarray:
     """Return point predictions as a 2D array with one column per target."""
-    mean_value = prediction.mean()
+    mean_value = prediction.median()
     if isinstance(mean_value, pl.Series):
         return mean_value.to_numpy().reshape(-1, 1)
     return mean_value.to_numpy()

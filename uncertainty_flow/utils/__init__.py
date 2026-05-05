@@ -25,9 +25,12 @@ from .polars_bridge import to_numpy, to_polars
 from .split import (
     BaseSplit,
     RandomHoldoutSplit,
+    RollingOriginSplit,
+    SlidingWindowSplit,
     SplitPlanMetadata,
     TemporalHoldoutSplit,
     ValidationSplitPlan,
+    rolling_origin_splits,
     select_validation_plan,
 )
 
@@ -36,10 +39,13 @@ __all__ = [
     "to_polars",
     "BaseSplit",
     "RandomHoldoutSplit",
+    "RollingOriginSplit",
+    "SlidingWindowSplit",
     "TemporalHoldoutSplit",
     "SplitPlanMetadata",
     "ValidationSplitPlan",
     "select_validation_plan",
+    "rolling_origin_splits",
     "UncertaintyFlowWarning",
     "UncertaintyFlowError",
     "CalibrationError",

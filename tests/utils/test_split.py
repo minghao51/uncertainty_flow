@@ -5,7 +5,10 @@ import pytest
 
 from uncertainty_flow.utils import (
     RandomHoldoutSplit,
+    RollingOriginSplit,
+    SlidingWindowSplit,
     TemporalHoldoutSplit,
+    rolling_origin_splits,
     select_validation_plan,
 )
 
@@ -197,3 +200,96 @@ class TestValidationPlanSelector:
         select_validation_plan(df, task_type="tabular", random_state=7)
         assert "validation_strategy strategy=" in caplog.text
         assert "validation_strategy_fold strategy=" in caplog.text
+
+    def test_rolling_origin_time_series(self):
+        df = pl.DataFrame({"x": range(200), "y": range(200)})
+        plan = select_validation_plan(
+            df,
+            task_type="time_series",
+            rolling_origin=True,
+            rolling_min_train=50,
+            rolling_horizon=5,
+        )
+        assert plan.metadata.strategy_name == "rolling_origin"
+        assert len(plan.inner_splits) >= 2
+        for train_df, val_df in plan.inner_splits:
+            assert len(train_df) >= 50
+            assert len(val_df) == 5
+
+
+class TestRollingOriginSplit:
+    def test_expanding_window(self):
+        df = pl.DataFrame({"x": range(100), "y": range(100)})
+        splitter = RollingOriginSplit(n_splits=3, min_train_size=30, horizon=5)
+        folds = splitter.splits(df)
+        assert len(folds) == 3
+
+        for train, test in folds:
+            assert len(train) >= 30
+            assert len(test) == 5
+
+        assert len(folds[0][0]) < len(folds[1][0]) < len(folds[2][0])
+
+    def test_no_overlap_between_train_test(self):
+        df = pl.DataFrame({"x": range(100), "y": range(100)})
+        splitter = RollingOriginSplit(n_splits=3, min_train_size=30, horizon=5)
+        folds = splitter.splits(df)
+        for train, test in folds:
+            train_max = train["x"].max()
+            test_min = test["x"].min()
+            assert train_max < test_min
+
+    def test_gap_between_train_test(self):
+        df = pl.DataFrame({"x": range(100), "y": range(100)})
+        splitter = RollingOriginSplit(n_splits=2, min_train_size=30, horizon=5, gap=3)
+        folds = splitter.splits(df)
+        for train, test in folds:
+            train_max = train["x"].max()
+            test_min = test["x"].min()
+            assert test_min - train_max > 1
+
+    def test_data_too_short_raises(self):
+        df = pl.DataFrame({"x": range(10), "y": range(10)})
+        splitter = RollingOriginSplit(n_splits=2, min_train_size=50, horizon=5)
+        with pytest.raises(ValueError, match="too short"):
+            splitter.splits(df)
+
+    def test_convenience_function(self):
+        df = pl.DataFrame({"x": range(100), "y": range(100)})
+        folds = rolling_origin_splits(df, n_splits=3, min_train_size=30, horizon=5)
+        assert len(folds) == 3
+
+
+class TestSlidingWindowSplit:
+    def test_fixed_window_size(self):
+        df = pl.DataFrame({"x": range(200), "y": range(200)})
+        splitter = SlidingWindowSplit(n_splits=3, train_size=50, horizon=5)
+        folds = splitter.splits(df)
+        assert len(folds) == 3
+
+        for train, test in folds:
+            assert len(train) == 50
+            assert len(test) == 5
+
+    def test_windows_slide_forward(self):
+        df = pl.DataFrame({"x": range(200), "y": range(200)})
+        splitter = SlidingWindowSplit(n_splits=3, train_size=50, horizon=5, step=10)
+        folds = splitter.splits(df)
+        first_start = folds[0][0]["x"].min()
+        second_start = folds[1][0]["x"].min()
+        assert second_start - first_start == 10
+
+    def test_no_overlap_train_test(self):
+        df = pl.DataFrame({"x": range(200), "y": range(200)})
+        splitter = SlidingWindowSplit(n_splits=3, train_size=50, horizon=5)
+        folds = splitter.splits(df)
+        for train, test in folds:
+            train_max = train["x"].max()
+            test_min = test["x"].min()
+            assert train_max < test_min
+
+    def test_data_too_short_raises(self):
+        df = pl.DataFrame({"x": range(20), "y": range(20)})
+        splitter = SlidingWindowSplit(n_splits=2, train_size=50, horizon=5)
+        with pytest.raises(ValueError, match="too short"):
+            splitter.splits(df)

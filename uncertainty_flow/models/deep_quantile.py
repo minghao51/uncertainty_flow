@@ -25,7 +25,8 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
     from a median-trained MLP and using it as features for linear quantile heads.
 
     Coverage guarantee: ⚠️ Empirical only
-    Non-crossing: ✅ (via post-prediction sorting)
+    Non-crossing: ✅ (via post-prediction sorting, or post-hoc projection
+    when ``non_crossing_penalty > 0``)
 
     Examples:
         >>> from uncertainty_flow.models import DeepQuantileNet
@@ -55,6 +56,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         trunk_alpha: float = 0.0001,
         trunk_max_iter: int = 500,
         head_solver: str = "pinball",
+        non_crossing_penalty: float = 0.0,
         random_state: int | None = None,
     ):
         """
@@ -68,6 +70,10 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
             trunk_alpha: L2 regularization parameter for the trunk MLP.
             trunk_max_iter: Maximum iterations for the trunk MLP optimizer.
             head_solver: Solver for quantile heads. Currently only "pinball" supported.
+            non_crossing_penalty: When > 0, adds a training-time penalty term
+                λ Σ max(0, q_{i+1} - q_i)^2 to the joint pinball loss, encouraging
+                monotone quantiles during fitting. Higher values enforce stricter
+                monotonicity (default 0.0 = disabled).
             random_state: Random seed for reproducibility.
         """
         super().__init__(
@@ -79,6 +85,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         self.trunk_alpha = trunk_alpha
         self.trunk_max_iter = trunk_max_iter
         self.head_solver = head_solver
+        self.non_crossing_penalty = non_crossing_penalty
 
     def _fit_backend(
         self,
@@ -86,14 +93,6 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         y: np.ndarray,
         **kwargs: Any,
     ) -> None:
-        """
-        Fit the sklearn backend.
-
-        Args:
-            x: Scaled feature matrix.
-            y: Target values.
-            **kwargs: Additional parameters (unused).
-        """
         self._trunk_ = MLPRegressor(
             hidden_layer_sizes=self.hidden_layer_sizes,
             activation="relu",
@@ -117,25 +116,128 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
             self._head_coefs_[q] = head.coef_
             self._head_intercepts_[q] = head.intercept_
 
-    def _predict_backend(self, x: np.ndarray) -> np.ndarray:
-        """
-        Generate predictions using the sklearn backend.
+        if self.non_crossing_penalty > 0:
+            self._apply_non_crossing_training_penalty(x, y)
 
-        Args:
-            x: Scaled feature matrix.
+    def _apply_non_crossing_training_penalty(
+        self,
+        x: np.ndarray,
+        y: np.ndarray,
+    ) -> None:
+        """Jointly refine all quantile heads with a non-crossing penalty.
 
-        Returns:
-            Quantile matrix (n_samples, n_quantiles).
+        Minimises the sum of pinball losses across all quantiles plus a
+        penalty term: λ * mean( Σ_i max(0, q_{i+1} - q_i)^2 ) where
+        λ = ``self.non_crossing_penalty``.
         """
+        from scipy.optimize import minimize
+
+        trunk_features = self._extract_trunk_features(x)
+        n_samples, n_features = trunk_features.shape
+        n_quantiles = len(self.quantile_levels)
+        lam = self.non_crossing_penalty
+
+        # Flatten all head parameters into one vector:
+        # [coef_q1 (n_features), intercept_q1, coef_q2 (n_features), intercept_q2, ...]
+        def _pack() -> np.ndarray:
+            parts = []
+            for q in self.quantile_levels:
+                parts.append(self._head_coefs_[q])
+                parts.append(np.array([self._head_intercepts_[q]]))
+            return np.concatenate(parts)
+
+        def _unpack(params: np.ndarray) -> tuple[list[np.ndarray], list[float]]:
+            coefs = []
+            intercepts = []
+            idx = 0
+            for _ in self.quantile_levels:
+                coefs.append(params[idx : idx + n_features])
+                intercepts.append(float(params[idx + n_features]))
+                idx += n_features + 1
+            return coefs, intercepts
+
+        def _joint_loss(params: np.ndarray) -> float:
+            coefs, intercepts = _unpack(params)
+
+            # Compute predictions for all quantiles
+            preds = np.empty((n_samples, n_quantiles))
+            for j in range(n_quantiles):
+                preds[:, j] = trunk_features @ coefs[j] + intercepts[j]
+
+            # Pinball loss for each quantile
+            total_pinball = 0.0
+            for j, q in enumerate(self.quantile_levels):
+                residuals = y - preds[:, j]
+                weights = np.where(residuals < 0, q, 1 - q)
+                total_pinball += np.sum(weights * np.abs(residuals))
+
+            # Non-crossing penalty: λ * Σ max(0, q_{j+1} - q_j)^2
+            crossing_penalty = 0.0
+            if n_quantiles > 1:
+                diffs = preds[:, 1:] - preds[:, :-1]
+                crossing_penalty = lam * np.sum(np.maximum(0, -diffs) ** 2)
+
+            # Small L2 regularisation to keep parameters stable
+            l2_penalty = 1e-6 * np.sum(params**2)
+
+            return total_pinball + crossing_penalty + l2_penalty
+
+        x0 = _pack()
+        result = minimize(
+            _joint_loss,
+            x0,
+            method="L-BFGS-B",
+            options={"maxiter": 500},
+        )
+
+        coefs, intercepts = _unpack(result.x)
+        for j, q in enumerate(self.quantile_levels):
+            self._head_coefs_[q] = coefs[j]
+            self._head_intercepts_[q] = intercepts[j]
+
+    def _apply_non_crossing_projection(self, x: np.ndarray) -> None:
+        """Post-hoc projection to enforce monotone quantiles on training data."""
+        n_iters = max(1, int(self.non_crossing_penalty * 10))
         trunk_features = self._extract_trunk_features(x)
 
-        # Vectorized: stack all head coefficients into a matrix
-        # trunk_features: (n_samples, n_features)
-        # coef_matrix: (n_features, n_quantiles)
+        for _ in range(n_iters):
+            predictions = self._predict_backend_raw(trunk_features)
+            crossing = np.diff(predictions, axis=1) < 0
+            if not np.any(crossing):
+                break
+
+            for i in range(1, len(self.quantile_levels)):
+                q_curr = self.quantile_levels[i]
+                violations = predictions[:, i] < predictions[:, i - 1]
+                if not np.any(violations):
+                    continue
+
+                correction = (
+                    predictions[:, i - 1][violations] - predictions[:, i][violations]
+                ) / 2.0
+                feat_viol = trunk_features[violations]
+                target_corr = np.zeros(feat_viol.shape[0])
+
+                for j in range(feat_viol.shape[1]):
+                    grad = feat_viol[:, j]
+                    norm_sq = np.dot(grad, grad)
+                    if norm_sq < 1e-12:
+                        continue
+                    step = np.dot(grad, correction - target_corr) / norm_sq
+                    self._head_coefs_[q_curr][j] += step * 0.5
+                    target_corr += step * 0.5 * grad
+
+                self._head_intercepts_[q_curr] += float(np.mean(correction - target_corr))
+
+    def _predict_backend_raw(self, trunk_features: np.ndarray) -> np.ndarray:
         coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])
         intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
+        return trunk_features @ coef_matrix + intercepts
 
-        # Single matrix multiplication instead of loop
+    def _predict_backend(self, x: np.ndarray) -> np.ndarray:
+        trunk_features = self._extract_trunk_features(x)
+        coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])
+        intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
         return trunk_features @ coef_matrix + intercepts  # type: ignore[no-any-return]
 
     def _extract_trunk_features(self, x: np.ndarray) -> np.ndarray:

@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 def _prediction_mean(prediction) -> np.ndarray:
     """Return point predictions as a NumPy array."""
-    mean_value = prediction.mean()
+    mean_value = prediction.median()
     if isinstance(mean_value, pl.Series):
         return mean_value.to_numpy()
 

@@ -124,6 +124,200 @@ class TemporalHoldoutSplit(BaseSplit):
         return train, calib
 
 
+class RollingOriginSplit:
+    """Expanding-window (rolling-origin) split for time series evaluation.
+
+    Each fold uses all data up to an origin point as training and the next
+    ``horizon`` rows as the test set. The origin advances by ``step`` rows
+    each fold, producing an expanding training window.
+
+    Args:
+        n_splits: Number of folds.
+        min_train_size: Minimum number of rows in the first training window.
+        horizon: Number of rows in each test set.
+        gap: Number of rows between train end and test start (default 0).
+        step: How far the origin advances per fold. Defaults to ``horizon``.
+    """
+
+    def __init__(
+        self,
+        n_splits: int = 5,
+        min_train_size: int = 50,
+        horizon: int = 1,
+        gap: int = 0,
+        step: int | None = None,
+    ):
+        if n_splits < 1:
+            raise ValueError(f"n_splits must be >= 1, got {n_splits}")
+        if min_train_size < 1:
+            raise ValueError(f"min_train_size must be >= 1, got {min_train_size}")
+        if horizon < 1:
+            raise ValueError(f"horizon must be >= 1, got {horizon}")
+        if gap < 0:
+            raise ValueError(f"gap must be >= 0, got {gap}")
+
+        self.n_splits = n_splits
+        self.min_train_size = min_train_size
+        self.horizon = horizon
+        self.gap = gap
+        self.step = step if step is not None else horizon
+
+    def splits(
+        self,
+        data: pl.DataFrame,
+    ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
+        """
+        Generate expanding-window (train, test) pairs.
+
+        Args:
+            data: DataFrame assumed to be in temporal order.
+
+        Returns:
+            List of (train_df, test_df) tuples.
+
+        Raises:
+            ValueError: If data is too short for the requested configuration.
+        """
+        n = len(data)
+        last_train_end = n - self.gap - self.horizon
+        first_train_end = self.min_train_size - 1
+
+        if first_train_end > last_train_end:
+            raise ValueError(
+                f"Data too short for RollingOriginSplit: need at least "
+                f"{self.min_train_size + self.gap + self.horizon} rows, got {n}"
+            )
+
+        available_folds = (last_train_end - first_train_end) // self.step + 1
+        if self.n_splits > available_folds:
+            raise ValueError(
+                f"Requested {self.n_splits} splits but only {available_folds} "
+                f"fit in data of length {n} with min_train_size={self.min_train_size}, "
+                f"horizon={self.horizon}, gap={self.gap}"
+            )
+
+        origin = first_train_end
+        result: list[tuple[pl.DataFrame, pl.DataFrame]] = []
+        for _ in range(self.n_splits):
+            train_end = origin + 1
+            test_start = origin + 1 + self.gap
+            test_end = test_start + self.horizon
+
+            if test_end > n:
+                raise ValueError(f"Fold extends beyond data: test_end={test_end} > n={n}")
+
+            result.append((data[:train_end], data[test_start:test_end]))
+            origin += self.step
+
+        return result
+
+
+class SlidingWindowSplit:
+    """Fixed-width sliding-window split for time series evaluation.
+
+    Each fold uses a training window of fixed ``train_size`` rows that slides
+    forward by ``step`` rows each fold.
+
+    Args:
+        n_splits: Number of folds.
+        train_size: Number of rows in each training window.
+        horizon: Number of rows in each test set.
+        gap: Number of rows between train end and test start (default 0).
+        step: How far the window advances per fold. Defaults to ``horizon``.
+    """
+
+    def __init__(
+        self,
+        n_splits: int = 5,
+        train_size: int = 100,
+        horizon: int = 1,
+        gap: int = 0,
+        step: int | None = None,
+    ):
+        if n_splits < 1:
+            raise ValueError(f"n_splits must be >= 1, got {n_splits}")
+        if train_size < 1:
+            raise ValueError(f"train_size must be >= 1, got {train_size}")
+        if horizon < 1:
+            raise ValueError(f"horizon must be >= 1, got {horizon}")
+        if gap < 0:
+            raise ValueError(f"gap must be >= 0, got {gap}")
+
+        self.n_splits = n_splits
+        self.train_size = train_size
+        self.horizon = horizon
+        self.gap = gap
+        self.step = step if step is not None else horizon
+
+    def splits(
+        self,
+        data: pl.DataFrame,
+    ) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
+        """
+        Generate fixed-window (train, test) pairs.
+
+        Args:
+            data: DataFrame assumed to be in temporal order.
+
+        Returns:
+            List of (train_df, test_df) tuples.
+
+        Raises:
+            ValueError: If data is too short for the requested configuration.
+        """
+        n = len(data)
+        if n < self.train_size + self.gap + self.horizon:
+            raise ValueError(
+                f"Data too short for SlidingWindowSplit: need at least "
+                f"{self.train_size + self.gap + self.horizon} rows, got {n}"
+            )
+
+        result: list[tuple[pl.DataFrame, pl.DataFrame]] = []
+        for i in range(self.n_splits):
+            train_start = i * self.step
+            train_end = train_start + self.train_size
+            test_start = train_end + self.gap
+            test_end = test_start + self.horizon
+
+            if test_end > n:
+                raise ValueError(
+                    f"Fold {i} extends beyond data: test_end={test_end} > n={n}. "
+                    f"Reduce n_splits or step."
+                )
+
+            result.append((data[train_start:train_end], data[test_start:test_end]))
+
+        return result
+
+
+def rolling_origin_splits(
+    data: pl.DataFrame,
+    n_splits: int = 5,
+    min_train_size: int = 50,
+    horizon: int = 1,
+    gap: int = 0,
+) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
+    """Convenience function for rolling-origin (expanding window) splits.
+
+    Args:
+        data: DataFrame in temporal order.
+        n_splits: Number of folds.
+        min_train_size: Minimum training rows in the first fold.
+        horizon: Test set size per fold.
+        gap: Rows between train end and test start.
+
+    Returns:
+        List of (train_df, test_df) tuples.
+    """
+    splitter = RollingOriginSplit(
+        n_splits=n_splits,
+        min_train_size=min_train_size,
+        horizon=horizon,
+        gap=gap,
+    )
+    return splitter.splits(data)
+
+
 @dataclass(frozen=True)
 class SplitPlanMetadata:
     """Metadata describing how validation splits were selected."""
@@ -189,12 +383,19 @@ def select_validation_plan(
     cv_splits: int = 5,
     hybrid_mode: bool = False,
     enable_logging: bool = True,
+    rolling_origin: bool = False,
+    rolling_min_train: int = 50,
+    rolling_horizon: int = 1,
 ) -> ValidationSplitPlan:
     """Select a deterministic validation split plan for tuning/evaluation.
 
     Hybrid mode means:
     - time_series: temporal outer split + random out-of-sample inner split(s) on outer-train
     - tabular: random outer split + random out-of-sample inner split(s) on outer-train
+
+    When ``rolling_origin=True`` and ``task_type="time_series"``, the outer
+    split uses a single temporal holdout (as before) and the inner splits
+    use :class:`RollingOriginSplit` instead of random K-fold.
     """
     n_samples = len(data)
     n_splits = 1
@@ -204,7 +405,18 @@ def select_validation_plan(
         inner_splits: list[tuple[pl.DataFrame, pl.DataFrame]] = []
         strategy_name = "temporal_holdout"
         reason = "time_series task defaults to temporal holdout"
-        if hybrid_mode:
+
+        if rolling_origin and len(outer_train) >= rolling_min_train + rolling_horizon:
+            n_avail = (len(outer_train) - rolling_min_train) // rolling_horizon
+            inner_splits = RollingOriginSplit(
+                n_splits=min(cv_splits, max(2, n_avail)),
+                min_train_size=rolling_min_train,
+                horizon=rolling_horizon,
+            ).splits(outer_train)
+            n_splits = len(inner_splits)
+            strategy_name = "rolling_origin"
+            reason = "time_series task with rolling-origin evaluation"
+        elif hybrid_mode:
             inner_splits = _build_kfold_splits(
                 outer_train,
                 n_splits=min(cv_splits, max(2, len(outer_train) // 20)),

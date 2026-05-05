@@ -4,6 +4,7 @@ import polars as pl
 import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
+from uncertainty_flow.metrics import score
 from uncertainty_flow.models import QuantileForestForecaster
 from uncertainty_flow.wrappers import ConformalRegressor
 
@@ -126,7 +127,8 @@ class TestQuantileForestForecasterWorkflow:
         model.fit(time_series_data)
         pred = model.predict(time_series_data)
 
-        mean = pred.mean()
+        with pytest.warns(FutureWarning, match="median"):
+            mean = pred.mean()
         assert isinstance(mean, pl.DataFrame)
         assert "price" in mean.columns
         assert "volume" in mean.columns
@@ -242,3 +244,75 @@ class TestEndToEndScenarios:
 
         assert samples.shape[0] == 10 * len(time_series_data)
         assert decomp["total"] >= 0
+
+
+@pytest.mark.integration
+class TestScoreAPIIntegration:
+    """End-to-end tests for the unified score() API."""
+
+    def test_univariate_score_pipeline(self, sample_data):
+        """fit → predict → score(pred, y, metric) for all univariate metrics."""
+        train, test = sample_data.head(150), sample_data.tail(50)
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=5, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(train, target="target")
+        pred = model.predict(test)
+
+        y_true = test["target"].to_numpy()
+
+        crps = score(pred, y_true, "crps")
+        assert isinstance(crps, float)
+        assert crps >= 0
+
+        coverage = score(pred, y_true, "coverage")
+        assert isinstance(coverage, float)
+        assert 0 <= coverage <= 1
+
+        mae = score(pred, y_true, "mae")
+        assert isinstance(mae, float)
+        assert mae >= 0
+
+        pinball = score(pred, y_true, "pinball")
+        assert isinstance(pinball, float)
+        assert pinball >= 0
+
+    def test_multivariate_score_pipeline(self, time_series_data):
+        """fit → predict → score(pred, y, metric) for multivariate metrics."""
+        model = QuantileForestForecaster(
+            targets=["price", "volume"],
+            horizon=3,
+            n_estimators=5,
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(time_series_data)
+        pred = model.predict(time_series_data)
+
+        y_true = time_series_data.select(["price", "volume"]).to_numpy()
+
+        crps = score(pred, y_true, "crps")
+        assert isinstance(crps, dict)
+        assert "price" in crps and "volume" in crps
+
+        coverage = score(pred, y_true, "coverage")
+        assert isinstance(coverage, dict)
+        assert "price" in coverage and "volume" in coverage
+
+    def test_crps_consistency_with_direct_call(self, sample_data):
+        """score(pred, y, 'crps') matches pred.crps(y)."""
+        train, test = sample_data.head(150), sample_data.tail(50)
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=5, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(train, target="target")
+        pred = model.predict(test)
+        y_true = test["target"].to_numpy()
+
+        via_score = score(pred, y_true, "crps")
+        via_direct = pred.crps(y_true)
+        assert via_score == pytest.approx(via_direct)

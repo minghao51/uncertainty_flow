@@ -170,7 +170,7 @@ class TestDashboardIntegration:
 
         predictions = sample_forecaster.predict(x_features.head(50))
 
-        mean = predictions.mean().to_numpy()
+        mean = predictions.median().to_numpy()
         y_arr = y_true.head(50).to_numpy()
 
         residuals = y_arr - mean

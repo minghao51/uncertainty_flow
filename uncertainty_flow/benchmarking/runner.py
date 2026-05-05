@@ -24,6 +24,7 @@ from uncertainty_flow.utils.exceptions import (
     ModelNotFittedError,
 )
 from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
+from uncertainty_flow.utils.split import RollingOriginSplit
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
 from .datasets import DatasetInfo, load_dataset
@@ -83,6 +84,10 @@ class BenchmarkConfig:
     test_size: float = 0.2
     dataset_revision: str | None = None
     hybrid_validation: bool = False
+    rolling_origin: bool = False
+    rolling_n_splits: int = 5
+    rolling_min_train: int = 50
+    rolling_horizon: int = 1
 
     def __post_init__(self):
         if self.confidence_levels is None:
@@ -310,9 +315,16 @@ class BenchmarkRunner:
         if self.df is None:
             raise DataError("Data not loaded. Call load_data() first.")
 
-        # Temporal train/test split to prevent data leakage
+        # Determine evaluation data for tuning (use full data head for tuning)
         n_total = len(self.df)
         n_test = int(n_total * self.config.test_size)
+        tune_train_df = self.df.head(max(1, n_total - n_test))
+        tuning_result = self._get_tuning_result(model_name, tune_train_df)
+
+        if self.config.rolling_origin:
+            return self._run_model_rolling_origin(model_name, tuning_result=tuning_result)
+
+        # Temporal train/test split to prevent data leakage
         if n_total < 2:
             raise DataError("Dataset must contain at least 2 rows for benchmark train/test split.")
         if n_test < 1:
@@ -328,7 +340,18 @@ class BenchmarkRunner:
         train_df = self.df.head(n_total - n_test)
         test_df = self.df.tail(n_test)
 
-        tuning_result = self._get_tuning_result(model_name, train_df)
+        return self._evaluate_single_split(
+            model_name, train_df, test_df, tuning_result=tuning_result
+        )
+
+    def _evaluate_single_split(
+        self,
+        model_name: str,
+        train_df: pl.DataFrame,
+        test_df: pl.DataFrame,
+        tuning_result: Any | None,
+    ) -> ModelResult:
+        """Evaluate a model on a single train/test split."""
         tuned_params = tuning_result.best_params if tuning_result is not None else {}
         was_tuned = bool(tuned_params)
 
@@ -389,35 +412,123 @@ class BenchmarkRunner:
             tuned_params=tuned_params,
             was_tuned=was_tuned,
             validation_coverage_90=(
-                round(float(getattr(tuning_result, "coverage_90")), 4)
+                round(float(getattr(tuning_result, "coverage_90", 0.0)), 4)
                 if tuning_result is not None and hasattr(tuning_result, "coverage_90")
                 else None
             ),
             validation_sharpness_90=(
-                round(float(getattr(tuning_result, "sharpness_90")), 4)
+                round(float(getattr(tuning_result, "sharpness_90", 0.0)), 4)
                 if tuning_result is not None and hasattr(tuning_result, "sharpness_90")
                 else None
             ),
             validation_winkler_90=(
-                round(float(getattr(tuning_result, "winkler_90")), 4)
+                round(float(getattr(tuning_result, "winkler_90", 0.0)), 4)
                 if tuning_result is not None and hasattr(tuning_result, "winkler_90")
                 else None
             ),
             validation_split_type=(
-                str(getattr(tuning_result, "validation_split_type"))
+                str(getattr(tuning_result, "validation_split_type", None))
                 if tuning_result is not None and hasattr(tuning_result, "validation_split_type")
                 else None
             ),
             validation_strategy=(
-                str(getattr(tuning_result, "validation_strategy"))
+                str(getattr(tuning_result, "validation_strategy", None))
                 if tuning_result is not None and hasattr(tuning_result, "validation_strategy")
                 else None
             ),
             validation_n_splits=(
-                int(getattr(tuning_result, "validation_n_splits"))
+                int(getattr(tuning_result, "validation_n_splits", 0))
                 if tuning_result is not None and hasattr(tuning_result, "validation_n_splits")
                 else None
             ),
+        )
+
+    def _run_model_rolling_origin(
+        self,
+        model_name: str,
+        tuning_result: Any | None,
+    ) -> ModelResult:
+        """Evaluate a model using rolling-origin (expanding window) splits."""
+        splitter = RollingOriginSplit(
+            n_splits=self.config.rolling_n_splits,
+            min_train_size=self.config.rolling_min_train,
+            horizon=self.config.rolling_horizon,
+        )
+        splits = splitter.splits(self.df)
+
+        tuned_params = tuning_result.best_params if tuning_result is not None else {}
+        was_tuned = bool(tuned_params)
+
+        cov_90s: list[float] = []
+        cov_80s: list[float] = []
+        wink_90s: list[float] = []
+        wink_80s: list[float] = []
+        sharp_90s: list[float] = []
+        sharp_80s: list[float] = []
+        pinballs: list[float] = []
+        train_times: list[float] = []
+        n_samples_list: list[int] = []
+
+        model_cls = MODEL_REGISTRY[model_name]
+
+        for fold_idx, (train_df, test_df) in enumerate(splits, start=1):
+            logger.info(
+                "Rolling-origin fold %d/%d for '%s' (train=%d, test=%d)",
+                fold_idx,
+                len(splits),
+                model_name,
+                len(train_df),
+                len(test_df),
+            )
+
+            benchmark = model_cls(self.config, tuned_params)
+            start = time.time()
+            benchmark.fit(train_df, self.target)
+            train_time = time.time() - start
+
+            pred = benchmark.predict(test_df)
+            interval_90 = pred.interval(0.9)
+            interval_80 = pred.interval(0.8)
+
+            n_pred = len(interval_90)
+            y_true = to_numpy_series_zero_copy(test_df[self.target])[-n_pred:]
+            lower_90 = to_numpy_series_zero_copy(
+                interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
+            )
+            upper_90 = to_numpy_series_zero_copy(
+                interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
+            )
+            lower_80 = to_numpy_series_zero_copy(
+                interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
+            )
+            upper_80 = to_numpy_series_zero_copy(
+                interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
+            )
+
+            cov_90s.append(coverage_score(y_true, lower_90, upper_90))
+            cov_80s.append(coverage_score(y_true, lower_80, upper_80))
+            wink_90s.append(winkler_score(y_true, lower_90, upper_90, confidence=0.9))
+            wink_80s.append(winkler_score(y_true, lower_80, upper_80, confidence=0.8))
+            sharp_90s.append(float(np.mean(upper_90 - lower_90)))
+            sharp_80s.append(float(np.mean(upper_80 - lower_80)))
+            pinballs.append(float(pinball_loss(y_true, lower_90, 0.1)))
+            train_times.append(train_time)
+            n_samples_list.append(n_pred)
+
+        return ModelResult(
+            model_name=model_name,
+            coverage_90=round(float(np.mean(cov_90s)), 4),
+            coverage_80=round(float(np.mean(cov_80s)), 4),
+            sharpness_90=round(float(np.mean(sharp_90s)), 4),
+            sharpness_80=round(float(np.mean(sharp_80s)), 4),
+            winkler_90=round(float(np.mean(wink_90s)), 4),
+            winkler_80=round(float(np.mean(wink_80s)), 4),
+            pinball_loss=round(float(np.mean(pinballs)), 4),
+            train_time_sec=round(float(np.sum(train_times)), 3),
+            n_samples=int(np.sum(n_samples_list)),
+            tuned_params=tuned_params,
+            was_tuned=was_tuned,
+            test_split_type="rolling_origin",
         )
 
     def run_all(

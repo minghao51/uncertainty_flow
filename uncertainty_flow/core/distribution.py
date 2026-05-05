@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import polars as pl
@@ -18,6 +18,25 @@ if TYPE_CHECKING:
 MAX_SAMPLE_CHUNK_SIZE = 100_000
 MAX_TOTAL_SAMPLES = 10_000_000
 PLOT_MAX_SAMPLES = 500
+_QUANTILE_DISTANCE_THRESHOLD = 0.05
+
+
+def _warn_if_far(levels: np.ndarray, requested: dict[float, int]) -> None:
+    import warnings
+
+    far = []
+    for target_level, idx in requested.items():
+        actual = levels[idx]
+        if abs(actual - target_level) > _QUANTILE_DISTANCE_THRESHOLD:
+            far.append(f"{target_level:.2f}→{actual:.2f}")
+    if far:
+        warnings.warn(
+            f"Nearest quantile levels differ significantly from requested: "
+            f"{', '.join(far)}. Consider using more quantile levels for "
+            f"accurate summary statistics.",
+            UserWarning,
+            stacklevel=4,
+        )
 
 
 class DistributionPrediction:
@@ -154,16 +173,30 @@ class DistributionPrediction:
         """
         Return the 0.5 quantile (median) as a point estimate.
 
+        .. deprecated::
+            Use :meth:`median` instead.  ``mean()`` will emit a
+            ``FutureWarning`` and will be removed in a future release.
+
         Returns:
             Polars Series for univariate, DataFrame for multivariate
         """
+        import warnings
+
+        warnings.warn(
+            "DistributionPrediction.mean() returns the median, not the mean. "
+            "Use .median() instead. mean() will be removed in a future release.",
+            FutureWarning,
+            stacklevel=2,
+        )
+        return self.median()
+
+    def median(self) -> pl.Series | pl.DataFrame:
+        """Return the 0.5 quantile as a point estimate."""
         median_idx = self._find_nearest_quantile_index(0.5)
 
         if len(self._targets) == 1:
-            # Univariate
-            return pl.Series("mean", self._quantiles[:, median_idx])
+            return pl.Series("median", self._quantiles[:, median_idx])
         else:
-            # Multivariate
             data = np.column_stack(
                 [
                     self._quantiles[:, target_idx * self._n_quantiles + median_idx]
@@ -172,13 +205,307 @@ class DistributionPrediction:
             )
             return pl.DataFrame(data, schema=self._targets, orient="row")
 
-    def median(self) -> pl.Series | pl.DataFrame:
-        """Return the 0.5 quantile as a point estimate."""
-        return self.mean()
+    def crps(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+    ) -> float | dict[str, float]:
+        """
+        Compute the exact CRPS from quantile predictions.
+
+        Uses the quantile-score decomposition (Laio & Tamea 2007) — no
+        Gaussian approximation.  Requires at least 2 quantile levels.
+
+        Args:
+            y_true: True values.  Polars Series (univariate), DataFrame
+                (multivariate — one column per target), or numpy array.
+
+        Returns:
+            Float CRPS for univariate predictions, or ``{target: crps}`` dict
+            for multivariate.
+        """
+        from ..metrics.crps import crps_quantile
+
+        if self._n_quantiles < 2:
+            error_invalid_data(
+                "CRPS requires at least 2 quantile levels, "
+                f"but DistributionPrediction has {self._n_quantiles}"
+            )
+
+        y_arr = self._coerce_y_true(y_true)
+
+        if len(self._targets) == 1:
+            return crps_quantile(y_arr, self._quantiles, self._levels)
+
+        result = {}
+        for t_idx, target in enumerate(self._targets):
+            q_start = t_idx * self._n_quantiles
+            q_end = q_start + self._n_quantiles
+            result[target] = crps_quantile(
+                y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr,
+                self._quantiles[:, q_start:q_end],
+                self._levels,
+            )
+        return result
+
+    @staticmethod
+    def _forward_cdf(
+        quantile_values: np.ndarray,
+        levels: np.ndarray,
+        y: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Evaluate the piecewise-linear CDF at observed values.
+
+        Given quantile knots (q_j, τ_j) for each sample, interpolate F(y).
+
+        Args:
+            quantile_values: (n_samples, n_quantiles) predicted quantile values.
+            levels: (n_quantiles,) quantile levels.
+            y: (n_samples,) true values.
+
+        Returns:
+            (n_samples,) PIT values in [0, 1].
+        """
+        n, k = quantile_values.shape
+        pit = np.empty(n)
+
+        for i in range(n):
+            qi = quantile_values[i]
+            yi = y[i]
+
+            if k == 1:
+                pit[i] = levels[0] if yi <= qi[0] else 1.0
+                continue
+
+            if yi <= qi[0]:
+                if qi[0] == qi[1]:
+                    pit[i] = levels[0] * 0.5
+                else:
+                    frac = (yi - qi[0]) / (qi[1] - qi[0])
+                    pit[i] = levels[0] + frac * (levels[0])
+                pit[i] = max(pit[i], 0.0)
+            elif yi >= qi[-1]:
+                if qi[-1] == qi[-2]:
+                    pit[i] = 1.0 - (1.0 - levels[-1]) * 0.5
+                else:
+                    frac = (yi - qi[-1]) / (qi[-1] - qi[-2])
+                    pit[i] = levels[-1] + frac * (1.0 - levels[-1])
+                pit[i] = min(pit[i], 1.0)
+            else:
+                j = int(np.searchsorted(qi, yi, side="right")) - 1
+                j = max(0, min(j, k - 2))
+                denom = qi[j + 1] - qi[j]
+                if denom == 0:
+                    pit[i] = (levels[j] + levels[j + 1]) / 2.0
+                else:
+                    frac = (yi - qi[j]) / denom
+                    pit[i] = levels[j] + frac * (levels[j + 1] - levels[j])
+
+        return np.clip(pit, 0.0, 1.0)
+
+    def _pit_values(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+    ) -> np.ndarray | dict[str, np.ndarray]:
+        """
+        Compute PIT values F_i(y_i) for each observation.
+
+        Args:
+            y_true: True values.
+
+        Returns:
+            (n,) array for univariate, or {target: array} for multivariate.
+        """
+        if self._n_quantiles < 2:
+            error_invalid_data(
+                "PIT requires at least 2 quantile levels, "
+                f"but DistributionPrediction has {self._n_quantiles}"
+            )
+
+        y_arr = self._coerce_y_true(y_true)
+
+        if len(self._targets) == 1:
+            return self._forward_cdf(self._quantiles, self._levels, y_arr.ravel())
+
+        result = {}
+        for t_idx, target in enumerate(self._targets):
+            q_start = t_idx * self._n_quantiles
+            q_end = q_start + self._n_quantiles
+            q_slice = self._quantiles[:, q_start:q_end]
+            y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
+            result[target] = self._forward_cdf(q_slice, self._levels, y_col)
+        return result
+
+    def pit_histogram(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        n_bins: int = 10,
+        chi2_test: bool = False,
+    ) -> pl.DataFrame | dict[str, pl.DataFrame]:
+        """
+        Compute PIT histogram for calibration assessment.
+
+        If forecasts are perfectly calibrated, PIT values ~ Uniform(0, 1),
+        so each bin should contain roughly n / n_bins observations.
+
+        Args:
+            y_true: True values.
+            n_bins: Number of histogram bins (default 10).
+            chi2_test: If True, include a chi-squared uniformity test p-value
+                as a ``chi2_pvalue`` column (default False).
+
+        Returns:
+            DataFrame with columns: bin_center, count, expected.
+            If ``chi2_test=True``, also includes ``chi2_pvalue``.
+            For multivariate, returns {target: DataFrame}.
+        """
+        pit = self._pit_values(y_true)
+
+        if isinstance(pit, dict):
+            return {
+                t: self._build_pit_hist(arr, n_bins, chi2_test=chi2_test) for t, arr in pit.items()
+            }
+
+        return self._build_pit_hist(pit, n_bins, chi2_test=chi2_test)
+
+    @staticmethod
+    def _build_pit_hist(
+        pit_values: np.ndarray,
+        n_bins: int,
+        chi2_test: bool = False,
+    ) -> pl.DataFrame:
+        n = len(pit_values)
+        edges = np.linspace(0.0, 1.0, n_bins + 1)
+        counts, _ = np.histogram(pit_values, bins=edges)
+        centers = (edges[:-1] + edges[1:]) / 2.0
+        expected = np.full(n_bins, n / n_bins)
+
+        data: dict[str, Any] = {
+            "bin_center": centers,
+            "count": counts.astype(float),
+            "expected": expected,
+        }
+
+        if chi2_test:
+            # Chi-squared test for uniformity
+            # Avoid division by zero — expected is constant and > 0 when n > 0
+            if n > 0 and np.all(expected > 0):
+                from scipy.stats import chisquare
+
+                _, pvalue = chisquare(counts, expected)
+                data["chi2_pvalue"] = np.full(n_bins, float(pvalue))
+            else:
+                data["chi2_pvalue"] = np.full(n_bins, np.nan)
+
+        return pl.DataFrame(data)
+
+    def calibration_curve(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        n_bins: int = 20,
+    ) -> pl.DataFrame | dict[str, pl.DataFrame]:
+        """
+        Compute reliability diagram data (calibration curve).
+
+        Bins PIT values and compares expected (nominal) coverage to observed
+        (empirical) coverage at increasing probability thresholds.
+
+        Args:
+            y_true: True values.
+            n_bins: Number of bins (default 20).
+
+        Returns:
+            DataFrame with columns: expected_coverage, observed_coverage.
+            For multivariate, returns {target: DataFrame}.
+        """
+        pit = self._pit_values(y_true)
+
+        if isinstance(pit, dict):
+            return {t: self._build_cal_curve(arr, n_bins) for t, arr in pit.items()}
+
+        return self._build_cal_curve(pit, n_bins)
+
+    @staticmethod
+    def _build_cal_curve(pit_values: np.ndarray, n_bins: int) -> pl.DataFrame:
+        edges = np.linspace(0.0, 1.0, n_bins + 1)
+        centers = (edges[:-1] + edges[1:]) / 2.0
+        counts, _ = np.histogram(pit_values, bins=edges)
+        observed = np.cumsum(counts).astype(float) / len(pit_values)
+        expected = np.cumsum(np.diff(edges))
+        return pl.DataFrame(
+            {
+                "expected_coverage": expected,
+                "observed_coverage": observed,
+                "bin_center": centers,
+            }
+        )
+
+    def plot_pit(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        n_bins: int = 10,
+    ) -> None:
+        """
+        Plot PIT histogram with uniform reference line.
+
+        Args:
+            y_true: True values.
+            n_bins: Number of histogram bins (default 10).
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError(
+                "matplotlib is required for plotting. Install with: pip install matplotlib"
+            )
+
+        hist = self.pit_histogram(y_true, n_bins=n_bins)
+
+        if isinstance(hist, dict):
+            targets = list(hist.keys())
+            n_targets = len(targets)
+            n_cols = min(3, n_targets)
+            n_rows = (n_targets + n_cols - 1) // n_cols
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
+            axes_flat = np.asarray(axes).flatten()
+            for i, t in enumerate(targets):
+                self._plot_pit_single(axes_flat[i], hist[t], title=t)
+            for j in range(n_targets, len(axes_flat)):
+                axes_flat[j].set_visible(False)
+            plt.tight_layout()
+            plt.show()
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            self._plot_pit_single(ax, hist)
+            plt.tight_layout()
+            plt.show()
+
+    @staticmethod
+    def _plot_pit_single(ax, hist_df: pl.DataFrame, title: str | None = None) -> None:
+        centers = hist_df["bin_center"].to_numpy()
+        counts = hist_df["count"].to_numpy()
+        expected = hist_df["expected"].to_numpy()
+        width = centers[1] - centers[0] if len(centers) > 1 else 0.1
+
+        ax.bar(centers, counts, width=width * 0.9, alpha=0.7, label="PIT counts")
+        ax.axhline(y=expected[0], color="red", linestyle="--", label="Uniform reference")
+        ax.set_xlabel("PIT value")
+        ax.set_ylabel("Count")
+        ax.set_title(title or "PIT Histogram")
+        ax.legend(loc="best")
+
+    def _coerce_y_true(self, y_true: pl.Series | pl.DataFrame | np.ndarray) -> np.ndarray:
+        """Convert y_true input to a numpy array shaped for this prediction."""
+        if isinstance(y_true, pl.DataFrame):
+            cols = [y_true[t].to_numpy() for t in self._targets]
+            return np.column_stack(cols)
+        if isinstance(y_true, pl.Series):
+            return to_numpy_series_zero_copy(y_true)
+        return np.asarray(y_true, dtype=np.float64)
 
     def sample(self, n: int, random_state: int | None = None) -> pl.DataFrame:
         """
-        Draw n samples per input row via spline-interpolated inverse CDF.
+        Draw n samples per input row via piecewise-linear inverse CDF.
 
         For each row and each target, builds a CDF from the predicted quantile
         matrix (quantile values -> cumulative probability) and draws samples
@@ -196,11 +523,6 @@ class DistributionPrediction:
         Raises:
             InvalidDataError: If n is invalid or would exceed memory limits.
         """
-        try:
-            from scipy.interpolate import interp1d
-        except ImportError:
-            raise ImportError("scipy is required for sampling. Install with: pip install scipy")
-
         if not isinstance(n, int) or n < 1:
             raise InvalidDataError(f"n must be a positive integer, got {n}")
 
@@ -219,9 +541,9 @@ class DistributionPrediction:
             return self._sample_joint_chunked(n, rng)
 
         if n <= MAX_SAMPLE_CHUNK_SIZE:
-            return self._sample_chunk(n, rng, interp1d)
+            return self._sample_chunk(n, rng)
 
-        return self._sample_chunked(n, rng, interp1d)
+        return self._sample_chunked(n, rng)
 
     def _marginal_quantiles(self) -> np.ndarray:
         """Reshape the flat quantile matrix into [row, target, quantile]."""
@@ -271,7 +593,6 @@ class DistributionPrediction:
         self,
         n: int,
         rng: np.random.Generator,
-        interp1d,
     ) -> pl.DataFrame:
         """Sample with a single chunk (n <= MAX_SAMPLE_CHUNK_SIZE)."""
         uniform_samples = rng.uniform(0, 1, size=(self._n_samples, n))
@@ -284,7 +605,7 @@ class DistributionPrediction:
             quantile_values = self._quantiles[:, q_start:q_end]
 
             target_samples = self._vectorized_inverse_cdf(
-                quantile_values, uniform_clipped, self._levels, interp1d
+                quantile_values, uniform_clipped, self._levels
             )
             target_samples_list.append(target_samples.flatten())
 
@@ -299,7 +620,6 @@ class DistributionPrediction:
         self,
         n: int,
         rng: np.random.Generator,
-        interp1d,
     ) -> pl.DataFrame:
         """Sample with chunking for large n values."""
         chunks = []
@@ -317,7 +637,7 @@ class DistributionPrediction:
                 quantile_values = self._quantiles[:, q_start:q_end]
 
                 target_samples = self._vectorized_inverse_cdf(
-                    quantile_values, uniform_clipped, self._levels, interp1d
+                    quantile_values, uniform_clipped, self._levels
                 )
                 target_samples_list.append(target_samples.flatten())
 
@@ -339,25 +659,18 @@ class DistributionPrediction:
         quantile_values: np.ndarray,
         uniform_clipped: np.ndarray,
         levels: np.ndarray,
-        interp1d,
     ) -> np.ndarray:
         """
-        Vectorized inverse CDF sampling.
-
-        Uses vectorized operations where possible, falling back to row-wise
-        interp1d only when necessary.
+        Vectorized inverse CDF sampling via piecewise-linear interpolation.
 
         Args:
             quantile_values: (n_samples, n_quantiles) array of quantile values
             uniform_clipped: (n_samples, n) array of uniform samples
             levels: (n_quantiles,) array of quantile levels
-            interp1d: scipy.interpolate.interp1d constructor
 
         Returns:
             (n_samples, n) array of sampled values
         """
-        del interp1d
-
         lower_idx = np.searchsorted(levels, uniform_clipped, side="right") - 1
         lower_idx = np.clip(lower_idx, 0, len(levels) - 2)
         upper_idx = lower_idx + 1
@@ -378,6 +691,8 @@ class DistributionPrediction:
         actuals: pl.Series | pl.DataFrame | None = None,
         confidence_bands: list[float] | None = None,
         title: str | None = None,
+        targets: str | list[str] = "all",
+        max_targets: int = 6,
     ) -> None:
         """
         Fan chart of quantile bands.
@@ -389,6 +704,10 @@ class DistributionPrediction:
             actuals: Optional actual values for comparison
             confidence_bands: Confidence levels to display (default: [0.5, 0.8, 0.9, 0.95])
             title: Optional plot title
+            targets: Target(s) to plot. ``"all"`` plots every target (uses subplot
+                grid for multivariate). Pass a list of target names to select specific
+                targets.
+            max_targets: Maximum number of subplot panels (default 6).
         """
         try:
             import matplotlib.pyplot as plt
@@ -400,24 +719,101 @@ class DistributionPrediction:
         if confidence_bands is None:
             confidence_bands = [0.5, 0.8, 0.9, 0.95]
 
-        if self._n_samples > PLOT_MAX_SAMPLES:
-            # Downsample for plotting
-            step = max(1, self._n_samples // PLOT_MAX_SAMPLES)
-            plot_indices = slice(None, None, step)
+        target_list = self._resolve_targets(targets, max_targets)
+        single = len(target_list) == 1
+
+        if single:
+            fig, ax = plt.subplots(figsize=(12, 6))
+            self._plot_single_target(
+                ax,
+                target_list[0],
+                actuals,
+                confidence_bands,
+                plot_indices=self._plot_slice(),
+                title=title,
+            )
+            plt.tight_layout()
+            plt.show()
         else:
-            plot_indices = slice(None)
+            n_targets = len(target_list)
+            n_cols = min(3, n_targets)
+            n_rows = (n_targets + n_cols - 1) // n_cols
+            fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+            if n_targets == 1:
+                axes = np.array([axes])
+            axes_flat = np.asarray(axes).flatten()
 
-        fig, ax = plt.subplots(figsize=(12, 6))
+            plot_indices = self._plot_slice()
 
+            for i, target in enumerate(target_list):
+                self._plot_single_target(
+                    axes_flat[i],
+                    target,
+                    actuals,
+                    confidence_bands,
+                    plot_indices=plot_indices,
+                    title=target,
+                )
+
+            for j in range(n_targets, len(axes_flat)):
+                axes_flat[j].set_visible(False)
+
+            fig.suptitle(title or "")
+            plt.tight_layout()
+            plt.show()
+
+    def _plot_slice(self) -> slice:
+        if self._n_samples > PLOT_MAX_SAMPLES:
+            step = max(1, self._n_samples // PLOT_MAX_SAMPLES)
+            return slice(None, None, step)
+        return slice(None)
+
+    def _resolve_targets(self, targets: str | list[str], max_targets: int) -> list[str]:
+        import warnings
+
+        if isinstance(targets, str):
+            if targets == "all":
+                selected = list(self._targets)
+            elif targets in self._targets:
+                selected = [targets]
+            else:
+                raise ValueError(f"Target {targets!r} not found. Available: {self._targets}")
+        else:
+            selected = list(targets)
+
+        for t in selected:
+            if t not in self._targets:
+                raise ValueError(f"Target {t!r} not found. Available: {self._targets}")
+
+        if len(selected) > max_targets:
+            warnings.warn(
+                f"{len(selected)} targets requested but max_targets={max_targets}. "
+                f"Showing first {max_targets}.",
+                UserWarning,
+                stacklevel=3,
+            )
+            selected = selected[:max_targets]
+
+        return selected
+
+    def _plot_single_target(
+        self,
+        ax,
+        target: str,
+        actuals: pl.Series | pl.DataFrame | None,
+        confidence_bands: list[float],
+        plot_indices: slice,
+        title: str | None = None,
+    ) -> None:
         x_axis = range(self._n_samples)[plot_indices]
 
-        # Plot confidence bands (darkest = narrowest)
         for confidence in reversed(confidence_bands):
             interval = self.interval(confidence)
             if len(self._targets) == 1:
                 lower_col, upper_col = "lower", "upper"
             else:
-                lower_col, upper_col = f"{self._targets[0]}_lower", f"{self._targets[0]}_upper"
+                lower_col = f"{target}_lower"
+                upper_col = f"{target}_upper"
 
             lower = interval[lower_col]
             upper = interval[upper_col]
@@ -431,24 +827,22 @@ class DistributionPrediction:
                 label=f"{confidence * 100:.0f}% interval",
             )
 
-        # Plot median
-        mean = self.mean()
-        if isinstance(mean, pl.DataFrame):
-            mean_series = mean[self._targets[0]]
+        median_df = self.median()
+        if isinstance(median_df, pl.DataFrame):
+            median_series = median_df[target]
         else:
-            mean_series = mean
+            median_series = median_df
+        ax.plot(to_numpy_series_zero_copy(median_series)[plot_indices], label="Median", linewidth=2)
 
-        ax.plot(to_numpy_series_zero_copy(mean_series)[plot_indices], label="Median", linewidth=2)
-
-        # Plot actuals if provided
         if actuals is not None:
             if isinstance(actuals, pl.DataFrame):
-                if len(self._targets) == 1:
-                    actuals = actuals[self._targets[0]]
-                else:
-                    actuals = actuals[self._targets[0]]
+                actuals_series = actuals[target]
+            elif isinstance(actuals, pl.Series):
+                actuals_series = actuals
+            else:
+                actuals_series = actuals
             ax.plot(
-                to_numpy_series_zero_copy(actuals)[plot_indices],
+                to_numpy_series_zero_copy(actuals_series)[plot_indices],
                 label="Actuals",
                 linewidth=1.5,
                 alpha=0.7,
@@ -459,8 +853,6 @@ class DistributionPrediction:
         if title:
             ax.set_title(title)
         ax.legend(loc="best")
-        plt.tight_layout()
-        plt.show()
 
     @lru_cache(maxsize=128)
     def _find_nearest_quantile_index(self, q: float) -> int:
@@ -657,25 +1049,22 @@ class DistributionPrediction:
         >>> print(f"  Aleatoric: {decomposition['aleatoric']:.2f}")
         >>> print(f"  Epistemic: {decomposition['epistemic']:.2f}")
         """
+        return self._decomposition_for_target(0, confidence)
+
+    def _decomposition_for_target(self, target_idx: int, confidence: float) -> dict[str, float]:
         interval = self.interval(confidence)
+        target = self._targets[target_idx]
 
         if len(self._targets) == 1:
             lower_col, upper_col = "lower", "upper"
         else:
-            first_target = self._targets[0]
-            lower_col = f"{first_target}_lower"
-            upper_col = f"{first_target}_upper"
+            lower_col = f"{target}_lower"
+            upper_col = f"{target}_upper"
 
         lower = to_numpy_series_zero_copy(interval[lower_col])
         upper = to_numpy_series_zero_copy(interval[upper_col])
-
-        # Interval width represents total uncertainty
         widths = upper - lower
-
-        # Aleatoric: average width (inherent data uncertainty)
         aleatoric = float(np.mean(widths))
-
-        # Epistemic: variance of widths (model uncertainty across samples)
         epistemic = float(np.var(widths))
 
         return {
@@ -683,3 +1072,63 @@ class DistributionPrediction:
             "epistemic": epistemic,
             "total": aleatoric + epistemic,
         }
+
+    def summary(self, confidence: float = 0.9) -> pl.DataFrame:
+        """
+        One-row-per-target overview of the prediction distribution.
+
+        Columns: target, median, interval_width, narrow_width,
+        aleatoric, epistemic, total_uncertainty.
+
+        ``interval_width`` is the mean width at the ``confidence`` level.
+        ``narrow_width`` is the mean inter-quartile range (25th–75th percentile).
+
+        Args:
+            confidence: Confidence level for the primary interval width (default 0.9).
+
+        Returns:
+            Polars DataFrame with one row per target.
+        """
+        median_idx = self._find_nearest_quantile_index(0.5)
+        alpha = (1 - confidence) / 2
+        lower_idx = self._find_nearest_quantile_index(alpha)
+        upper_idx = self._find_nearest_quantile_index(1 - alpha)
+        lower_50_idx = self._find_nearest_quantile_index(0.25)
+        upper_50_idx = self._find_nearest_quantile_index(0.75)
+
+        _warn_if_far(
+            self._levels,
+            {
+                0.5: median_idx,
+                alpha: lower_idx,
+                1 - alpha: upper_idx,
+                0.25: lower_50_idx,
+                0.75: upper_50_idx,
+            },
+        )
+
+        rows = []
+        for t_idx, target in enumerate(self._targets):
+            q_start = t_idx * self._n_quantiles
+            q_end = q_start + self._n_quantiles
+            q_slice = self._quantiles[:, q_start:q_end]
+
+            median_val = float(np.mean(q_slice[:, median_idx]))
+            width = float(np.mean(q_slice[:, upper_idx] - q_slice[:, lower_idx]))
+            narrow = float(np.mean(q_slice[:, upper_50_idx] - q_slice[:, lower_50_idx]))
+
+            decomp = self._decomposition_for_target(t_idx, confidence)
+
+            rows.append(
+                {
+                    "target": target,
+                    "median": median_val,
+                    "interval_width": width,
+                    "narrow_width": narrow,
+                    "aleatoric": decomp["aleatoric"],
+                    "epistemic": decomp["epistemic"],
+                    "total_uncertainty": decomp["total"],
+                }
+            )
+
+        return pl.DataFrame(rows)

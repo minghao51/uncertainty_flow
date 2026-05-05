@@ -232,6 +232,70 @@ class TestDeepQuantileNetCoverage:
         assert 0.6 <= cov <= 1.0
 
 
+class TestDeepQuantileNetNonCrossingPenalty:
+    """Test training-time non-crossing penalty."""
+
+    def _count_crossings(self, quantile_matrix: np.ndarray) -> int:
+        """Count number of samples with at least one quantile crossing."""
+        return int(np.sum(np.any(np.diff(quantile_matrix, axis=1) < 0, axis=1)))
+
+    def test_non_crossing_penalty_reduces_crossings(self, sample_regression_data):
+        """Training-time penalty should reduce quantile crossings."""
+        # Fit without penalty
+        model_no_penalty = DeepQuantileNet(
+            random_state=42,
+            non_crossing_penalty=0.0,
+        )
+        model_no_penalty.fit(sample_regression_data, target="y")
+        _ = model_no_penalty.predict(sample_regression_data)
+        # Note: post-sorting is applied in predict(), so we need to check
+        # the raw backend predictions before sorting.
+        raw_no_penalty = model_no_penalty._predict_backend(
+            model_no_penalty._scaler_.transform(
+                sample_regression_data.select(
+                    [c for c in sample_regression_data.columns if c != "y"]
+                ).to_numpy()
+            )
+        )
+        crossings_no_penalty = self._count_crossings(raw_no_penalty)
+
+        # Fit with penalty
+        model_with_penalty = DeepQuantileNet(
+            random_state=42,
+            non_crossing_penalty=10.0,
+        )
+        model_with_penalty.fit(sample_regression_data, target="y")
+        raw_with_penalty = model_with_penalty._predict_backend(
+            model_with_penalty._scaler_.transform(
+                sample_regression_data.select(
+                    [c for c in sample_regression_data.columns if c != "y"]
+                ).to_numpy()
+            )
+        )
+        crossings_with_penalty = self._count_crossings(raw_with_penalty)
+
+        # The penalty should reduce or eliminate crossings in the raw predictions
+        assert crossings_with_penalty <= crossings_no_penalty
+
+    def test_non_crossing_penalty_preserves_monotonicity(self, sample_regression_data):
+        """Predictions should remain monotone even with high penalty."""
+        model = DeepQuantileNet(
+            random_state=42,
+            non_crossing_penalty=50.0,
+        )
+        model.fit(sample_regression_data, target="y")
+        pred = model.predict(sample_regression_data)
+        # All rows should be sorted (no crossings after predict's post-sort)
+        for i in range(pred._quantiles.shape[0]):
+            row = pred._quantiles[i, :]
+            assert list(row) == sorted(row), "Quantiles should be non-crossing"
+
+    def test_non_crossing_penalty_zero_is_default(self, sample_regression_data):
+        """Default penalty should be 0.0 (no training-time penalty)."""
+        model = DeepQuantileNet(random_state=42)
+        assert model.non_crossing_penalty == 0.0
+
+
 class TestDeepQuantileNetUncertaintyDrivers:
     """Test uncertainty_drivers_ property."""
 

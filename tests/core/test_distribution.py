@@ -161,16 +161,17 @@ class TestMeanMethod:
     """Test mean() method."""
 
     def test_mean_univariate(self):
-        """Should return median (0.5 quantile) for univariate."""
+        """Should return median (0.5 quantile) for univariate and emit FutureWarning."""
         matrix = np.array([[1, 2, 3], [4, 5, 6]])
         dp = DistributionPrediction(
             quantile_matrix=matrix,
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        result = dp.mean()
+        with pytest.warns(FutureWarning, match="median"):
+            result = dp.mean()
         assert isinstance(result, pl.Series)
-        assert result.name == "mean"
+        assert result.name == "median"
         assert result.to_list() == [2, 5]
 
 
@@ -217,11 +218,10 @@ class TestMultivariate:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price", "volume"],
         )
-        result = dp.mean()
+        result = dp.median()
         assert isinstance(result, pl.DataFrame)
         assert "price" in result.columns
         assert "volume" in result.columns
-        # Mean is the 0.5 quantile (index 1 in [0.25, 0.5, 0.75])
         assert result.to_numpy().tolist() == [[2, 20], [5, 50]]
 
 
@@ -362,27 +362,6 @@ class TestSampleMethod:
         counts = result.group_by("sample_id").len().sort("sample_id")["len"].to_list()
         assert counts == [100001, 100001]
 
-    def test_sample_without_scipy(self, monkeypatch):
-        """Should raise ImportError if scipy not available."""
-        matrix = np.array([[1, 2, 3]])
-        dp = DistributionPrediction(
-            quantile_matrix=matrix,
-            quantile_levels=[0.25, 0.5, 0.75],
-            target_names=["price"],
-        )
-
-        original_import = __import__
-
-        def mock_import(name, *args, **kwargs):
-            if name == "scipy" or name.startswith("scipy."):
-                raise ImportError(f"No module named '{name}'")
-            return original_import(name, *args, **kwargs)
-
-        monkeypatch.setattr("builtins.__import__", mock_import)
-
-        with pytest.raises(ImportError, match="scipy is required for sampling"):
-            dp.sample(n=5)
-
     def test_sample_single_row(self):
         """Should work with single row."""
         matrix = np.array([[1.0, 2.0, 3.0]])
@@ -444,7 +423,6 @@ class TestSampleMethod:
             quantile_values,
             uniform,
             levels,
-            interp1d=None,
         )
 
         np.testing.assert_allclose(result, expected)
@@ -735,3 +713,233 @@ class TestTreatmentMethods:
         )
         repr_str = repr(dp)
         assert "posterior" in repr_str
+
+
+class TestDistributionPredictionSummary:
+    def test_summary_univariate(self):
+        matrix = np.array([[1.0, 2.0, 3.0, 4.0, 5.0]])
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["y"],
+        )
+        s = dp.summary()
+        assert isinstance(s, pl.DataFrame)
+        assert s.height == 1
+        assert s.columns == [
+            "target",
+            "median",
+            "interval_width",
+            "narrow_width",
+            "aleatoric",
+            "epistemic",
+            "total_uncertainty",
+        ]
+        assert s["target"][0] == "y"
+
+    def test_summary_multivariate(self):
+        matrix = np.array([[1, 2, 3, 4, 5, 10, 11, 12, 13, 14]])
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["a", "b"],
+        )
+        s = dp.summary()
+        assert s.height == 2
+        assert s["target"].to_list() == ["a", "b"]
+
+
+class TestDistributionPredictionCRPS:
+    def test_crps_univariate(self):
+        q = np.array([[5.0, 5.0, 5.0, 5.0, 5.0]])
+        dp = DistributionPrediction(q, [0.1, 0.25, 0.5, 0.75, 0.9], ["y"])
+        assert dp.crps(np.array([5.0])) == pytest.approx(0.0, abs=1e-10)
+
+    def test_crps_multivariate_returns_dict(self):
+        q = np.array([[1, 2, 3, 4, 5, 10, 11, 12, 13, 14]])
+        dp = DistributionPrediction(q, [0.1, 0.25, 0.5, 0.75, 0.9], ["a", "b"])
+        result = dp.crps(np.array([[3.0, 12.0]]))
+        assert isinstance(result, dict)
+        assert "a" in result and "b" in result
+
+    def test_crps_requires_two_quantile_levels(self):
+        q = np.array([[5.0]])
+        dp = DistributionPrediction(q, [0.5], ["y"])
+        with pytest.raises(ValueError, match="at least 2"):
+            dp.crps(np.array([5.0]))
+
+
+class TestDistributionPredictionPlotMultivariate:
+    def test_plot_all_targets(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        matrix = np.random.randn(10, 15)
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["a", "b", "c"],
+        )
+        import matplotlib.pyplot as plt
+
+        dp.plot(title="All")
+        fig = plt.gcf()
+        assert fig.axes[0] is not None
+        plt.close("all")
+
+    def test_plot_single_target_selection(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        matrix = np.random.randn(10, 15)
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["a", "b", "c"],
+        )
+        import matplotlib.pyplot as plt
+
+        dp.plot(targets="b")
+        fig = plt.gcf()
+        assert len(fig.axes) == 1
+        plt.close("all")
+
+    def test_plot_invalid_target_raises(self):
+        matrix = np.random.randn(10, 15)
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["a", "b", "c"],
+        )
+        with pytest.raises(ValueError, match="not found"):
+            dp.plot(targets="z")
+
+    def test_plot_max_targets_warning(self):
+        import matplotlib
+
+        matplotlib.use("Agg")
+
+        matrix = np.random.randn(10, 15)
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.1, 0.25, 0.5, 0.75, 0.9],
+            target_names=["a", "b", "c"],
+        )
+        import matplotlib.pyplot as plt
+
+        with pytest.warns(UserWarning, match="max_targets"):
+            dp.plot(targets="all", max_targets=2)
+        plt.close("all")
+
+
+class TestPITMethods:
+    """Tests for PIT histogram and calibration curve methods."""
+
+    @pytest.fixture
+    def calibrated_pred(self):
+        rng = np.random.default_rng(42)
+        n = 200
+        levels = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+        q_matrix = np.zeros((n, len(levels)))
+        for i, level in enumerate(levels):
+            q_matrix[:, i] = rng.normal(0, 1 + level, size=n)
+        q_matrix.sort(axis=1)
+        return DistributionPrediction(
+            quantile_matrix=q_matrix,
+            quantile_levels=levels,
+            target_names=["y"],
+        )
+
+    @pytest.fixture
+    def true_values(self):
+        rng = np.random.default_rng(42)
+        return pl.Series("y", rng.normal(0, 1, size=200))
+
+    def test_pit_histogram_returns_dataframe(self, calibrated_pred, true_values):
+        hist = calibrated_pred.pit_histogram(true_values, n_bins=10)
+        assert isinstance(hist, pl.DataFrame)
+        assert "bin_center" in hist.columns
+        assert "count" in hist.columns
+        assert "expected" in hist.columns
+        assert len(hist) == 10
+
+    def test_pit_histogram_counts_sum_to_n(self, calibrated_pred, true_values):
+        hist = calibrated_pred.pit_histogram(true_values, n_bins=10)
+        assert hist["count"].sum() == 200
+
+    def test_pit_histogram_expected_uniform(self, calibrated_pred, true_values):
+        hist = calibrated_pred.pit_histogram(true_values, n_bins=10)
+        expected_per_bin = hist["expected"][0]
+        assert expected_per_bin == pytest.approx(20.0)
+
+    def test_pit_values_in_unit_interval(self, calibrated_pred, true_values):
+        pit = calibrated_pred._pit_values(true_values)
+        assert isinstance(pit, np.ndarray)
+        assert pit.min() >= 0.0
+        assert pit.max() <= 1.0
+        assert len(pit) == 200
+
+    def test_calibration_curve_returns_dataframe(self, calibrated_pred, true_values):
+        curve = calibrated_pred.calibration_curve(true_values, n_bins=20)
+        assert isinstance(curve, pl.DataFrame)
+        assert "expected_coverage" in curve.columns
+        assert "observed_coverage" in curve.columns
+        assert len(curve) == 20
+
+    def test_calibration_curve_monotone_expected(self, calibrated_pred, true_values):
+        curve = calibrated_pred.calibration_curve(true_values, n_bins=20)
+        expected = curve["expected_coverage"].to_numpy()
+        assert np.all(np.diff(expected) >= 0)
+
+    def test_pit_histogram_multivariate(self):
+        rng = np.random.default_rng(42)
+        n = 50
+        levels = [0.1, 0.5, 0.9]
+        q_matrix = np.zeros((n, 6))
+        for t in range(2):
+            for i, level in enumerate(levels):
+                q_matrix[:, t * 3 + i] = rng.normal(0, 1 + level, size=n)
+            q_matrix[:, t * 3 : t * 3 + 3] = np.sort(q_matrix[:, t * 3 : t * 3 + 3], axis=1)
+        dp = DistributionPrediction(
+            quantile_matrix=q_matrix,
+            quantile_levels=levels,
+            target_names=["a", "b"],
+        )
+        y_true = pl.DataFrame(
+            {
+                "a": rng.normal(0, 1, n),
+                "b": rng.normal(5, 2, n),
+            }
+        )
+        hist = dp.pit_histogram(y_true, n_bins=5)
+        assert isinstance(hist, dict)
+        assert "a" in hist and "b" in hist
+        assert len(hist["a"]) == 5
+
+    def test_plot_pit_runs(self, calibrated_pred, true_values):
+        import matplotlib
+
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        calibrated_pred.plot_pit(true_values, n_bins=10)
+        plt.close("all")
+
+    def test_forward_cdf_edge_cases(self):
+        levels = np.array([0.25, 0.5, 0.75])
+        q_values = np.array([[1.0, 2.0, 3.0]])
+        y = np.array([0.5])
+        pit = DistributionPrediction._forward_cdf(q_values, levels, y)
+        assert 0.0 <= pit[0] <= 1.0
+        assert pit[0] < 0.25
+
+        y_above = np.array([5.0])
+        pit_above = DistributionPrediction._forward_cdf(q_values, levels, y_above)
+        assert 0.0 <= pit_above[0] <= 1.0
+        assert pit_above[0] > 0.75
+
+        y_mid = np.array([2.5])
+        pit_mid = DistributionPrediction._forward_cdf(q_values, levels, y_mid)
+        assert pytest.approx(pit_mid[0], abs=0.05) == 0.625

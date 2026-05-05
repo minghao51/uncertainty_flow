@@ -72,7 +72,7 @@ def score_distribution_prediction(
     Lower is better.
     """
     interval = pred.interval(confidence)
-    mean_pred = pred.mean()
+    mean_pred = pred.median()
 
     scores = []
     for target in target_names:
