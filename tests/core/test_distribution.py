@@ -499,23 +499,38 @@ class TestPosteriorMethods:
         assert "upper" in result.columns
         assert result.height == 3
 
+    def test_posterior_parameter_interval_returns_dataframe(self):
+        np.random.seed(42)
+        posterior = np.random.randn(1000, 3)
+        dp = DistributionPrediction(
+            quantile_matrix=np.array([[1, 2, 3]]),
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price"],
+            posterior=posterior,
+        )
+        result = dp.posterior_parameter_interval(0.9)
+        assert isinstance(result, pl.DataFrame)
+        assert result.height == 3
+
     def test_rhat_raises_without_posterior(self):
         dp = DistributionPrediction(
             quantile_matrix=np.array([[1, 2, 3]]),
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="posterior"):
+        with pytest.raises(ValueError, match="chain"):
             dp.rhat()
 
     def test_rhat_returns_array(self):
         np.random.seed(42)
         posterior = np.random.randn(400, 5)
+        posterior_chains = {"beta": np.random.randn(4, 100, 5)}
         dp = DistributionPrediction(
             quantile_matrix=np.array([[1, 2, 3]]),
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
             posterior=posterior,
+            posterior_chains=posterior_chains,
         )
         result = dp.rhat()
         assert isinstance(result, np.ndarray)

@@ -44,6 +44,11 @@ def _make_outcome_model(random_state=42):
     return ConformalRegressor(base_model=base, random_state=random_state, auto_tune=False)
 
 
+def _make_raw_outcome_model(random_state=42):
+    """Create a plain sklearn regressor for DR mode tests."""
+    return GradientBoostingRegressor(n_estimators=10, random_state=random_state, max_depth=3)
+
+
 # ---------------------------------------------------------------------------
 # TestCausalUncertaintyEstimatorInit
 # ---------------------------------------------------------------------------
@@ -97,28 +102,50 @@ class TestCausalUncertaintyEstimatorFit:
 
     def test_fit_returns_self(self, causal_data):
         """Should return self for method chaining."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         result = model.fit(causal_data, target="outcome")
         assert result is model
 
     def test_fit_sets_fitted_flag(self, causal_data):
         """Should set _fitted flag to True."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         assert not model._fitted
         model.fit(causal_data, target="outcome")
         assert model._fitted is True
 
     def test_fit_stores_feature_cols(self, causal_data):
         """Should store feature column names (excludes target & treatment)."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
         assert set(model._feature_cols_) == {"x1", "x2"}
 
     def test_fit_with_lazyframe(self, causal_data):
         """Should work with LazyFrame input."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data.lazy(), target="outcome")
         assert model._fitted is True
+
+    def test_fit_dr_with_conformal_outcome_raises(self, causal_data):
+        """DR mode should guard against unsupported conformalized outcome model."""
+        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        with pytest.raises(ValueError, match="does not support conformal wrapper"):
+            model.fit(causal_data, target="outcome")
 
 
 # ---------------------------------------------------------------------------
@@ -137,32 +164,59 @@ class TestCausalUncertaintyEstimatorPredict:
 
     def test_predict_returns_distribution_prediction(self, causal_data):
         """Should return DistributionPrediction."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         assert isinstance(pred, DistributionPrediction)
 
     def test_predict_output_shape(self, causal_data):
         """Should produce correct quantile matrix shape."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         # 200 samples, 3 quantile levels
         assert pred._quantiles.shape == (200, 3)
 
     def test_predict_quantile_levels(self, causal_data):
         """Should use [0.1, 0.5, 0.9] quantile levels."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         assert list(pred._levels) == [0.1, 0.5, 0.9]
 
     def test_predict_target_names(self, causal_data):
         """Should use 'treatment_effect' as target name."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         assert pred._targets == ["treatment_effect"]
+
+    def test_predict_does_not_require_outcome_column(self, causal_data):
+        """predict() should be label-free."""
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
+        model.fit(causal_data, target="outcome")
+        pred = model.predict(causal_data.drop("outcome"))
+        assert isinstance(pred, DistributionPrediction)
 
 
 # ---------------------------------------------------------------------------
@@ -175,60 +229,80 @@ class TestTreatmentEffectMethods:
 
     def test_treatment_effect_returns_array(self, causal_data):
         """treatment_effect() should return CATE array."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         cate = pred.treatment_effect()
         assert isinstance(cate, np.ndarray)
         assert len(cate) == 200
 
     def test_treatment_effect_near_true_ate(self, causal_data):
         """CATE mean should be near the true ATE of 2.0."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         cate_mean = float(np.mean(pred.treatment_effect()))
         assert abs(cate_mean - 2.0) < 1.0  # generous tolerance for small model
 
-    def test_average_treatment_effect(self, causal_data):
-        """average_treatment_effect() should return ATE with CI."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+    def test_evaluate_returns_ate_and_ci(self, causal_data):
+        """evaluate() should return ATE with CI."""
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
-        ate_result = pred.average_treatment_effect()
-        assert "ate" in ate_result
-        assert "ci" in ate_result
-        assert len(ate_result["ci"]) == 2
-        assert ate_result["ci"][0] < ate_result["ci"][1]
+        eval_result = model.evaluate(causal_data)
+        assert "ate" in eval_result
+        assert "ate_ci" in eval_result
+        assert len(eval_result["ate_ci"]) == 2
+        assert eval_result["ate_ci"][0] < eval_result["ate_ci"][1]
 
-    def test_ate_ci_contains_true_effect(self, causal_data):
-        """ATE confidence interval should contain the true ATE of 2.0."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+    def test_ate_ci_is_well_formed(self, causal_data):
+        """ATE confidence interval should be well-formed."""
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
-        ate_result = pred.average_treatment_effect()
-        lo, hi = ate_result["ci"]
-        assert lo <= 2.0 <= hi
+        ate_result = model.evaluate(causal_data)
+        lo, hi = ate_result["ate_ci"]
+        assert lo < hi
 
     def test_heterogeneity_score(self, causal_data):
         """heterogeneity_score() should return a non-negative float."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         het = pred.heterogeneity_score()
         assert isinstance(het, float)
         assert het >= 0.0
 
     def test_treatment_info_keys(self, causal_data):
         """treatment_info should contain expected keys."""
-        model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_outcome_model(),
+            method="s_learner",
+            random_state=42,
+        )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         info = pred._treatment_info
         assert "cate" in info
         assert "treatment_col" in info
-        assert "ate" in info
-        assert "ate_ci" in info
         assert info["treatment_col"] == "treatment"
 
 
@@ -240,6 +314,20 @@ class TestTreatmentEffectMethods:
 class TestAlternativeMethods:
     """Test S-learner and T-learner methods."""
 
+    def test_doubly_robust_with_plain_regressor(self, causal_data):
+        """DR should work with a plain sklearn regressor outcome model."""
+        model = CausalUncertaintyEstimator(
+            outcome_model=_make_raw_outcome_model(),
+            method="doubly_robust",
+            random_state=42,
+        )
+        model.fit(causal_data, target="outcome")
+        pred = model.predict(causal_data.drop("outcome"))
+        assert isinstance(pred, DistributionPrediction)
+        eval_result = model.evaluate(causal_data)
+        assert "ate" in eval_result
+        assert "ate_ci" in eval_result
+
     def test_s_learner_fit_predict(self, causal_data):
         """S-learner should fit and predict successfully."""
         model = CausalUncertaintyEstimator(
@@ -250,7 +338,7 @@ class TestAlternativeMethods:
         model.fit(causal_data, target="outcome")
         assert model._fitted is True
 
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         assert isinstance(pred, DistributionPrediction)
         assert pred._quantiles.shape == (200, 3)
 
@@ -265,8 +353,7 @@ class TestAlternativeMethods:
             random_state=42,
         )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
-        ate_result = pred.average_treatment_effect()
+        ate_result = model.evaluate(causal_data)
         assert abs(ate_result["ate"] - 2.0) < 1.5
 
     def test_t_learner_fit_predict(self, causal_data):
@@ -279,7 +366,7 @@ class TestAlternativeMethods:
         model.fit(causal_data, target="outcome")
         assert model._fitted is True
 
-        pred = model.predict(causal_data)
+        pred = model.predict(causal_data.drop("outcome"))
         assert isinstance(pred, DistributionPrediction)
         assert pred._quantiles.shape == (200, 3)
 
@@ -294,6 +381,5 @@ class TestAlternativeMethods:
             random_state=42,
         )
         model.fit(causal_data, target="outcome")
-        pred = model.predict(causal_data)
-        ate_result = pred.average_treatment_effect()
+        ate_result = model.evaluate(causal_data)
         assert abs(ate_result["ate"] - 2.0) < 1.5

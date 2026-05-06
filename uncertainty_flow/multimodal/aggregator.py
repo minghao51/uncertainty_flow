@@ -154,7 +154,10 @@ class CrossModalAggregator(BaseUncertaintyModel):
         if self.aggregation == "product":
             return self._aggregate_product(group_preds)
         elif self.aggregation == "copula":
-            return self._aggregate_independent(group_preds)
+            raise NotImplementedError(
+                "aggregation='copula' is not implemented yet for CrossModalAggregator. "
+                "Use aggregation='product' or 'independent'."
+            )
         else:  # independent
             return self._aggregate_independent(group_preds)
 

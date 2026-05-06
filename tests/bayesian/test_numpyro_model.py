@@ -212,12 +212,34 @@ class TestBayesianPosteriorMethods:
         """rhat() should return an array of convergence diagnostics."""
         from uncertainty_flow.bayesian import BayesianQuantileRegressor
 
+        model = BayesianQuantileRegressor(n_warmup=10, n_samples=10, num_chains=2, random_state=0)
+        model.fit(regression_data, target="y")
+        pred = model.predict(regression_data)
+        rhat = pred.rhat()
+        assert isinstance(rhat, np.ndarray)
+        assert rhat.ndim == 1
+
+    def test_rhat_single_chain_raises(self, regression_data):
+        """rhat() should fail when only one chain is available."""
+        from uncertainty_flow.bayesian import BayesianQuantileRegressor
+
+        model = BayesianQuantileRegressor(n_warmup=10, n_samples=10, num_chains=1, random_state=0)
+        model.fit(regression_data, target="y")
+        pred = model.predict(regression_data)
+        with pytest.raises(ValueError, match="at least 2 chains"):
+            pred.rhat()
+
+    def test_posterior_parameter_interval(self, regression_data):
+        """posterior_parameter_interval() should return lower/upper."""
+        from uncertainty_flow.bayesian import BayesianQuantileRegressor
+
         model = BayesianQuantileRegressor(n_warmup=10, n_samples=10, random_state=0)
         model.fit(regression_data, target="y")
         pred = model.predict(regression_data)
-        rhat = pred.rhat(n_chains=2)
-        assert isinstance(rhat, np.ndarray)
-        assert rhat.ndim == 1
+        ci = pred.posterior_parameter_interval(0.9)
+        assert isinstance(ci, pl.DataFrame)
+        assert "lower" in ci.columns
+        assert "upper" in ci.columns
 
     def test_posterior_summary(self, regression_data):
         """posterior_summary() should return a DataFrame with stats."""

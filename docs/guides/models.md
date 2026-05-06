@@ -22,7 +22,7 @@ This document is the current guide to model selection and guarantee tradeoffs.
 | `DeepQuantileNetTorch` | Optional neural model | Empirical | Training-time support available | Yes | GPU-backed training and deeper experimentation |
 | `TransformerForecaster` | Optional foundation-model wrapper | Empirical or calibrated depending on workflow | Model-dependent | Yes | Pretrained forecasting workflows |
 | `BayesianQuantileRegressor` | Bayesian (optional NumPyro) | Posterior-based | Post-sort | No | Full posterior inference, small datasets, credible intervals |
-| `CausalUncertaintyEstimator` | Causal inference | Conformal on CATE | N/A | No | Treatment effect estimation with uncertainty |
+| `CausalUncertaintyEstimator` | Causal inference | Method-dependent | N/A | No | Treatment effect estimation with uncertainty |
 | `CrossModalAggregator` | Multi-modal ensemble | Inherited from base models | Inherited | Yes | Combine predictions from separate feature groups |
 | `ConformalRiskControl` | Risk control | Risk-bounded | Post-sort | No | Control expected loss instead of coverage |
 
@@ -71,15 +71,15 @@ Use this for pretrained time-series workflows when the optional dependency stack
 
 ### `BayesianQuantileRegressor`
 
-Use this when you need full posterior distributions rather than discrete quantiles. Provides credible intervals on quantiles themselves via MCMC (NUTS sampler). Best suited for smaller datasets where conformal methods may lack calibration data. Requires `numpyro` and `jax` (optional dependency).
+Use this when you need full posterior distributions rather than discrete quantiles. Supports predictive credible intervals and separate posterior-parameter interval summaries via MCMC (NUTS sampler). Best suited for smaller datasets where conformal methods may lack calibration data. Requires `numpyro` and `jax` (optional dependency).
 
 ### `CausalUncertaintyEstimator`
 
-Use this to estimate treatment effects (CATE/ATE) with conformal confidence intervals. Supports doubly-robust, S-learner, and T-learner methods. Wraps outcome and propensity models built from existing `ConformalRegressor` instances. No extra dependencies.
+Use this to estimate treatment effects (CATE) from features and treatment assignments. `predict()` is label-free; outcome-dependent ATE/CI metrics are computed with `evaluate(...)` on labeled data. Supports doubly-robust, S-learner, and T-learner methods. Doubly-robust mode currently requires a direct regressor outcome model (not a conformal wrapper). No extra dependencies.
 
 ### `CrossModalAggregator`
 
-Use this when features naturally form groups (demographics, temporal, weather) and you want per-group uncertainty attribution alongside combined predictions. Aggregation strategies: product (assumes conditional independence), copula (models cross-group dependence), independent (simple average). No extra dependencies.
+Use this when features naturally form groups (demographics, temporal, weather) and you want per-group uncertainty attribution alongside combined predictions. Aggregation strategies: product (assumes conditional independence), independent (simple average). `copula` aggregation is currently reserved and raises `NotImplementedError`. No extra dependencies.
 
 ### `ConformalRiskControl`
 

@@ -32,8 +32,8 @@ uncertainty_flow/
 - **Wrappers:** `ConformalRegressor` and `ConformalForecaster` adapt existing estimators and add calibrated uncertainty.
 - **Native models:** `QuantileForestForecaster`, `DeepQuantileNet`, optional `DeepQuantileNetTorch`, and optional `TransformerForecaster`.
 - **Bayesian:** `BayesianQuantileRegressor` provides posterior inference via NumPyro MCMC (optional dependency).
-- **Causal:** `CausalUncertaintyEstimator` estimates treatment effects with conformal uncertainty (doubly robust, S-learner, T-learner).
-- **Multi-modal:** `CrossModalAggregator` combines predictions from separate feature groups using product, copula, or independent aggregation.
+- **Causal:** `CausalUncertaintyEstimator` estimates treatment effects (doubly robust, S-learner, T-learner); outcome-dependent metrics are evaluated separately on labeled data.
+- **Multi-modal:** `CrossModalAggregator` combines predictions from separate feature groups using product or independent aggregation (`copula` currently raises `NotImplementedError`).
 - **Risk control:** `ConformalRiskControl` wraps conformal prediction around user-defined risk functions (asymmetric loss, inventory cost, VaR, threshold penalty).
 - **Counterfactual:** `UncertaintyExplainer` finds minimal feature changes to reduce prediction interval width.
 - **Analysis:** `FeatureLeverageAnalyzer` scores features by their impact on interval width (aleatoric vs epistemic).
@@ -142,5 +142,5 @@ These modules consume a fitted model and optionally test data. They do not modif
 
 ## Causal and Counterfactual Modules
 
-- **CausalUncertaintyEstimator** wraps outcome and propensity models to produce treatment effect estimates (CATE) with conformal confidence intervals. Supports doubly-robust, S-learner, and T-learner methods.
+- **CausalUncertaintyEstimator** wraps outcome and propensity models to produce treatment effect estimates (CATE). `predict()` is label-free; ATE/CI are computed via `evaluate(...)` on labeled data. Supports doubly-robust, S-learner, and T-learner methods.
 - **UncertaintyExplainer** searches for minimal feature perturbations that reduce interval width, using evolutionary search for tree models and gradient descent for differentiable models.

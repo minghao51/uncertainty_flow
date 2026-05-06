@@ -52,7 +52,9 @@ class DistributionPrediction:
         quantile_matrix: np.ndarray,
         quantile_levels: list[float],
         target_names: list[str],
-        posterior: np.ndarray | None = None,
+        posterior: np.ndarray | dict[str, np.ndarray] | None = None,
+        posterior_chains: dict[str, np.ndarray] | None = None,
+        posterior_predictive: np.ndarray | None = None,
         group_predictions: dict[str, "DistributionPrediction"] | None = None,
         treatment_info: dict | None = None,
         copula: "BaseCopula | None" = None,
@@ -87,6 +89,8 @@ class DistributionPrediction:
 
         # Optional extensions for Bayesian, Multi-Modal, Causal modules
         self._posterior = posterior
+        self._posterior_chains = posterior_chains
+        self._posterior_predictive = posterior_predictive
         self._group_predictions = group_predictions
         self._treatment_info = treatment_info
         self._copula = copula
@@ -867,63 +871,106 @@ class DistributionPrediction:
         ]
         if self._posterior is not None:
             parts.append(", posterior=True")
+        if self._posterior_predictive is not None:
+            parts.append(", posterior_predictive=True")
         parts.append(")")
         return "".join(parts)
 
     # --- Bayesian posterior methods ---
 
     def posterior_samples(self) -> np.ndarray:
-        """Return raw MCMC posterior samples."""
+        """Return raw posterior parameter draws as a 2D matrix."""
         if self._posterior is None:
             error_invalid_data(
                 "posterior_samples() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
-        return self._posterior
+        if isinstance(self._posterior, np.ndarray):
+            return self._posterior
 
-    def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
-        """Compute Bayesian credible interval from posterior."""
+        # Concatenate named posterior tensors into [draw, feature] for summaries.
+        matrices = []
+        for arr in self._posterior.values():
+            arr_np = np.asarray(arr)
+            if arr_np.ndim == 1:
+                matrices.append(arr_np[:, np.newaxis])
+            else:
+                matrices.append(arr_np.reshape(arr_np.shape[0], -1))
+        if not matrices:
+            error_invalid_data("posterior data is empty")
+        return np.column_stack(matrices)
+
+    def posterior_parameter_interval(self, confidence: float = 0.9) -> pl.DataFrame:
+        """Compute parameter credible intervals from posterior draws."""
         if not (0 < confidence < 1):
             error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
-        if self._posterior is None:
-            error_invalid_data(
-                "credible_interval() requires posterior data. "
-                "Use a BayesianQuantileRegressor to generate predictions with posteriors."
-            )
+        samples = self.posterior_samples()
         alpha = (1 - confidence) / 2
-        lower = np.quantile(self._posterior, alpha, axis=0)
-        upper = np.quantile(self._posterior, 1 - alpha, axis=0)
+        lower = np.quantile(samples, alpha, axis=0)
+        upper = np.quantile(samples, 1 - alpha, axis=0)
         return pl.DataFrame({"lower": lower, "upper": upper}, orient="row")
 
-    def rhat(self, n_chains: int = 4) -> np.ndarray:
-        """Compute Gelman-Rubin R-hat convergence diagnostic."""
-        if self._posterior is None:
-            error_invalid_data(
-                "rhat() requires posterior data. "
-                "Use a BayesianQuantileRegressor to generate predictions with posteriors."
-            )
-        samples = self._posterior
-        n_total = samples.shape[0]
-        if n_total % n_chains != 0:
-            error_invalid_data(
-                f"n_chains={n_chains} does not evenly divide n_total={n_total}. "
-                f"R-hat requires n_total to be a multiple of n_chains."
-            )
-        chain_len = n_total // n_chains
-        chains = samples.reshape(n_chains, chain_len, -1)
-        chain_means = chains.mean(axis=1)
-        b = chain_len * np.var(chain_means, axis=0, ddof=1)
-        w = np.mean(np.var(chains, axis=1, ddof=1), axis=0)
+    def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
+        """Compute predictive credible intervals for each prediction row."""
+        import warnings
 
-        if np.any(w < 1e-10):
+        if not (0 < confidence < 1):
+            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
+
+        if self._posterior_predictive is None:
+            warnings.warn(
+                "credible_interval() currently falls back to parameter intervals when "
+                "posterior predictive draws are unavailable. Use "
+                "posterior_parameter_interval() for explicit parameter intervals.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            return self.posterior_parameter_interval(confidence)
+
+        alpha = (1 - confidence) / 2
+        lower = np.quantile(self._posterior_predictive, alpha, axis=1)
+        upper = np.quantile(self._posterior_predictive, 1 - alpha, axis=1)
+        return pl.DataFrame({"lower": lower, "upper": upper}, orient="row")
+
+    def rhat(self) -> np.ndarray:
+        """Compute Gelman-Rubin R-hat convergence diagnostic from true chains."""
+        if self._posterior_chains is None:
             error_invalid_data(
-                f"Within-chain variance too close to zero for R-hat calculation. "
-                f"This may indicate chains have not mixed properly. "
-                f"Minimum w: {np.min(w):.2e}"
+                "rhat() requires posterior chain data. "
+                "Fit BayesianQuantileRegressor with num_chains > 1."
             )
 
-        var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
-        return np.sqrt(var_hat / w)
+        all_rhat = []
+        for name, arr in self._posterior_chains.items():
+            chains = np.asarray(arr)
+            if chains.ndim < 2:
+                error_invalid_data(f"posterior chain array for '{name}' must be at least 2D")
+            n_chains = chains.shape[0]
+            chain_len = chains.shape[1]
+            if n_chains < 2:
+                error_invalid_data(
+                    f"rhat() requires at least 2 chains for '{name}', got {n_chains}."
+                )
+            if chain_len < 2:
+                error_invalid_data(
+                    f"rhat() requires at least 2 draws per chain for '{name}', got {chain_len}."
+                )
+            reshaped = chains.reshape(n_chains, chain_len, -1)
+            chain_means = reshaped.mean(axis=1)
+            b = chain_len * np.var(chain_means, axis=0, ddof=1)
+            w = np.mean(np.var(reshaped, axis=1, ddof=1), axis=0)
+            if np.any(w < 1e-10):
+                error_invalid_data(
+                    f"Within-chain variance too close to zero for R-hat calculation for '{name}'."
+                )
+            var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
+            all_rhat.append(np.sqrt(var_hat / w))
+
+        if not all_rhat:
+            error_invalid_data(
+                "rhat() requires at least one posterior chain parameter to evaluate."
+            )
+        return np.concatenate(all_rhat)
 
     def posterior_summary(self) -> pl.DataFrame:
         """Return summary statistics of posterior samples."""
@@ -932,13 +979,14 @@ class DistributionPrediction:
                 "posterior_summary() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
+        samples = self.posterior_samples()
         return pl.DataFrame(
             {
-                "mean": np.mean(self._posterior, axis=0),
-                "std": np.std(self._posterior, axis=0),
-                "q025": np.quantile(self._posterior, 0.025, axis=0),
-                "q50": np.quantile(self._posterior, 0.5, axis=0),
-                "q975": np.quantile(self._posterior, 0.975, axis=0),
+                "mean": np.mean(samples, axis=0),
+                "std": np.std(samples, axis=0),
+                "q025": np.quantile(samples, 0.025, axis=0),
+                "q50": np.quantile(samples, 0.5, axis=0),
+                "q975": np.quantile(samples, 0.975, axis=0),
             }
         )
 
@@ -999,6 +1047,11 @@ class DistributionPrediction:
         if self._treatment_info is None:
             error_invalid_data(
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
+            )
+        if "ate" not in self._treatment_info or "ate_ci" not in self._treatment_info:
+            error_invalid_data(
+                "average_treatment_effect() requires evaluated treatment metrics. "
+                "Call CausalUncertaintyEstimator.evaluate(...) on labeled data first."
             )
         return {
             "ate": self._treatment_info["ate"],

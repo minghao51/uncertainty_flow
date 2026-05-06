@@ -84,9 +84,10 @@ class TestIntegrationSmoke:
                 random_state=42,
             ),
             treatment_col="treatment",
+            method="s_learner",
         )
         model.fit(df, target="outcome")
-        pred = model.predict(df)
+        pred = model.predict(df.drop("outcome"))
         assert isinstance(pred, DistributionPrediction)
         assert pred._quantiles.shape[0] == n
 

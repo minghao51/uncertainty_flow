@@ -7,6 +7,7 @@ import numpyro
 import numpyro.distributions as dist
 from jax import random
 from numpyro.infer import MCMC, NUTS
+from numpyro.infer.util import Predictive
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
@@ -30,6 +31,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         quantiles: list[float] | None = None,
         n_warmup: int = 500,
         n_samples: int = 1000,
+        num_chains: int = 1,
         kernel: str = "nuts",
         prior_width: float = 1.0,
         random_state: int | None = None,
@@ -41,6 +43,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
             quantiles: Quantile levels to predict. Defaults to [0.1, 0.5, 0.9].
             n_warmup: Number of MCMC warmup (burn-in) samples.
             n_samples: Number of MCMC posterior samples.
+            num_chains: Number of independent MCMC chains.
             kernel: MCMC kernel type. Currently only "nuts" is supported.
             prior_width: Scale parameter for horseshoe-like priors.
             random_state: Random seed for reproducibility.
@@ -48,6 +51,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         self.quantiles = quantiles or [0.1, 0.5, 0.9]
         self.n_warmup = n_warmup
         self.n_samples = n_samples
+        self.num_chains = num_chains
         self.kernel = kernel
         self.prior_width = prior_width
         self.random_state = random_state
@@ -56,6 +60,8 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         self._feature_cols_: list[str] = []
         self._target_col_: str = ""
         self._posterior_samples_: np.ndarray | None = None
+        self._posterior_named_: dict[str, np.ndarray] | None = None
+        self._posterior_chains_: dict[str, np.ndarray] | None = None
         self._n_features_: int = 0
         self._y_mean_: float = 0.0
         self._y_std_: float = 1.0
@@ -136,11 +142,15 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
             nuts_kernel,
             num_warmup=self.n_warmup,
             num_samples=self.n_samples,
+            num_chains=self.num_chains,
         )
         mcmc.run(rng_key, x=x, y=y_scaled)
 
         # Convert JAX posterior samples to numpy
         samples = mcmc.get_samples()
+        chain_samples = mcmc.get_samples(group_by_chain=True)
+        self._posterior_named_ = {k: np.array(v) for k, v in samples.items()}
+        self._posterior_chains_ = {k: np.array(v) for k, v in chain_samples.items()}
         self._posterior_samples_ = np.column_stack([np.array(v) for v in samples.values()])
 
         self._fitted = True
@@ -164,6 +174,10 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
 
         if self._posterior_samples_ is None:
             raise RuntimeError("Internal error: posterior samples not available after fitting")
+        if self._posterior_named_ is None:
+            raise RuntimeError(
+                "Internal error: named posterior samples not available after fitting"
+            )
 
         # Materialize LazyFrame
         data = materialize_lazyframe(data)
@@ -239,9 +253,21 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         # Sort each row for monotonicity
         quantile_matrix = np.sort(quantile_matrix, axis=1)
 
+        # Posterior predictive draws from NumPyro model.
+        predictive = Predictive(
+            self._numpyro_model,
+            posterior_samples=self._posterior_named_,
+            return_sites=["obs"],
+        )
+        pred_key = random.PRNGKey((self.random_state or 0) + 1)
+        pred_scaled = np.array(predictive(pred_key, x=x)["obs"])
+        posterior_predictive = pred_scaled.T * self._y_std_ + self._y_mean_
+
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,
             quantile_levels=self.quantiles,
             target_names=[self._target_col_],
-            posterior=self._posterior_samples_,
+            posterior=self._posterior_named_,
+            posterior_chains=self._posterior_chains_,
+            posterior_predictive=posterior_predictive,
         )

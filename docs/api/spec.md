@@ -457,6 +457,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
         quantiles: list[float] | None = None,
         n_warmup: int = 500,
         n_samples: int = 1000,
+        num_chains: int = 1,
         kernel: str = "nuts",
         prior_width: float = 1.0,
         random_state: int | None = None,
@@ -475,15 +476,15 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
 
 ## 12. `CausalUncertaintyEstimator`
 
-> Treatment effect estimation with conformal uncertainty. Supports doubly-robust, S-learner, and T-learner methods.
-> **Coverage guarantee: ✅ Conformal on CATE estimates**
+> Treatment effect estimation. Supports doubly-robust, S-learner, and T-learner methods.
+> `predict()` is label-free; outcome-dependent ATE/CI metrics are computed with `evaluate(...)`.
 
 ```python
 class CausalUncertaintyEstimator(BaseUncertaintyModel):
 
     def __init__(
         self,
-        outcome_model,                      # ConformalRegressor or similar
+        outcome_model,                      # sklearn-like regressor; DR mode disallows conformal wrappers
         propensity_model=None,              # Optional, defaults to logistic
         treatment_col: str = "treatment",
         method: str = "doubly_robust",      # "doubly_robust" | "s_learner" | "t_learner"
@@ -497,6 +498,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
     ) -> "CausalUncertaintyEstimator": ...
 
     def predict(self, data: pl.DataFrame | pl.LazyFrame) -> DistributionPrediction: ...
+
+    def evaluate(self, data: pl.DataFrame | pl.LazyFrame) -> dict: ...
 ```
 
 ---
@@ -525,6 +528,8 @@ class CrossModalAggregator(BaseUncertaintyModel):
 
     def predict(self, data: pl.DataFrame | pl.LazyFrame) -> DistributionPrediction: ...
 ```
+
+`aggregation="copula"` is currently reserved and raises `NotImplementedError`.
 
 ---
 

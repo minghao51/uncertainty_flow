@@ -237,12 +237,11 @@ class TestGroupMethodsIntegration:
         assert isinstance(pred_ind, DistributionPrediction)
         assert pred_ind._quantiles.shape == (100, 11)
 
-    def test_copula_aggregation_falls_back(self, multimodal_data):
-        """Copula aggregation currently falls back to independent."""
+    def test_copula_aggregation_not_implemented(self, multimodal_data):
+        """Copula aggregation should fail fast until implemented."""
         agg_cop = CrossModalAggregator(
             feature_groups=FEATURE_GROUPS, aggregation="copula", random_state=42
         )
         agg_cop.fit(multimodal_data, target="demand", base_model=_make_base_model())
-        pred_cop = agg_cop.predict(multimodal_data)
-        assert isinstance(pred_cop, DistributionPrediction)
-        assert pred_cop._quantiles.shape == (100, 11)
+        with pytest.raises(NotImplementedError, match="not implemented"):
+            agg_cop.predict(multimodal_data)
