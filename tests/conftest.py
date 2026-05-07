@@ -18,6 +18,7 @@ _INTEGRATION_DIRS = {
     "causal",
     "counterfactual",
     "decomposition",
+    "metrics",
     "multivariate",
     "multimodal",
     "risk",

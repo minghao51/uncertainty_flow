@@ -175,3 +175,20 @@ class TestEnvironmentVariables:
         config = get_config()
         assert config.warn_calibration_size == 40
         reset_config()
+
+
+class TestChronosModelConfig:
+    def test_default_chronos_model(self):
+        config = QuantileConfig()
+        assert config.default_chronos_model == "chronos-bolt-small"
+
+    def test_custom_chronos_model(self):
+        config = QuantileConfig(default_chronos_model="chronos-bolt-tiny")
+        assert config.default_chronos_model == "chronos-bolt-tiny"
+
+    def test_warn_threshold_equal_to_min(self):
+        config = QuantileConfig(
+            min_calibration_size=20,
+            warn_calibration_size=20,
+        )
+        assert config.warn_calibration_size == 20

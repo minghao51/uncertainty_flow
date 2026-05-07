@@ -245,3 +245,100 @@ class TestRecalibratedModel:
         pred = recal.predict(calib)
         assert pred._targets == ["y1", "y2"]
         assert pred._n_quantiles == 3
+
+    def test_cross_calibrate_fallback_with_few_samples(self):
+        n = 1
+        df = self._make_miscalibrated_data(n=n)
+
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+            calibration_size=0.3,
+        )
+        base.fit(self._make_miscalibrated_data(n=100), target="y")
+
+        recal = RecalibratedModel(model=base, cross_calibrate=True, n_folds=5)
+        recal.fit(df, target="y")
+
+        pred = recal.predict(df)
+        assert isinstance(pred, DistributionPrediction)
+
+    def test_cross_calibrate_multivariate(self):
+        rng = np.random.default_rng(42)
+        n = 150
+        x = np.linspace(0, 10, n)
+        y1 = 2 * x + rng.normal(0, 1, size=n)
+        y2 = -1 * x + rng.normal(0, 1, size=n)
+        df = pl.DataFrame({"x": x, "y1": y1, "y2": y2})
+
+        calib = df[100:]
+
+        class MultiModel:
+            _fitted = True
+
+            def predict(self, data):
+                _ = len(data)
+                levels = [0.1, 0.5, 0.9]
+                q1 = np.column_stack(
+                    [
+                        data["x"].to_numpy() - 0.5,
+                        data["x"].to_numpy(),
+                        data["x"].to_numpy() + 0.5,
+                    ]
+                )
+                q2 = np.column_stack(
+                    [
+                        -data["x"].to_numpy() - 0.5,
+                        -data["x"].to_numpy(),
+                        -data["x"].to_numpy() + 0.5,
+                    ]
+                )
+                quantile_matrix = np.column_stack([q1, q2])
+                return DistributionPrediction(
+                    quantile_matrix=quantile_matrix,
+                    quantile_levels=levels,
+                    target_names=["y1", "y2"],
+                )
+
+        recal = RecalibratedModel(model=MultiModel(), cross_calibrate=True, n_folds=3)
+        recal.fit(calib)
+
+        pred = recal.predict(calib)
+        assert pred._targets == ["y1", "y2"]
+
+    def test_miscalibrated_model_recalibration(self):
+        rng = np.random.default_rng(42)
+        n = 300
+        y_true = rng.normal(0, 1, size=n)
+        df = pl.DataFrame({"y": y_true})
+
+        levels = [0.1, 0.5, 0.9]
+        # Deliberately miscalibrated: quantiles are shifted
+        miscal_quantiles = np.column_stack(
+            [
+                np.full(n, -2.0),
+                np.full(n, 0.0),
+                np.full(n, 0.5),
+            ]
+        )
+
+        class MiscalModel:
+            _fitted = True
+
+            def predict(self, data):
+                return DistributionPrediction(
+                    quantile_matrix=miscal_quantiles[: len(data)],
+                    quantile_levels=levels,
+                    target_names=["y"],
+                )
+
+        recal = RecalibratedModel(model=MiscalModel())
+        recal.fit(df, target="y")
+
+        pred = recal.predict(df[:10])
+        assert isinstance(pred, DistributionPrediction)
+        assert pred._n_samples == 10
+        # Quantiles should be sorted (output_matrix sorted in predict)
+        q = pred._quantiles
+        assert np.all(q[:, 0] <= q[:, 1])
+        assert np.all(q[:, 1] <= q[:, 2])

@@ -1,6 +1,7 @@
 """Base classes for uncertainty quantification models."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -53,6 +54,32 @@ class BaseUncertaintyModel(ABC):
             DistributionPrediction object with quantile predictions
         """
         ...
+
+    def predict_batch(
+        self,
+        data: PolarsInput,
+        batch_size: int = 1000,
+    ) -> Iterator["DistributionPrediction"]:
+        """
+        Generate probabilistic predictions in chunks.
+
+        Default implementation slices the data into batches and yields a
+        ``DistributionPrediction`` per batch.  Models with native batch
+        / GPU support (e.g. torch) should override this.
+
+        Args:
+            data: Polars DataFrame or LazyFrame with features
+            batch_size: Number of rows per batch (default 1000).
+
+        Yields:
+            DistributionPrediction for each chunk.
+        """
+        data = materialize_lazyframe(data)
+        n = len(data)
+
+        for start in range(0, n, batch_size):
+            chunk = data[start : start + batch_size]
+            yield self.predict(chunk)
 
     def calibration_report(
         self,
@@ -154,5 +181,60 @@ class BaseUncertaintyModel(ABC):
         Returns:
             Polars DataFrame with feature-residual correlations, or None
         """
-        # Default implementation - subclasses should override
         return None
+
+    def explain_interval_width(
+        self,
+        X: PolarsInput,  # noqa: N803
+        background: PolarsInput | None = None,
+        quantile_pairs: list[tuple[float, float]] | None = None,
+    ) -> pl.DataFrame:
+        """
+        Compute SHAP values for quantile interval widths.
+
+        Identifies which features drive prediction interval width.
+        Thin wrapper around :func:`uncertainty_shap`.
+
+        Subclasses with native feature importance (e.g. quantile forests)
+        may override this with a faster implementation.
+
+        Args:
+            X: Feature DataFrame to explain.
+            background: Background dataset for SHAP. Defaults to ``X[:100]``.
+            quantile_pairs: ``(lower, upper)`` quantile pairs to analyse.
+                Defaults to ``[(0.1, 0.9), (0.05, 0.95)]``.
+
+        Returns:
+            Polars DataFrame with SHAP attributions per feature.
+        """
+        from ..calibration.shap_values import uncertainty_shap
+
+        X = materialize_lazyframe(X)  # noqa: N806
+        if background is not None:
+            background = materialize_lazyframe(background)
+
+        return uncertainty_shap(self, X, background=background, quantile_pairs=quantile_pairs)
+
+    def analyze_leverage(
+        self,
+        X: PolarsInput,  # noqa: N803
+        **kwargs,
+    ) -> pl.DataFrame:
+        """
+        Analyze which features most influence prediction uncertainty.
+
+        Thin wrapper around :class:`FeatureLeverageAnalyzer`.
+
+        Args:
+            X: Feature DataFrame for leverage analysis.
+            **kwargs: Forwarded to ``FeatureLeverageAnalyzer`` (e.g.
+                ``confidence``, ``n_perturbations``, ``random_state``).
+
+        Returns:
+            Polars DataFrame with leverage scores per feature.
+        """
+        from ..analysis.leverage import FeatureLeverageAnalyzer
+
+        X = materialize_lazyframe(X)  # noqa: N806
+        analyzer = FeatureLeverageAnalyzer(self, **kwargs)
+        return analyzer.analyze(X)

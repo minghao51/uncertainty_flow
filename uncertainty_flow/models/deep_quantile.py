@@ -56,7 +56,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         trunk_alpha: float = 0.0001,
         trunk_max_iter: int = 500,
         head_solver: str = "pinball",
-        non_crossing_penalty: float = 0.0,
+        non_crossing_penalty: float = 0.1,
         random_state: int | None = None,
     ):
         """
@@ -194,40 +194,6 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         for j, q in enumerate(self.quantile_levels):
             self._head_coefs_[q] = coefs[j]
             self._head_intercepts_[q] = intercepts[j]
-
-    def _apply_non_crossing_projection(self, x: np.ndarray) -> None:
-        """Post-hoc projection to enforce monotone quantiles on training data."""
-        n_iters = max(1, int(self.non_crossing_penalty * 10))
-        trunk_features = self._extract_trunk_features(x)
-
-        for _ in range(n_iters):
-            predictions = self._predict_backend_raw(trunk_features)
-            crossing = np.diff(predictions, axis=1) < 0
-            if not np.any(crossing):
-                break
-
-            for i in range(1, len(self.quantile_levels)):
-                q_curr = self.quantile_levels[i]
-                violations = predictions[:, i] < predictions[:, i - 1]
-                if not np.any(violations):
-                    continue
-
-                correction = (
-                    predictions[:, i - 1][violations] - predictions[:, i][violations]
-                ) / 2.0
-                feat_viol = trunk_features[violations]
-                target_corr = np.zeros(feat_viol.shape[0])
-
-                for j in range(feat_viol.shape[1]):
-                    grad = feat_viol[:, j]
-                    norm_sq = np.dot(grad, grad)
-                    if norm_sq < 1e-12:
-                        continue
-                    step = np.dot(grad, correction - target_corr) / norm_sq
-                    self._head_coefs_[q_curr][j] += step * 0.5
-                    target_corr += step * 0.5 * grad
-
-                self._head_intercepts_[q_curr] += float(np.mean(correction - target_corr))
 
     def _predict_backend_raw(self, trunk_features: np.ndarray) -> np.ndarray:
         coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])

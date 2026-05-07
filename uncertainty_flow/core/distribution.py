@@ -13,6 +13,7 @@ from ..utils.polars_bridge import to_numpy_series_zero_copy
 
 if TYPE_CHECKING:
     from ..multivariate.copula import BaseCopula
+    from .parametric import ParametricDistribution
 
 # Constants
 MAX_SAMPLE_CHUNK_SIZE = 100_000
@@ -1130,11 +1131,11 @@ class DistributionPrediction:
         """
         One-row-per-target overview of the prediction distribution.
 
-        Columns: target, median, interval_width, narrow_width,
+        Columns: target, median, mean_width_90, mean_width_50,
         aleatoric, epistemic, total_uncertainty.
 
-        ``interval_width`` is the mean width at the ``confidence`` level.
-        ``narrow_width`` is the mean inter-quartile range (25th–75th percentile).
+        ``mean_width_90`` is the mean width at the ``confidence`` level.
+        ``mean_width_50`` is the mean inter-quartile range (25th–75th percentile).
 
         Args:
             confidence: Confidence level for the primary interval width (default 0.9).
@@ -1176,8 +1177,8 @@ class DistributionPrediction:
                 {
                     "target": target,
                     "median": median_val,
-                    "interval_width": width,
-                    "narrow_width": narrow,
+                    "mean_width_90": width,
+                    "mean_width_50": narrow,
                     "aleatoric": decomp["aleatoric"],
                     "epistemic": decomp["epistemic"],
                     "total_uncertainty": decomp["total"],
@@ -1185,3 +1186,135 @@ class DistributionPrediction:
             )
 
         return pl.DataFrame(rows)
+
+    def fit_distribution(
+        self,
+        family: str = "auto",
+        row_index: int | None = None,
+    ) -> ParametricDistribution | list[ParametricDistribution]:
+        """
+        Fit a parametric distribution to the quantile predictions.
+
+        For univariate predictions, fits a single distribution. For
+        multivariate, fits one distribution per target.
+
+        Args:
+            family: One of ``"normal"``, ``"student_t"``, ``"lognormal"``,
+                ``"gamma"``, or ``"auto"`` (best fit by KS distance).
+            row_index: If given, fit only for that row.  Otherwise fit for
+                the *mean* quantile vector across all rows.
+
+        Returns:
+            A single ``ParametricDistribution`` for univariate, or a list
+            of ``ParametricDistribution`` (one per target) for multivariate.
+            When ``row_index`` is given, always returns a single distribution
+            for univariate or a list for multivariate.
+        """
+        from .parametric import fit_parametric
+
+        if len(self._targets) == 1:
+            if row_index is not None:
+                qv = self._quantiles[row_index, : self._n_quantiles]
+            else:
+                qv = np.mean(self._quantiles[:, : self._n_quantiles], axis=0)
+            return fit_parametric(qv, self._levels, family=family)
+
+        results = []
+        for t_idx in range(len(self._targets)):
+            q_start = t_idx * self._n_quantiles
+            q_end = q_start + self._n_quantiles
+            if row_index is not None:
+                qv = self._quantiles[row_index, q_start:q_end]
+            else:
+                qv = np.mean(self._quantiles[:, q_start:q_end], axis=0)
+            results.append(fit_parametric(qv, self._levels, family=family))
+        return results
+
+    def log_score(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        family: str = "auto",
+    ) -> float | dict[str, float]:
+        """
+        Compute the mean negative log-likelihood (log-score).
+
+        Fits a parametric distribution from the predicted quantiles, then
+        evaluates the log-density at the true values.  Higher is better
+        (less negative).
+
+        Args:
+            y_true: True values.
+            family: Distribution family for fitting, or ``"auto"``.
+
+        Returns:
+            Mean log-score (float) for univariate, or ``{target: score}`` dict
+            for multivariate.
+        """
+        from ..metrics.log_score import log_score as _log_score
+
+        y_arr = self._coerce_y_true(y_true)
+
+        if len(self._targets) == 1:
+            return _log_score(
+                y_arr, self._quantiles[:, : self._n_quantiles], self._levels, family=family
+            )
+
+        result = {}
+        for t_idx, target in enumerate(self._targets):
+            q_start = t_idx * self._n_quantiles
+            q_end = q_start + self._n_quantiles
+            y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
+            result[target] = _log_score(
+                y_col, self._quantiles[:, q_start:q_end], self._levels, family=family
+            )
+        return result
+
+    def energy_score(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        n_samples: int = 1000,
+        random_state: int | None = None,
+    ) -> float:
+        """
+        Compute the energy score for multivariate predictions.
+
+        A proper scoring rule that generalises CRPS to the multivariate
+        case.  Requires at least 2 targets.
+
+        Args:
+            y_true: True values (array with columns matching targets).
+            n_samples: Monte Carlo samples per observation.
+            random_state: Random seed.
+
+        Returns:
+            Mean energy score (float).
+        """
+        from ..metrics.multivariate import energy_score as _energy_score
+
+        return _energy_score(self, y_true, n_samples=n_samples, random_state=random_state)
+
+    def variogram_score(
+        self,
+        y_true: pl.Series | pl.DataFrame | np.ndarray,
+        n_samples: int = 1000,
+        p: float = 0.5,
+        random_state: int | None = None,
+    ) -> float:
+        """
+        Compute the variogram score for multivariate predictions.
+
+        A proper scoring rule sensitive to the correlation structure.
+        Requires at least 2 targets.
+
+        Args:
+            y_true: True values (array with columns matching targets).
+            n_samples: Monte Carlo samples per observation.
+            p: Power parameter (default 0.5).
+            random_state: Random seed.
+
+        Returns:
+            Mean variogram score (float).
+        """
+        from ..metrics.multivariate import variogram_score as _variogram_score
+
+        return _variogram_score(self, y_true, n_samples=n_samples, p=p, random_state=random_state)

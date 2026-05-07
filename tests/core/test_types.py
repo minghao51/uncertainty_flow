@@ -94,3 +94,22 @@ class TestConfigQuantiles:
     def test_config_quantiles_equality_with_string(self):
         """__eq__() should reject non-sequence strings."""
         assert DEFAULT_QUANTILES != "not_a_sequence"
+
+    def test_config_quantiles_repr(self):
+        assert "0.05" in repr(DEFAULT_QUANTILES)
+
+    def test_config_quantiles_contains(self):
+        assert 0.5 in DEFAULT_QUANTILES
+        assert 0.99 not in DEFAULT_QUANTILES
+
+    def test_config_quantiles_slice(self):
+        result = DEFAULT_QUANTILES[2:5]
+        assert list(result) == [0.2, 0.3, 0.4]
+
+    def test_calibration_method_enum_values(self):
+        assert CalibrationMethod.HOLDOUT.value == "holdout"
+        assert CalibrationMethod.CROSS.value == "cross"
+
+    def test_correlation_mode_enum_values(self):
+        assert CorrelationMode.AUTO.value == "auto"
+        assert CorrelationMode.INDEPENDENT.value == "independent"

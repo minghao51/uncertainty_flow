@@ -10,6 +10,7 @@ from uncertainty_flow.multivariate.copula import (
     FrankCopula,
     GaussianCopula,
     GumbelCopula,
+    PairwiseChainCopula,
     auto_select_copula,
 )
 from uncertainty_flow.utils.exceptions import InvalidDataError, ModelNotFittedError
@@ -414,8 +415,66 @@ class TestCopulaFamilies:
         assert "clayton" in COPULA_FAMILIES
         assert "gumbel" in COPULA_FAMILIES
         assert "frank" in COPULA_FAMILIES
+        assert "pairwise_chain" in COPULA_FAMILIES
 
     def test_are_copula_classes(self):
         for name, cls in COPULA_FAMILIES.items():
             assert hasattr(cls, "fit")
             assert hasattr(cls, "sample")
+
+
+class TestPairwiseChainCopula:
+    def _make_trivariate_residuals(self, n=500, seed=42):
+        rng = np.random.default_rng(seed)
+        z = rng.standard_normal((n, 3))
+        z[:, 1] = 0.7 * z[:, 0] + 0.3 * z[:, 1]
+        z[:, 2] = 0.5 * z[:, 1] + 0.5 * z[:, 2]
+        return z
+
+    def test_fit_sets_fitted(self):
+        residuals = self._make_trivariate_residuals()
+        copula = PairwiseChainCopula()
+        copula.fit(residuals)
+        assert copula.fitted_ is True
+        assert len(copula._pair_copulas) == 2
+
+    def test_sample_shape(self):
+        residuals = self._make_trivariate_residuals()
+        copula = PairwiseChainCopula()
+        copula.fit(residuals)
+        levels = np.linspace(0.05, 0.95, 19)
+        marginals = np.random.default_rng(42).uniform(0, 1, size=(5, 3, 19))
+        samples = copula.sample(marginals, n_samples=100, quantile_levels=levels, random_state=42)
+        assert samples.ndim == 3
+        assert samples.shape == (5, 100, 3)
+
+    def test_log_likelihood(self):
+        residuals = self._make_trivariate_residuals()
+        copula = PairwiseChainCopula()
+        copula.fit(residuals)
+        ll = copula.log_likelihood(residuals)
+        assert isinstance(ll, float)
+
+    def test_requires_at_least_2_targets(self):
+        copula = PairwiseChainCopula()
+        with pytest.raises(InvalidDataError):
+            copula.fit(np.random.randn(50, 1))
+
+    def test_repr(self):
+        residuals = self._make_trivariate_residuals()
+        copula = PairwiseChainCopula()
+        assert "fitted=False" in repr(copula)
+        copula.fit(residuals)
+        assert "fitted=True" in repr(copula)
+
+    def test_auto_select_considers_chain_for_d3(self):
+        residuals = self._make_trivariate_residuals()
+        selected = auto_select_copula(residuals)
+        assert selected in ("gaussian", "pairwise_chain")
+
+    def test_bivariate_chain_works(self):
+        residuals = _make_bivariate_residuals()
+        copula = PairwiseChainCopula()
+        copula.fit(residuals)
+        assert copula.fitted_
+        assert len(copula._pair_copulas) == 1

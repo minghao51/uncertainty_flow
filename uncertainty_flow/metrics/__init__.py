@@ -7,8 +7,11 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 
 from .calibration import calibration_error
+from .comparison import diebold_mariano_test, model_confidence_set, skill_score
 from .coverage import coverage_score
 from .crps import crps_quantile, crps_score
+from .log_score import log_score, log_score_kde, log_score_pooled
+from .multivariate import energy_score, variogram_score
 from .pinball import pinball_loss
 from .point import mae_score, rmse_score
 from .winkler import winkler_score
@@ -21,10 +24,18 @@ __all__ = [
     "coverage_score",
     "crps_quantile",
     "crps_score",
+    "diebold_mariano_test",
+    "energy_score",
+    "log_score",
+    "log_score_kde",
+    "log_score_pooled",
     "mae_score",
+    "model_confidence_set",
     "pinball_loss",
     "rmse_score",
     "score",
+    "skill_score",
+    "variogram_score",
     "winkler_score",
 ]
 
@@ -36,6 +47,9 @@ _METRIC_NAMES = {
     "mae",
     "rmse",
     "calibration_error",
+    "log_score",
+    "energy_score",
+    "variogram_score",
 }
 
 
@@ -83,6 +97,21 @@ def score(
 
     if metric == "crps":
         return pred.crps(y_true)
+
+    if metric == "log_score":
+        return pred.log_score(y_true, **{k: v for k, v in kwargs.items() if k == "family"})
+
+    if metric == "energy_score":
+        n_samples = kwargs.get("n_samples", 1000)
+        random_state = kwargs.get("random_state", None)
+        return pred.energy_score(y_true, n_samples=n_samples, random_state=random_state)
+
+    if metric == "variogram_score":
+        return variogram_score(
+            pred,
+            y_true,
+            **{k: v for k, v in kwargs.items() if k in ("n_samples", "p", "random_state")},
+        )
 
     y_arr = pred._coerce_y_true(y_true)
 

@@ -79,3 +79,150 @@ class TestBaseUncertaintyModel:
 
         model = DummyModel()
         assert model.metadata is None
+
+    def test_analyze_leverage_method_exists(self):
+        """analyze_leverage should be a method on BaseUncertaintyModel."""
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        assert hasattr(model, "analyze_leverage")
+        assert callable(model.analyze_leverage)
+
+    def test_explain_interval_width_method_exists(self):
+        """explain_interval_width should be a method on BaseUncertaintyModel."""
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        assert hasattr(model, "explain_interval_width")
+        assert callable(model.explain_interval_width)
+
+    def test_predict_batch_yields_chunks(self):
+        import numpy as np
+        import polars as pl
+
+        from uncertainty_flow.core.distribution import DistributionPrediction
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                self._fitted = True
+                return self
+
+            def predict(self, data):
+                n = len(data)
+                return DistributionPrediction(
+                    quantile_matrix=np.zeros((n, 3)),
+                    quantile_levels=[0.1, 0.5, 0.9],
+                    target_names=["y"],
+                )
+
+        model = DummyModel()
+        model._fitted = True
+        df = pl.DataFrame({"x": np.arange(25)})
+
+        chunks = list(model.predict_batch(df, batch_size=10))
+        assert len(chunks) == 3
+        assert chunks[0]._n_samples == 10
+        assert chunks[1]._n_samples == 10
+        assert chunks[2]._n_samples == 5
+
+    def test_predict_batch_default_size(self):
+        import numpy as np
+        import polars as pl
+
+        from uncertainty_flow.core.distribution import DistributionPrediction
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                self._fitted = True
+                return self
+
+            def predict(self, data):
+                n = len(data)
+                return DistributionPrediction(
+                    quantile_matrix=np.zeros((n, 3)),
+                    quantile_levels=[0.1, 0.5, 0.9],
+                    target_names=["y"],
+                )
+
+        model = DummyModel()
+        model._fitted = True
+        df = pl.DataFrame({"x": np.arange(500)})
+
+        chunks = list(model.predict_batch(df))
+        assert len(chunks) == 1
+        assert chunks[0]._n_samples == 500
+
+    def test_metadata_fitted_model(self):
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                self._fitted = True
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        model._fitted = True
+        meta = model.metadata
+        assert isinstance(meta, dict)
+        assert "class_path" in meta
+
+    def test_metadata_with_cached_value(self):
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        model._metadata = {"custom": True}
+        assert model.metadata == {"custom": True}
+
+    def test_uncertainty_drivers_returns_none(self):
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                return self
+
+            def predict(self, data):
+                pass  # pragma: no cover
+
+        model = DummyModel()
+        assert model.uncertainty_drivers_ is None
+
+    def test_calibration_report_delegates(self):
+        import numpy as np
+        import polars as pl
+
+        from uncertainty_flow.core.distribution import DistributionPrediction
+
+        class DummyModel(BaseUncertaintyModel):
+            def fit(self, data, target, **kwargs):
+                self._fitted = True
+                return self
+
+            def predict(self, data):
+                n = len(data)
+                return DistributionPrediction(
+                    quantile_matrix=np.zeros((n, 3)),
+                    quantile_levels=[0.1, 0.5, 0.9],
+                    target_names=["y"],
+                )
+
+        model = DummyModel()
+        model._fitted = True
+        df = pl.DataFrame({"x": np.arange(20).astype(float), "y": np.arange(20).astype(float)})
+        report = model.calibration_report(df, target="y")
+        assert isinstance(report, pl.DataFrame)

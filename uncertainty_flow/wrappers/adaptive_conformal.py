@@ -81,8 +81,9 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
         self._feature_cols: list[str] = []
         self._target_col: str = ""
         # Stored from the last predict() call for use in update()
-        self._last_point_pred: float | None = None
+        self._last_point_pred: np.ndarray | None = None
         self._last_q_value: float | None = None
+        self._last_n_targets: int = 1
 
     @property
     def current_alpha(self) -> float:
@@ -212,10 +213,20 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
 
         output_quantiles = np.sort(output_quantiles, axis=1)
 
-        # Store the last prediction's point estimate and conformal quantile
+        # Store the last prediction's point estimates and conformal quantile
         # for use in the subsequent update() call.
         if n_pred > 0:
-            self._last_point_pred = float(point_preds[-1])
+            n_targets = len(pred._targets)
+            self._last_n_targets = n_targets
+            if n_targets == 1:
+                self._last_point_pred = np.array([float(point_preds[-1])])
+            else:
+                last_point_preds = np.empty(n_targets)
+                for t_idx in range(n_targets):
+                    q_start = t_idx * n_quantiles
+                    median_idx_t = pred._find_nearest_quantile_index(0.5)
+                    last_point_preds[t_idx] = float(output_quantiles[-1, q_start + median_idx_t])
+                self._last_point_pred = last_point_preds
             self._last_q_value = float(q_value)
 
         return DistributionPrediction(
@@ -224,15 +235,19 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
             target_names=list(pred._targets),
         )
 
-    def update(self, y_true: float | int) -> None:
+    def update(self, y_true: float | int | np.ndarray) -> None:
         """
-        Update alpha after observing a single true value.
+        Update alpha after observing a true value.
 
         Must be called after :meth:`predict` with the corresponding true
         observation. Updates internal conformal scores and adapts alpha.
 
+        For univariate models, pass a scalar. For multivariate, pass an
+        array-like with one value per target.
+
         Args:
-            y_true: The observed true value.
+            y_true: Observed true value (scalar for univariate, array for
+                multivariate).
         """
         if not self._fitted:
             error_model_not_fitted("AdaptiveConformalForecaster")
@@ -243,26 +258,26 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
                 "Call predict() first to generate a prediction for this time step."
             )
 
-        # Compute the nonconformity score for the new observation
-        new_score = abs(float(y_true) - self._last_point_pred)
+        y_arr = np.atleast_1d(np.asarray(y_true, dtype=float))
 
-        # Determine whether the observation fell outside the prediction interval.
-        # The interval width is determined by q_value (the conformal quantile).
-        # If the residual exceeds q_value, the observation is not covered.
+        if y_arr.shape[0] != self._last_n_targets:
+            raise ValueError(
+                f"y_true has {y_arr.shape[0]} value(s) but model has "
+                f"{self._last_n_targets} target(s)."
+            )
+
+        if self._last_n_targets == 1:
+            new_score = abs(float(y_arr[0]) - self._last_point_pred[0])
+        else:
+            new_score = float(np.mean(np.abs(y_arr - self._last_point_pred)))
+
         q_value = self._last_q_value if self._last_q_value is not None else 0.0
         exceeded = 1.0 if new_score > q_value else 0.0
 
-        # Update alpha using the ACI rule
         self._alpha_t = self._alpha_t + self.gamma * (self._alpha_t - exceeded)
         self._alpha_t = max(1e-6, min(self._alpha_t, 1.0 - 1e-6))
 
-        # Append the new score to the running score pool so that future
-        # predictions use an updated conformal quantile.
         self._scores.append(new_score)
-
-        # Note: we do NOT reset _last_point_pred here so that update_batch()
-        # can process a sequence of observations that were all predicted in
-        # advance.  The next predict() call will overwrite these values.
 
     def update_batch(self, y_true: pl.Series | np.ndarray) -> None:
         """
@@ -279,14 +294,20 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
 
         Args:
             y_true: Array or Series of observed true values.
+                Shape ``(n,)`` for univariate, ``(n, n_targets)`` for
+                multivariate.
         """
         if isinstance(y_true, pl.Series):
             y_arr = to_numpy_series_zero_copy(y_true)
         else:
             y_arr = np.asarray(y_true, dtype=float)
 
-        for y in y_arr:
-            self.update(float(y))
+        if y_arr.ndim == 1:
+            for y in y_arr:
+                self.update(float(y))
+        else:
+            for row in y_arr:
+                self.update(row)
 
     def _propagate_alpha(self, steps: int) -> list[float]:
         """Project alpha forward for multi-step prediction (no actual update).

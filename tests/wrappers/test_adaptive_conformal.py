@@ -112,7 +112,7 @@ class TestAdaptiveConformalForecaster:
         # at the center of the interval, so it is guaranteed to be covered.
         test_point = df[:1]
         aci.predict(test_point)
-        true_y = float(aci._last_point_pred)
+        true_y = float(aci._last_point_pred[0])
 
         aci.update(true_y)
         new_alpha = aci.current_alpha
@@ -327,3 +327,99 @@ class TestAdaptiveConformalForecaster:
         # under distribution shift. We allow some tolerance because this
         # is a stochastic test.
         assert aci_coverage >= static_coverage - 0.15
+
+    def test_alpha_validation(self):
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+        )
+        with pytest.raises(ValueError, match="alpha must be in"):
+            AdaptiveConformalForecaster(model=base, alpha=0.0)
+        with pytest.raises(ValueError, match="alpha must be in"):
+            AdaptiveConformalForecaster(model=base, alpha=1.0)
+
+    def test_gamma_validation(self):
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+        )
+        with pytest.raises(ValueError, match="gamma must be positive"):
+            AdaptiveConformalForecaster(model=base, gamma=0.0)
+        with pytest.raises(ValueError, match="gamma must be positive"):
+            AdaptiveConformalForecaster(model=base, gamma=-0.1)
+
+    def test_fit_requires_target(self):
+        df = self._make_data(n=100)
+        train = df[:70]
+        calib = df[70:]
+
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+            calibration_size=0.3,
+        )
+        base.fit(train, target="y")
+
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        with pytest.raises(Exception, match="target is required"):
+            aci.fit(calib)
+
+    def test_update_dimension_mismatch_raises(self):
+        df = self._make_data(n=100)
+        train = df[:70]
+        calib = df[70:]
+
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+            calibration_size=0.3,
+        )
+        base.fit(train, target="y")
+
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        aci.fit(calib, target="y")
+
+        aci.predict(df[:1])
+        with pytest.raises(ValueError, match="2 value\\(s\\).*1 target"):
+            aci.update(np.array([1.0, 2.0]))
+
+    def test_update_with_array_for_univariate(self):
+        df = self._make_data(n=100)
+        train = df[:70]
+        calib = df[70:]
+
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+            calibration_size=0.3,
+        )
+        base.fit(train, target="y")
+
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        aci.fit(calib, target="y")
+
+        aci.predict(df[:1])
+        aci.update(np.array([5.0]))
+        assert aci.current_alpha > 0
+
+    def test_update_batch_with_polars_series(self):
+        df = self._make_data(n=100)
+        train = df[:70]
+        calib = df[70:]
+
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+            calibration_size=0.3,
+        )
+        base.fit(train, target="y")
+
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        aci.fit(calib, target="y")
+
+        n_before = len(aci._scores)
+        vals = pl.Series("y", [5.0, 10.0, 15.0])
+        for _ in range(3):
+            aci.predict(df[:1])
+        aci.update_batch(vals)
+        assert len(aci._scores) == n_before + 3

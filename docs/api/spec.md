@@ -89,7 +89,59 @@ class ConformalRegressor(BaseUncertaintyModel):
         None if not yet fitted.
         """
         ...
-```
+
+    def predict_batch(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        batch_size: int = 1000,
+    ) -> Iterator[DistributionPrediction]:
+        """
+        Memory-batched prediction. Yields DistributionPrediction
+        chunks of up to batch_size rows each.
+        """
+        ...
+
+    def save(
+        self,
+        path: str,
+        include_metadata: bool = True,
+    ) -> str:
+        """
+        Serializes model to a .uf archive.
+        Returns the path written to.
+        """
+        ...
+
+    @staticmethod
+    def load(path: str) -> "ConformalRegressor":
+        """
+        Deserializes a .uf archive.
+        Only load from trusted sources (uses pickle).
+        """
+        ...
+
+    def analyze_leverage(
+        self,
+        data: pl.DataFrame,
+        confidence: float = 0.9,
+    ) -> pl.DataFrame:
+        """
+        Per-sample feature leverage analysis using SHAP.
+        Returns DataFrame with feature importance scores for
+        interval width at each sample.
+        """
+        ...
+
+    def explain_interval_width(
+        self,
+        data: pl.DataFrame,
+        confidence: float = 0.9,
+    ) -> pl.DataFrame:
+        """
+        Explain interval width predictions for each sample.
+        Aggregates SHAP values into per-feature width contribution.
+        """
+        ...```
 
 ---
 
@@ -139,6 +191,17 @@ class ConformalForecaster(BaseUncertaintyModel):
 
     @property
     def uncertainty_drivers_(self) -> pl.DataFrame | None: ...
+
+    def predict_batch(self, data, batch_size=1000) -> Iterator[DistributionPrediction]: ...
+
+    def save(self, path, include_metadata=True) -> str: ...
+
+    @staticmethod
+    def load(path: str) -> "ConformalForecaster": ...
+
+    def analyze_leverage(self, data, confidence=0.9) -> pl.DataFrame: ...
+
+    def explain_interval_width(self, data, confidence=0.9) -> pl.DataFrame: ...
 ```
 
 ---
@@ -173,6 +236,17 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
     @property
     def uncertainty_drivers_(self) -> pl.DataFrame | None: ...
+
+    def predict_batch(self, data, batch_size=1000) -> Iterator[DistributionPrediction]: ...
+
+    def save(self, path, include_metadata=True) -> str: ...
+
+    @staticmethod
+    def load(path: str) -> "QuantileForestForecaster": ...
+
+    def analyze_leverage(self, data, confidence=0.9) -> pl.DataFrame: ...
+
+    def explain_interval_width(self, data, confidence=0.9) -> pl.DataFrame: ...
 ```
 
 ---
@@ -242,6 +316,59 @@ class DistributionPrediction:
         """
         ...
 
+    def summary(
+        self,
+        confidence: float = 0.9,
+    ) -> pl.DataFrame:
+        """
+        One-row summary DataFrame with columns: target, median,
+        mean_width_90, mean_width_50, aleatoric, epistemic, total_uncertainty.
+        """
+
+    def energy_score(
+        self,
+        y_true,
+        n_samples: int = 1000,
+        random_state: int | None = None,
+    ) -> float:
+        """
+        Multivariate energy score. Draws two independent samples from
+        the predicted distribution and computes E[‖X-y‖] - ½E[‖X-X'‖].
+        For univariate, equivalent to CRPS.
+        """
+
+    def variogram_score(
+        self,
+        y_true,
+        n_samples: int = 1000,
+        p: float = 1.0,
+        random_state: int | None = None,
+    ) -> float:
+        """
+        Variogram score of order p. Assesses multivariate joint
+        dependence by comparing weighted distances between targets.
+        """
+
+    def log_score(
+        self,
+        y_true,
+        family: str = "normal",
+    ) -> float:
+        """
+        Log-score (negative log-likelihood) of true values under
+        a parametric fit. Supported families: normal, student_t,
+        logistic, gumbel, laplace, cauchy.
+        """
+
+    def crps(
+        self,
+        y_true,
+    ) -> float:
+        """
+        Continuous Ranked Probability Score. Integrated quantile loss
+        across all fitted quantile levels.
+        """
+
     def __repr__(self) -> str:
         """
         Example:
@@ -255,7 +382,24 @@ class DistributionPrediction:
 ## 5. Metrics (standalone, importable independently)
 
 ```python
-from uncertainty_flow.metrics import pinball_loss, winkler_score, coverage_score
+from uncertainty_flow.metrics import (
+    pinball_loss, winkler_score, coverage_score,
+    crps_quantile, crps_score,
+    log_score, log_score_kde, log_score_pooled,
+    energy_score, variogram_score,
+    skill_score, diebold_mariano_test, model_confidence_set,
+    mae_score, rmse_score,
+    calibration_error,
+)
+
+# Unified entry point — dispatches by metric name
+from uncertainty_flow.metrics import score
+score(pred, y_true, metric="crps")          # CRPS
+score(pred, y_true, metric="log_score")     # Log-score
+score(pred, y_true, metric="energy_score")  # Energy score
+score(pred, y_true, metric="coverage")      # Empirical coverage
+score(pred, y_true, metric="winkler")       # Winkler interval score
+score(pred, y_true, metric="pinball")       # Mean pinball loss across levels
 
 # Pinball loss (quantile loss)
 pinball_loss(
@@ -278,6 +422,51 @@ coverage_score(
     lower: pl.Series | np.ndarray,
     upper: pl.Series | np.ndarray,
 ) -> float                            # fraction of y_true within [lower, upper]
+
+# CRPS (quantile approximation)
+crps_score(
+    y_true: pl.Series | np.ndarray,
+    pred: DistributionPrediction,     # Or (quantile_matrix, quantile_levels)
+) -> float
+
+# Log-score (log-likelihood)
+log_score(
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
+    family: str = "normal",           # normal, student_t, logistic, gumbel, laplace, cauchy
+) -> float
+
+# Energy score (multivariate)
+energy_score(
+    y_true: np.ndarray,
+    y_pred_samples: np.ndarray,       # (n_samples, n_targets) or (n, n_samples, n_targets)
+) -> float
+
+# Variogram score (multivariate dependence)
+variogram_score(
+    pred: DistributionPrediction,
+    y_true: np.ndarray | pl.DataFrame,
+    p: float = 1.0,
+    n_samples: int = 1000,
+) -> float
+
+# Model comparison
+skill_score(
+    pred_a: DistributionPrediction,
+    pred_b: DistributionPrediction,
+    y_true,                           # Ground truth
+    metric: str = "crps",             # Metric name
+) -> float                            # Positive = pred_a better than pred_b
+
+diebold_mariano_test(
+    errors_a: np.ndarray,
+    errors_b: np.ndarray,
+) -> dict[str, float]                 # DM statistic and p-value
+
+model_confidence_set(
+    predictions: list[DistributionPrediction],
+    y_true,
+) -> pl.DataFrame                     # Which models survive the MCS procedure
 ```
 
 ---
@@ -285,9 +474,12 @@ coverage_score(
 ## 6. Warnings & Errors Reference
 
 | Code | Type | Trigger | Message |
-|---|---|---|---|
+|---|---|---|---|---|
 | `UF-W001` | Warning | `n_calibration < 50` | "Calibration set has only {n} samples. Coverage guarantees may be unreliable." |
 | `UF-E001` | Error | `n_calibration < 20` | "Calibration set too small ({n} samples). Minimum is 20." |
+| `UF-E002` | Error | Model not fitted | "{ModelName} not fitted. Call .fit() first." |
+| `UF-E003` | Error | Invalid input data | "Invalid data: {reason}" |
+| `UF-E004` | Error | Quantile config invalid | "Invalid quantile configuration: {reason}" |
 | `UF-W002` | Warning | Quantile crossing detected | "Quantile crossing detected in {pct}% of predictions. Post-sort applied. Consider re-evaluating base model quality." |
 | `UF-W003` | Warning | Coverage gap > 5% | "Requested {req} coverage but achieved {ach}. Model may be miscalibrated." |
 | `UF-W004` | Warning | No uncertainty drivers found | "Residual correlation analysis found no significant drivers. Intervals may be uniformly conservative." |
@@ -368,6 +560,7 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         trunk_alpha: float = 0.0001,
         trunk_max_iter: int = 500,
         head_solver: str = "pinball",
+        non_crossing_penalty: float = 0.1,   # Weight added to loss for quantile crossing penalty
         random_state: int | None = None,
     ): ...
 ```
@@ -393,7 +586,7 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
         batch_size: int = 64,
         learning_rate: float = 0.001,
         weight_decay: float = 0.0,
-        monotonicity_weight: float = 0.0,
+        monotonicity_weight: float = 0.1,
         activation: str = "relu",
         device: str = "auto",
         random_state: int | None = None,
@@ -693,4 +886,248 @@ class FeatureLeverageAnalyzer:
         """
 
     def summary(self) -> dict: ...
+
+---
+
+## 18. `AdaptiveConformalForecaster`
+
+> Time-adaptive conformal inference for streaming/online settings. Adjusts miscoverage rate $\alpha_t$ after each true-value observation.
+> **Coverage guarantee: ✅ (asymptotic, under bounded temporal drift)**
+> **Non-crossing: ✅ (inherits from base model)**
+
+```python
+class AdaptiveConformalForecaster(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        model: BaseUncertaintyModel,       # Pre-fitted base model
+        alpha: float = 0.1,                # Target miscoverage rate (0, 1)
+        gamma: float = 0.01,               # Learning rate for alpha adaptation
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame,
+        target: str,
+    ) -> "AdaptiveConformalForecaster":
+        """
+        Initializes conformal scores and alpha_0 from calibration split.
+        Requires target for score computation.
+        """
+        ...
+
+    def predict(
+        self,
+        data: pl.DataFrame,
+    ) -> DistributionPrediction:
+        """
+        Returns intervals using current alpha_t.
+        Stores per-target point predictions for subsequent update().
+        """
+        ...
+
+    def update(
+        self,
+        y_true: float | np.ndarray,
+    ) -> float:
+        """
+        Adjusts alpha_t after observing true value.
+        Accepts scalar (univariate) or array (multivariate).
+        Validates dimension matches number of targets.
+        Returns the new alpha value.
+        """
+        ...
+
+    def update_batch(
+        self,
+        y_true: pl.Series | np.ndarray,
+    ) -> float:
+        """
+        Batch-update with multiple true values (one per predict step).
+        """
+        ...
+```
+
+---
+
+## 19. `EnsembleBootstrapPI` (EnbPI)
+
+> Ensemble Bootstrap Prediction Intervals (Xu & Xie 2021). Combines B bootstrap base learners with sequential conformal score updates. Designed for time series.
+
+```python
+class EnsembleBootstrapPI(BaseUncertaintyModel):
+
+    def __init__(
+        self,
+        base_model_factory: Callable[[], Any],  # Returns a fresh sklearn estimator
+        n_models: int = 20,                     # B bootstrap models
+        coverage_target: float = 0.9,
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+        target: str,
+    ) -> "EnsembleBootstrapPI":
+        """
+        Trains B bootstrap models on bootstrapped samples.
+        Stores out-of-bag residuals for conformal initialization.
+        """
+        ...
+
+    def predict(
+        self,
+        data: pl.DataFrame | pl.LazyFrame,
+    ) -> DistributionPrediction:
+        """
+        Aggregates bootstrap predictions. Returns intervals via
+        sequential conformal scores if update() has been called.
+        """
+        ...
+```
+
+---
+
+## 20. `ConformalClassifier` & `PredictionSet`
+
+> Conformal classification via Adaptive Prediction Sets (APS). Unlike regression models, classification outputs `PredictionSet` objects.
+
+```python
+class ConformalClassifier:
+
+    def __init__(
+        self,
+        base_model,                          # sklearn classifier with predict_proba
+        coverage_target: float = 0.9,
+        random_state: int | None = None,
+    ): ...
+
+    def fit(
+        self,
+        data: pl.DataFrame,
+        target: str,
+    ) -> "ConformalClassifier":
+        """
+        Fits base classifier on training data.
+        Computes conformity scores (softmax probabilities) on calibration split.
+        """
+        ...
+
+    def predict(
+        self,
+        data: pl.DataFrame,
+    ) -> "PredictionSet":
+        """
+        Returns PredictionSet for each row: the smallest set of labels
+        whose cumulative softmax probability exceeds the threshold.
+        """
+        ...
+
+    def predict_batch(
+        self,
+        data: pl.DataFrame,
+        batch_size: int = 1000,
+    ) -> Iterator["PredictionSet"]: ...
+
+    def save(self, path: str, include_metadata: bool = True) -> str: ...
+
+    @staticmethod
+    def load(path: str) -> "ConformalClassifier": ...
+
+
+class PredictionSet:
+
+    def __init__(self, ...): ...
+
+    def set(self) -> list[set]:
+        """Return the prediction set for each row as a Python set of labels."""
+
+    def coverage(self) -> float:
+        """Average set size across all rows."""
+
+    def size(self) -> list[int]:
+        """Number of labels in each prediction set."""
+```
+
+---
+
+## 21. `ParametricDistribution`
+
+> Fit parametric distributions to data and compute log-likelihood, quantiles, CRPS, and sampling.
+
+```python
+class ParametricDistribution:
+
+    def __init__(
+        self,
+        family: str,                          # normal, student_t, logistic, gumbel,
+                                              # laplace, cauchy, beta, gamma, lognormal
+        params: dict[str, float] | None = None,
+    ): ...
+
+    def fit(self, data: np.ndarray) -> "ParametricDistribution": ...
+
+    def quantile(self, q: float | np.ndarray) -> np.ndarray: ...
+
+    def log_likelihood(self, data: np.ndarray) -> float: ...
+
+    def crps(self, data: np.ndarray) -> float: ...
+
+    def sample(self, n: int, random_state: int | None = None) -> np.ndarray: ...
+
+
+# Standalone helper
+def fit_parametric(
+    data: np.ndarray,
+    family: str = "normal",
+) -> ParametricDistribution: ...
+```
+
+---
+
+## 22. Copula Families
+
+> Multivariate dependence modeling. Extended with `PairwiseChainCopula` for >2 targets.
+
+```python
+COPULA_FAMILIES = {
+    "gaussian": GaussianCopula,
+    "clayton": ClaytonCopula,
+    "gumbel": GumbelCopula,
+    "frank": FrankCopula,
+    "pairwise_chain": PairwiseChainCopula,
+}
+
+
+class PairwiseChainCopula(BaseCopula):
+
+    def __init__(self, base_family: str = "gaussian"): ...
+
+    def fit(self, residuals: np.ndarray) -> "PairwiseChainCopula":
+        """
+        Decomposes d-dimensional residuals into d-1 bivariate copulas
+        via a D-vine-like chain structure. Requires at least 2 targets.
+        """
+        ...
+
+    def sample(
+        self,
+        marginals: np.ndarray,              # (n, d, n_levels) uniform quantiles
+        n_samples: int,
+        quantile_levels: np.ndarray,
+        random_state: int | None = None,
+    ) -> np.ndarray:                        # (n, n_samples, d)
+        ...
+
+    def log_likelihood(self, residuals: np.ndarray) -> float: ...
+
+
+def auto_select_copula(residuals: np.ndarray) -> str:
+    """
+    Auto-selects copula family by BIC. Considers pairwise_chain
+    for dimensions >= 3 alongside gaussian.
+    """
+    ...
 ```

@@ -744,8 +744,8 @@ class TestDistributionPredictionSummary:
         assert s.columns == [
             "target",
             "median",
-            "interval_width",
-            "narrow_width",
+            "mean_width_90",
+            "mean_width_50",
             "aleatoric",
             "epistemic",
             "total_uncertainty",

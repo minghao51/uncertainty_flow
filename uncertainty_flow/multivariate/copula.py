@@ -761,11 +761,161 @@ class FrankCopula(BaseCopula):
         return "FrankCopula(fitted=False)"
 
 
+class PairwiseChainCopula(BaseCopula):
+    """
+    Chain copula for d-dimensional dependence (d >= 2).
+
+    Decomposes a d-dimensional joint into d-1 bivariate copulas arranged in a
+    chain (a simplified vine).  Each pair captures dependence between
+    consecutive targets.  Supports tail dependence via Archimedean families.
+
+    Examples:
+        >>> import numpy as np
+        >>> residuals = np.column_stack([
+        ...     np.random.randn(50),
+        ...     np.random.randn(50) + 0.5 * np.random.randn(50),
+        ...     np.random.randn(50) + 0.3 * np.random.randn(50),
+        ... ])
+        >>> copula = PairwiseChainCopula()
+        >>> copula.fit(residuals)
+        >>> copula.fitted_
+        True
+    """
+
+    name = "pairwise_chain"
+    has_lower_tail = False
+    has_upper_tail = False
+
+    def __init__(self):
+        super().__init__()
+        self._pair_copulas: list[BaseCopula] = []
+        self._n_targets: int = 0
+
+    def fit(self, residuals: np.ndarray) -> PairwiseChainCopula:
+        """
+        Fit the chain by learning a bivariate copula for each consecutive pair.
+
+        Args:
+            residuals: (n_samples, d) residual matrix with d >= 2.
+
+        Returns:
+            self
+        """
+        if residuals.ndim != 2:
+            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+        if residuals.shape[1] < 2:
+            error_invalid_data("PairwiseChainCopula requires at least 2 targets")
+
+        n_targets = residuals.shape[1]
+        self._n_targets = n_targets
+        self._pair_copulas = []
+
+        for i in range(n_targets - 1):
+            pair_data = residuals[:, [i, i + 1]]
+            bivariate_families = [f for f in COPULA_FAMILIES if f != "pairwise_chain"]
+            best_family = auto_select_copula(pair_data, families=bivariate_families)
+            pair_copula = COPULA_FAMILIES[best_family]()
+            pair_copula.fit(pair_data)
+            self._pair_copulas.append(pair_copula)
+
+            if pair_copula.has_lower_tail:
+                self.has_lower_tail = True
+            if pair_copula.has_upper_tail:
+                self.has_upper_tail = True
+
+        self.theta_ = 0.0
+        self.fitted_ = True
+        return self
+
+    def log_likelihood(self, residuals: np.ndarray) -> float:
+        """Sum of log-likelihoods across all pairs."""
+        self._validate_fitted()
+        total = 0.0
+        for i, pc in enumerate(self._pair_copulas):
+            pair_data = residuals[:, [i, i + 1]]
+            total += pc.log_likelihood(pair_data)
+        return total
+
+    def sample(
+        self,
+        marginals: np.ndarray,
+        n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
+    ) -> np.ndarray:
+        """
+        Sequential conditional sampling through the chain.
+
+        Draws u_1 ~ Uniform, then for each subsequent target draws
+        u_{i+1} conditional on u_i using the i-th pair copula.
+
+        Args:
+            marginals: (n_input_rows, d, n_quantiles) quantile predictions.
+            n_samples: Monte Carlo samples per input row.
+            quantile_levels: Quantile levels.
+            random_state: Random seed.
+
+        Returns:
+            Mapped samples via _inverse_from_marginals.
+        """
+        self._validate_fitted()
+
+        n_rows, d, n_q = marginals.shape
+        rng = _resolve_rng(random_state)
+
+        uniform_samples = np.empty((n_rows, n_samples, d))
+        uniform_samples[:, :, 0] = rng.uniform(0, 1, size=(n_rows, n_samples))
+
+        for i in range(d - 1):
+            pair_copula = self._pair_copulas[i]
+            prev_u = uniform_samples[:, :, i]
+            w = rng.uniform(0, 1, size=(n_rows, n_samples))
+
+            if isinstance(pair_copula, GaussianCopula):
+                corr = pair_copula.correlation_matrix_
+                if corr is not None:
+                    rho = corr[0, 1]
+                else:
+                    rho = 0.0
+                z_prev = stats.norm.ppf(np.clip(prev_u, 1e-10, 1 - 1e-10))
+                z_w = stats.norm.ppf(np.clip(w, 1e-10, 1 - 1e-10))
+                z_cond = rho * z_prev + np.sqrt(max(1 - rho**2, 1e-10)) * z_w
+                uniform_samples[:, :, i + 1] = stats.norm.cdf(z_cond)
+            elif isinstance(pair_copula, ClaytonCopula):
+                theta = pair_copula.theta_ if pair_copula.theta_ is not None else 0.01
+                a = prev_u ** (-theta) + w ** (-theta / (theta + 1)) - 1
+                uniform_samples[:, :, i + 1] = np.where(a > 0, a ** (-1 / theta), 1e-10)
+            elif isinstance(pair_copula, GumbelCopula):
+                prev_clipped = np.clip(prev_u, 1e-10, 1 - 1e-10)
+                theta_val = pair_copula.theta_ if pair_copula.theta_ is not None else 1.01
+                uniform_samples[:, :, i + 1] = _solve_gumbel_conditional(
+                    prev_clipped,
+                    w,
+                    theta_val,
+                )
+            elif isinstance(pair_copula, FrankCopula):
+                theta = pair_copula.theta_ if pair_copula.theta_ is not None else 0.01
+                u_clipped = np.clip(prev_u, 1e-10, 1 - 1e-10)
+                denom = np.exp(-theta * u_clipped) * (1 - w) + w
+                uniform_samples[:, :, i + 1] = -np.log(1 + w * (np.exp(-theta) - 1) / denom) / theta
+            else:
+                uniform_samples[:, :, i + 1] = w
+
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
+
+    def __repr__(self) -> str:
+        if self.fitted_:
+            families = [type(pc).__name__ for pc in self._pair_copulas]
+            return f"PairwiseChainCopula(pairs={families}, fitted=True)"
+        return "PairwiseChainCopula(fitted=False)"
+
+
 COPULA_FAMILIES: dict[str, type[BaseCopula]] = {
     "gaussian": GaussianCopula,
     "clayton": ClaytonCopula,
     "gumbel": GumbelCopula,
     "frank": FrankCopula,
+    "pairwise_chain": PairwiseChainCopula,
 }
 
 
@@ -799,29 +949,30 @@ def auto_select_copula(
         families = list(COPULA_FAMILIES.keys())
 
     n_samples = residuals.shape[0]
+    n_targets = residuals.shape[1]
     best_bic = np.inf
     best_family = "gaussian"
 
-    # Warn about dimension limitation
-    if residuals.shape[1] > 2:
-        warn_copula_auto_selection_ndim(residuals.shape[1])
+    if n_targets > 2:
+        warn_copula_auto_selection_ndim(n_targets)
 
     for family_name in families:
         copula_cls = COPULA_FAMILIES[family_name]
 
-        if residuals.shape[1] > 2 and family_name != "gaussian":
+        if n_targets > 2 and family_name in ("clayton", "gumbel", "frank"):
             continue
 
         try:
             copula = copula_cls()
             copula.fit(residuals)
+            ll = copula.log_likelihood(residuals)
 
             if family_name == "gaussian":
-                ll = copula.log_likelihood(residuals)
+                n_params = n_targets * (n_targets - 1) // 2
+            elif family_name == "pairwise_chain":
+                n_params = n_targets - 1
             else:
-                ll = copula.log_likelihood(residuals)
-
-            n_params = 1 if family_name != "gaussian" else (residuals.shape[1] - 1) ** 2
+                n_params = 1
             bic = n_params * np.log(n_samples) - 2 * ll
 
             if bic < best_bic:

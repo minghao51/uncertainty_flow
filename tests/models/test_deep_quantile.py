@@ -291,9 +291,9 @@ class TestDeepQuantileNetNonCrossingPenalty:
             assert list(row) == sorted(row), "Quantiles should be non-crossing"
 
     def test_non_crossing_penalty_zero_is_default(self, sample_regression_data):
-        """Default penalty should be 0.0 (no training-time penalty)."""
+        """Default penalty should be 0.1 (enabled training-time penalty)."""
         model = DeepQuantileNet(random_state=42)
-        assert model.non_crossing_penalty == 0.0
+        assert model.non_crossing_penalty == 0.1
 
 
 class TestDeepQuantileNetUncertaintyDrivers:

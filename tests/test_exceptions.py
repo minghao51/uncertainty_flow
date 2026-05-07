@@ -1,5 +1,7 @@
 """Tests for exception hierarchy and error helpers."""
 
+import warnings
+
 import pytest
 
 from uncertainty_flow.utils.exceptions import (
@@ -12,10 +14,17 @@ from uncertainty_flow.utils.exceptions import (
     ModelNotFittedError,
     QuantileError,
     UncertaintyFlowError,
+    UncertaintyFlowWarning,
     error_calibration_too_small,
     error_invalid_data,
     error_model_not_fitted,
     error_quantile_invalid,
+    warn_calibration_size,
+    warn_copula_auto_selection_ndim,
+    warn_coverage_gap,
+    warn_lazyframe_materialized,
+    warn_no_uncertainty_drivers,
+    warn_quantile_crossing,
 )
 
 
@@ -132,3 +141,72 @@ class TestBackwardCompatibility:
         """CalibrationSizeError should be catchable as ValueError."""
         with pytest.raises(ValueError):
             error_calibration_too_small(10)
+
+
+class TestErrorCodesExtended:
+    def test_error_code_attribute(self):
+        err = UncertaintyFlowError("test", error_code="UF-E099")
+        assert err.error_code == "UF-E099"
+        assert "UF-E099" in str(err)
+
+    def test_error_code_none(self):
+        err = UncertaintyFlowError("test")
+        assert err.error_code is None
+
+    def test_model_not_fitted_default_name(self):
+        err = ModelNotFittedError()
+        assert "Model" in str(err)
+
+    def test_invalid_data_error_message(self):
+        err = InvalidDataError("bad shape")
+        assert "bad shape" in str(err)
+        assert "Invalid data" in str(err)
+
+
+class TestWarnings:
+    def test_warn_calibration_size(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_calibration_size(10, warn_threshold=50)
+            assert len(w) == 1
+            assert issubclass(w[0].category, UncertaintyFlowWarning)
+            assert "10" in str(w[0].message)
+            assert "UF-W001" in str(w[0].message)
+
+    def test_warn_quantile_crossing(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_quantile_crossing(15.3)
+            assert len(w) == 1
+            assert "15.3" in str(w[0].message)
+            assert "UF-W002" in str(w[0].message)
+
+    def test_warn_coverage_gap(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_coverage_gap(0.9, 0.82)
+            assert len(w) == 1
+            assert "0.9" in str(w[0].message)
+            assert "UF-W003" in str(w[0].message)
+
+    def test_warn_no_uncertainty_drivers(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_no_uncertainty_drivers()
+            assert len(w) == 1
+            assert "UF-W004" in str(w[0].message)
+
+    def test_warn_lazyframe_materialized(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_lazyframe_materialized("test reason")
+            assert len(w) == 1
+            assert "UF-W005" in str(w[0].message)
+
+    def test_warn_copula_auto_selection_ndim(self):
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            warn_copula_auto_selection_ndim(5)
+            assert len(w) == 1
+            assert "5" in str(w[0].message)
+            assert "UF-W006" in str(w[0].message)

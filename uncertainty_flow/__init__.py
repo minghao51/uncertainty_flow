@@ -1,6 +1,6 @@
 """uncertainty_flow: Probabilistic forecasting and uncertainty quantification."""
 
-__version__ = "0.1.0"
+__version__ = "0.5.0"
 
 # Core classes
 from .core import (
@@ -35,7 +35,12 @@ from .utils import (
 )
 
 # Wrappers
-from .wrappers import ConformalForecaster, ConformalRegressor
+from .wrappers import (
+    ConformalClassifier,
+    ConformalForecaster,
+    ConformalRegressor,
+    EnsembleBootstrapPI,
+)
 
 # Bayesian module (optional - requires numpyro)
 try:
@@ -93,6 +98,8 @@ __all__ = [
     # Wrappers
     "ConformalRegressor",
     "ConformalForecaster",
+    "ConformalClassifier",
+    "EnsembleBootstrapPI",
     # Models
     "DeepQuantileNet",
     "QuantileForestForecaster",

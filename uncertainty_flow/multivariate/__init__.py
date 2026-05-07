@@ -1,5 +1,21 @@
 """Multivariate uncertainty modeling."""
 
-from .copula import GaussianCopula
+from .copula import (
+    BaseCopula,
+    ClaytonCopula,
+    FrankCopula,
+    GaussianCopula,
+    GumbelCopula,
+    PairwiseChainCopula,
+    auto_select_copula,
+)
 
-__all__ = ["GaussianCopula"]
+__all__ = [
+    "BaseCopula",
+    "ClaytonCopula",
+    "FrankCopula",
+    "GaussianCopula",
+    "GumbelCopula",
+    "PairwiseChainCopula",
+    "auto_select_copula",
+]
