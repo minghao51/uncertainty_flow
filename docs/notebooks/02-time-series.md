@@ -1,14 +1,19 @@
+---
+hide:
+  - navigation
+  - toc
+---
+
 # Time Series Forecasting with Uncertainty
 
-Forecast temperature with conformal prediction bands and compare ConformalForecaster vs QuantileForestForecaster
+Compare ConformalForecaster, QuantileForestForecaster, and AdaptiveConformalForecaster on real weather data
 
-<div style="margin: 0 -0.8rem">
-  <iframe
-    src="/uncertainty_flow/notebooks/html/02_time_series.html"
-    style="width: 100%; height: 600px; border: 1px solid
-      var(--md-default-fg-color--lightest); border-radius: 4px;"
-    loading="lazy"
-  ></iframe>
+<div class="iframe-container" id="iframe-wrapper-02-time-series">
+  <div class="iframe-controls">
+    <button onclick="toggleNotebookFullscreen(this)" class="md-button">Expand</button>
+    <a href="/uncertainty_flow/notebooks/html/02_time_series.html" target="_blank" rel="noopener noreferrer" class="md-button">Open in New Tab</a>
+  </div>
+  <iframe src="/uncertainty_flow/notebooks/html/02_time_series.html" allowfullscreen loading="lazy"></iframe>
 </div>
 
 [![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/minghao51/uncertainty_flow/blob/main/notebooks/02_time_series.qmd)

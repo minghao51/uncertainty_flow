@@ -20,6 +20,7 @@ def get_base_path() -> str:
         if line.strip().startswith("site_url:"):
             url = line.split(":", 1)[1].strip()
             from urllib.parse import urlparse
+
             parsed = urlparse(url)
             path = parsed.path.strip("/")
             return f"/{path}" if path else ""
@@ -82,17 +83,22 @@ def main():
                 "Run `make notebooks` locally to generate it.\n"
             )
 
-        page = f"""# {title}
+        page = f"""---
+hide:
+  - navigation
+  - toc
+---
+
+# {title}
 
 {desc}
 {note}
-<div style="margin: 0 -0.8rem">
-  <iframe
-    src="{base}/notebooks/{html_path}"
-    style="width: 100%; height: 600px; border: 1px solid
-      var(--md-default-fg-color--lightest); border-radius: 4px;"
-    loading="lazy"
-  ></iframe>
+<div class="iframe-container" id="iframe-wrapper-{qmd.stem.replace("_", "-")}">
+  <div class="iframe-controls">
+    <button onclick="toggleNotebookFullscreen(this)" class="md-button">Expand</button>
+    <a href="{base}/notebooks/{html_path}" target="_blank" rel="noopener noreferrer" class="md-button">Open in New Tab</a>
+  </div>
+  <iframe src="{base}/notebooks/{html_path}" allowfullscreen loading="lazy"></iframe>
 </div>
 
 [![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/{GITHUB_REPO}/blob/main/notebooks/{qmd.name})

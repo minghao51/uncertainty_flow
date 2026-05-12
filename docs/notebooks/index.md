@@ -5,13 +5,11 @@ is rendered to static HTML via `quarto render` with `freeze: auto` caching.
 
 | Notebook | Description |
 |----------|-------------|
-| [Quick Start: Conformal Regression](01-quick-start.md) | Wrap any scikit-learn model with statistically rigorous coverage guarantees using ConformalRegressor |
-| [Time Series Forecasting with Uncertainty](02-time-series.md) | Forecast temperature with conformal prediction bands and compare ConformalForecaster vs QuantileForestForecaster |
-| [Uncertainty Decomposition: Aleatoric vs. Epistemic](03-uncertainty-decomposition.md) | Decompose prediction uncertainty into aleatoric (data noise) and epistemic (model) components using bootstrap ensembles. |
-| [Risk-Aware Decision Making](04-risk-aware-decisions.md) | Use ConformalRiskControl with custom risk functions for cost-sensitive predictions. |
-| [Multivariate Copulas & Cross-Modal Aggregation](05-multivariate-copulas.md) | Copula families, auto-selection, joint sampling, and multivariate forecasting |
-| [Methods & Benchmarks Overview](06-methods-benchmarks.md) | Every model in uncertainty_flow, when to use it, and how they compare on real benchmarks |
-| [Split Strategies: Sensible Defaults for Validation](07-split-strategies.md) | Auto-selecting the right validation strategy based on task type and data size |
+| [Quick Start: End-to-End Workflow](01-quick-start.md) | Complete lifecycle — conformal regression, classification, DistributionPrediction API, persistence, and validation strategies |
+| [Time Series Forecasting with Uncertainty](02-time-series.md) | Compare ConformalForecaster, QuantileForestForecaster, and AdaptiveConformalForecaster on real weather data |
+| [Diagnostics & Calibration](03-diagnostics-calibration.md) | Understand and improve your predictions — uncertainty decomposition, PIT diagnostics, recalibration, and SHAP attribution |
+| [Risk & Multivariate Uncertainty](04-risk-copulas.md) | Risk-aware decision making with conformal risk control, copula-based multivariate modeling, and joint distribution analysis |
+| [Methods & Benchmarks](05-benchmarks.md) | Every model in uncertainty_flow, when to use it, how they compare, and how to run your own benchmarks |
 
 ## Run Locally
 

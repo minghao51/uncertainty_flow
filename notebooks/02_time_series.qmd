@@ -1,6 +1,6 @@
 ---
 title: "Time Series Forecasting with Uncertainty"
-description: "Forecast temperature with conformal prediction bands and compare ConformalForecaster vs QuantileForestForecaster"
+description: "Compare ConformalForecaster, QuantileForestForecaster, and AdaptiveConformalForecaster on real weather data"
 date: today
 format:
   html:
@@ -12,12 +12,12 @@ format:
 
 # Time Series Forecasting with Uncertainty
 
-Forecast temperature using the **weather dataset** (36K+ hourly measurements) with conformal prediction bands.
+Time series data demands **temporal splitting** — random splits leak future information.
+This notebook compares three forecasting approaches:
 
-This notebook compares two approaches:
-
-- **ConformalForecaster** — wrap any sklearn model, guaranteed coverage
-- **QuantileForestForecaster** — quantile regression forest, empirical coverage
+1. **ConformalForecaster** — distribution-free conformal intervals around any regressor
+2. **QuantileForestForecaster** — native quantile predictions from a quantile forest
+3. **AdaptiveConformalForecaster** — adapts interval width under distribution shift
 
 ## Setup
 
@@ -25,12 +25,18 @@ This notebook compares two approaches:
 #| label: setup
 #| cache: true
 import polars as pl
+import numpy as np
+import matplotlib.pyplot as plt
 from sklearn.ensemble import GradientBoostingRegressor
 
-from uncertainty_flow.metrics import coverage_score, winkler_score
-from uncertainty_flow.models import QuantileForestForecaster
-from uncertainty_flow.utils.split import select_validation_plan
-from uncertainty_flow.wrappers import ConformalForecaster
+from uncertainty_flow import (
+    ConformalForecaster,
+    QuantileForestForecaster,
+    coverage_score,
+    winkler_score,
+)
+from uncertainty_flow.utils import select_validation_plan
+from uncertainty_flow.wrappers import AdaptiveConformalForecaster
 ```
 
 ## Configuration
@@ -41,34 +47,36 @@ target_col = "T (degC)"
 horizon = 6
 ```
 
-## Load Data
+## Data & Temporal Splitting
 
 ```{python}
-#| label: load-data
+#| label: data-load
 #| cache: true
-weather = pl.read_parquet("../data/weather.parquet")
-weather_clean = weather.drop_nulls()
-print(f"Rows: {weather_clean.height:,} | Columns: {weather_clean.width}")
+weather = pl.read_parquet("../data/weather.parquet").drop_nulls()
+print(f"Rows: {weather.height:,} | Columns: {weather.width}")
+weather.head(3)
 ```
 
-## Train / Test Split
-
 ```{python}
-#| label: split
-#| cache: true
-df = weather_clean.select([target_col])
-plan = select_validation_plan(df, task_type="time_series", holdout_fraction=0.15, random_state=42)
-train_ts, test_ts = plan.outer_split
-split_idx = len(train_ts)
-print(f"Strategy: {plan.metadata.strategy_name} | Train: {train_ts.height:,} | Test: {test_ts.height:,}")
+#| label: prepare-data
+df_ts = weather.select([target_col])
 ```
 
-## Train ConformalForecaster
+```{python}
+#| label: validation-plan
+plan = select_validation_plan(df_ts, task_type="time_series", holdout_fraction=0.15, random_state=42)
+train_df, test_df = plan.outer_split
+print(f"Strategy: {plan.metadata.strategy_name} | Train: {train_df.height:,} | Test: {test_df.height:,}")
+```
+
+## Model 1: ConformalForecaster
+
+Wraps a regressor with conformal prediction bands. Coverage is guaranteed under exchangeability.
+Requires `targets`, `horizon`, and `lags` to auto-generate time features.
 
 ```{python}
-#| label: train-conformal
-#| cache: true
-ts_model = ConformalForecaster(
+#| label: conformal-forecaster
+cf = ConformalForecaster(
     base_model=GradientBoostingRegressor(random_state=42),
     targets=target_col,
     horizon=horizon,
@@ -77,41 +85,17 @@ ts_model = ConformalForecaster(
     auto_tune=False,
     random_state=42,
 )
-ts_model.fit(train_ts)
-ts_pred = ts_model.predict(test_ts)
-print(f"ConformalForecaster fitted: {ts_pred is not None}")
+cf.fit(train_df)
+pred_cf = cf.predict(test_df)
 ```
 
-## Conformal Intervals
+## Model 2: QuantileForestForecaster
+
+Directly predicts quantiles — no conformal wrapper needed. Coverage is empirical (not guaranteed).
 
 ```{python}
-#| label: conformal-intervals
-interval = ts_pred.interval(confidence=0.9)
-print(interval.head(10))
-```
-
-## Conformal Forecast Plot
-
-```{python}
-#| label: conformal-plot
-actuals_ts = weather_clean[target_col][
-    split_idx + horizon : split_idx + horizon + ts_pred._n_samples
-]
-fig = ts_pred.plot(
-    actuals=actuals_ts[:200],
-    confidence_bands=[0.5, 0.8, 0.9],
-    title=f"Conformal Forecast — {target_col} (h={horizon})",
-)
-fig
-```
-
-## Train QuantileForestForecaster
-
-```{python}
-#| label: train-qf
-#| cache: true
-#| error: true
-qf_model = QuantileForestForecaster(
+#| label: quantile-forest
+qf = QuantileForestForecaster(
     targets=target_col,
     horizon=horizon,
     n_estimators=100,
@@ -119,31 +103,147 @@ qf_model = QuantileForestForecaster(
     auto_tune=False,
     random_state=42,
 )
-qf_model.fit(train_ts)
-qf_pred = qf_model.predict(test_ts)
-print(f"QuantileForestForecaster fitted: {qf_pred is not None}")
+qf.fit(train_df)
+pred_qf = qf.predict(test_df)
 ```
 
-## Model Comparison
+## Model 3: AdaptiveConformalForecaster
+
+Adapts interval width after each observation using the Gibbs & Candes (2021) ACI rule.
+Ideal when the data distribution shifts over time.
 
 ```{python}
-#| label: comparison
-#| error: true
-results = []
-for label, pred in [("ConformalForecaster", ts_pred), ("QuantileForest", qf_pred)]:
-    try:
-        actuals_slice = weather_clean[target_col][
-            split_idx + horizon : split_idx + horizon + pred._n_samples
-        ]
-        interval_df = pred.interval(confidence=0.9)
-        cov = coverage_score(actuals_slice, interval_df["lower"], interval_df["upper"])
-        wink = winkler_score(
-            actuals_slice, interval_df["lower"], interval_df["upper"], confidence=0.9
-        )
-        results.append({"model": label, "coverage": round(cov, 3), "winkler": round(wink, 2)})
-    except Exception:
-        results.append({"model": label, "coverage": None, "winkler": None})
-
-comparison = pl.DataFrame(results)
-print(comparison)
+#| label: adaptive-conformal
+aci = AdaptiveConformalForecaster(
+    model=cf,
+    alpha=0.1,
+    gamma=0.01,
+)
+aci.fit(test_df.head(100), target=target_col)
 ```
+
+```{python}
+#| label: adaptive-rolling
+y_test = test_df[target_col].to_numpy()
+n_aci = min(200, len(test_df))
+
+alphas = []
+for i in range(n_aci):
+    row = test_df.slice(i, 1)
+    _ = aci.predict(row)
+    alphas.append(aci.current_alpha)
+    if i < len(y_test):
+        aci.update(float(y_test[i]))
+```
+
+## Side-by-Side Comparison
+
+### Forecast Plot
+
+```{python}
+#| label: comparison-plot
+n_plot = min(200, len(test_df))
+x = np.arange(n_plot)
+y_true_plot = test_df[target_col].to_numpy()[:n_plot]
+
+int_cf = pred_cf.interval(0.9)
+n_preds = min(n_plot, int_cf.height)
+
+fig, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+
+lower = int_cf["lower"].to_numpy()[:n_preds]
+upper = int_cf["upper"].to_numpy()[:n_preds]
+median = (lower + upper) / 2
+
+axes[0].fill_between(x[:n_preds], lower, upper, alpha=0.25, color="#4C78A8", label="90% interval")
+axes[0].plot(x[:n_preds], median, color="#4C78A8", linewidth=1, label="Median")
+axes[0].scatter(x[:n_preds], y_true_plot[:n_preds], s=3, color="#E45756", alpha=0.5, label="Actual")
+axes[0].set_ylabel("Temperature")
+axes[0].set_title("ConformalForecaster")
+axes[0].legend(loc="upper right", fontsize=8)
+
+axes[1].plot(x[:len(alphas)], alphas, color="#54A24B")
+axes[1].set_ylabel("Adaptive alpha")
+axes[1].set_xlabel("Time step")
+axes[1].set_title("AdaptiveConformalForecaster — alpha evolution")
+axes[1].axhline(y=0.1, color="gray", linestyle="--", alpha=0.5, label="Initial alpha=0.1")
+axes[1].legend(fontsize=8)
+
+plt.tight_layout()
+plt.show()
+```
+
+### Metrics Table
+
+```{python}
+#| label: metrics-table
+y_true_all = test_df[target_col]
+intervals_cf = pred_cf.interval(0.9)
+
+rows = [{
+    "Model": "ConformalForecaster",
+    "Coverage_90": coverage_score(
+        y_true_all[:intervals_cf.height],
+        intervals_cf["lower"],
+        intervals_cf["upper"],
+    ),
+    "Winkler_90": winkler_score(
+        y_true_all[:intervals_cf.height],
+        intervals_cf["lower"],
+        intervals_cf["upper"],
+        0.9,
+    ),
+    "CRPS": pred_cf.crps(y_true_all[:intervals_cf.height]),
+}]
+
+try:
+    intervals_qf = pred_qf.interval(0.9)
+    rows.append({
+        "Model": "QuantileForestForecaster",
+        "Coverage_90": coverage_score(
+            y_true_all[:intervals_qf.height],
+            intervals_qf["lower"],
+            intervals_qf["upper"],
+        ),
+        "Winkler_90": winkler_score(
+            y_true_all[:intervals_qf.height],
+            intervals_qf["lower"],
+            intervals_qf["upper"],
+            0.9,
+        ),
+        "CRPS": pred_qf.crps(y_true_all[:intervals_qf.height]),
+    })
+except NameError:
+    pass
+
+metrics_df = pl.DataFrame(rows)
+metrics_df
+```
+
+### Metrics Bar Chart
+
+```{python}
+#| label: metrics-chart
+fig, axes = plt.subplots(1, 3, figsize=(12, 4))
+metric_cols = ["Coverage_90", "Winkler_90", "CRPS"]
+
+for ax, col in zip(axes, metric_cols):
+    vals = metrics_df[col].to_numpy()
+    names = metrics_df["Model"].to_numpy()
+    short = [n.replace("Forecaster", "") for n in names]
+    colors = ["#4C78A8", "#E45756"]
+    ax.bar(short, vals, color=colors)
+    ax.set_title(col)
+    ax.tick_params(axis="x", rotation=15)
+
+plt.tight_layout()
+plt.show()
+```
+
+## Key Takeaways
+
+| Model | Coverage | Best for |
+|-------|----------|----------|
+| **ConformalForecaster** | Guaranteed (under exchangeability) | Stationary series, new users |
+| **QuantileForestForecaster** | Empirical | When you need sharp intervals, can validate coverage separately |
+| **AdaptiveConformalForecaster** | Adaptive (Gibbs & Candes 2021) | Distribution shift, streaming data |

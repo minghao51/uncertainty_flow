@@ -1,0 +1,472 @@
+---
+title: "Risk & Multivariate Uncertainty"
+description: "Risk-aware decision making with conformal risk control, copula-based multivariate modeling, and joint distribution analysis"
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+# Risk & Multivariate Uncertainty
+
+Point predictions miss the costs of being wrong. This notebook covers:
+
+**Part A — Risk-Aware Decisions:**
+- Four built-in risk functions (inventory, asymmetric, threshold, VaR)
+- `ConformalRiskControl` for cost-sensitive predictions
+
+**Part B — Multivariate Uncertainty:**
+- Copula families and tail dependence
+- Auto-selection by BIC
+- Joint sampling and multivariate forecasting
+
+## Setup
+
+```{python}
+#| label: setup
+#| cache: true
+import polars as pl
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import GradientBoostingRegressor
+
+from uncertainty_flow import (
+    ConformalRegressor,
+    ConformalRiskControl,
+    coverage_score,
+    winkler_score,
+    asymmetric_loss,
+    inventory_cost,
+    threshold_penalty,
+    financial_var,
+)
+from uncertainty_flow.utils import select_validation_plan
+```
+
+# Part A: Risk-Aware Decisions
+
+## Data
+
+```{python}
+#| label: risk-data
+#| cache: true
+energy = pl.read_parquet("../data/energy_efficiency.parquet")
+target_col = energy.columns[-1]
+print(f"Shape: {energy.shape}, Target: {target_col}")
+energy.head(3)
+```
+
+```{python}
+#| label: risk-splits
+plan = select_validation_plan(energy, task_type="tabular", holdout_fraction=0.15, random_state=42)
+train_val, test_df = plan.outer_split
+
+n_calib = len(train_val) * 15 // 85
+train_df = train_val[:-n_calib]
+calib_df = train_val[-n_calib:]
+print(f"Train: {len(train_df)} | Calib: {len(calib_df)} | Test: {len(test_df)}")
+```
+
+```{python}
+#| label: risk-base-model
+base = ConformalRegressor(
+    base_model=GradientBoostingRegressor(random_state=42),
+    auto_tune=False,
+    random_state=42,
+)
+base.fit(train_df, target=target_col)
+```
+
+## Risk Functions
+
+`ConformalRiskControl` wraps a fitted model and controls **expected risk** (not coverage).
+It returns a DataFrame with `prediction`, `risk`, and `exceeds_threshold` columns.
+
+### 1. Inventory Cost
+
+Stockouts cost $10/unit, holding costs $1/unit:
+
+```{python}
+#| label: inventory-risk
+risk_inv = ConformalRiskControl(
+    base_model=base,
+    risk_function=inventory_cost(holding_cost=1.0, stockout_cost=10.0),
+    target_risk=5.0,
+    random_state=42,
+)
+risk_inv.fit(calib_df, target=target_col)
+pred_inv = risk_inv.predict(test_df.drop(target_col))
+pred_inv.head()
+```
+
+```{python}
+#| label: inventory-plot
+y_true = test_df[target_col].to_numpy()
+preds = pred_inv["prediction"].to_numpy()
+risks = pred_inv["risk"].to_numpy()
+flagged = pred_inv["exceeds_threshold"].to_numpy()
+
+n_show = min(100, len(y_true))
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].hist(risks, bins=30, alpha=0.7, color="#4C78A8", edgecolor="white")
+axes[0].axvline(np.mean(risks), color="red", linestyle="--", label=f"Mean: {np.mean(risks):.2f}")
+axes[0].set_xlabel("Estimated Risk")
+axes[0].set_ylabel("Count")
+axes[0].set_title("Risk Distribution (Inventory)")
+axes[0].legend()
+
+axes[1].scatter(range(n_show), preds[:n_show], c=flagged[:n_show].astype(int),
+                cmap="coolwarm", s=15, alpha=0.6)
+axes[1].scatter(range(n_show), y_true[:n_show], s=6, color="#54A24B", alpha=0.4, label="Actual")
+axes[1].set_xlabel("Sample")
+axes[1].set_ylabel("Heating load")
+axes[1].set_title("Predictions (red = exceeds risk threshold)")
+axes[1].legend(fontsize=8)
+
+plt.tight_layout()
+plt.show()
+```
+
+### 2. Asymmetric Loss
+
+Underpredictions penalized 3x more than overpredictions:
+
+```{python}
+#| label: asymmetric-risk
+risk_asym = ConformalRiskControl(
+    base_model=base,
+    risk_function=asymmetric_loss(overprediction_penalty=1.0, underprediction_penalty=3.0),
+    target_risk=5.0,
+    random_state=42,
+)
+risk_asym.fit(calib_df, target=target_col)
+pred_asym = risk_asym.predict(test_df.drop(target_col))
+```
+
+```{python}
+#| label: asymmetric-plot
+preds_a = pred_asym["prediction"].to_numpy()
+flagged_a = pred_asym["exceeds_threshold"].to_numpy()
+residuals = y_true - preds_a
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].scatter(preds_a[:n_show], y_true[:n_show], s=10, alpha=0.5)
+max_val = max(preds_a[:n_show].max(), y_true[:n_show].max())
+axes[0].plot([0, max_val], [0, max_val], "k--", alpha=0.3)
+axes[0].set_xlabel("Predicted")
+axes[0].set_ylabel("Actual")
+axes[0].set_title("Asymmetric Loss: Predicted vs Actual")
+
+colors = ["#E45756" if r > 0 else "#4C78A8" for r in residuals[:n_show]]
+axes[1].scatter(range(n_show), residuals[:n_show], c=colors, s=8, alpha=0.6)
+axes[1].axhline(y=0, color="gray", linestyle="--", alpha=0.5)
+axes[1].set_xlabel("Sample")
+axes[1].set_ylabel("Residual (positive = underprediction)")
+axes[1].set_title("Residuals (red = underpredicted, costlier)")
+
+plt.tight_layout()
+plt.show()
+```
+
+### 3. Threshold Penalty
+
+Errors above 5 units penalized at 10x rate — models catastrophic mispredictions:
+
+```{python}
+#| label: threshold-risk
+risk_thresh = ConformalRiskControl(
+    base_model=base,
+    risk_function=threshold_penalty(threshold=5.0, penalty_above=10.0, penalty_below=1.0),
+    target_risk=5.0,
+    random_state=42,
+)
+risk_thresh.fit(calib_df, target=target_col)
+pred_thresh = risk_thresh.predict(test_df.drop(target_col))
+```
+
+```{python}
+#| label: threshold-plot
+preds_t = pred_thresh["prediction"].to_numpy()
+errors = np.abs(y_true - preds_t)
+
+fig, ax = plt.subplots(figsize=(10, 5))
+colors = ["#E45756" if e > 5.0 else "#4C78A8" for e in errors[:n_show]]
+ax.scatter(range(n_show), errors[:n_show], c=colors, s=15, alpha=0.6)
+ax.axhline(y=5.0, color="red", linestyle="--", alpha=0.7, label="Threshold = 5.0")
+ax.set_xlabel("Sample")
+ax.set_ylabel("|Error|")
+ax.set_title("Threshold Penalty — Errors Above Threshold (red) Get 10x Penalty")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+### 4. Financial VaR
+
+Value-at-Risk style penalty for financial applications:
+
+```{python}
+#| label: var-risk
+risk_var = ConformalRiskControl(
+    base_model=base,
+    risk_function=financial_var(var_level=0.95, excess_penalty=10.0),
+    target_risk=5.0,
+    random_state=42,
+)
+risk_var.fit(calib_df, target=target_col)
+pred_var = risk_var.predict(test_df.drop(target_col))
+```
+
+```{python}
+#| label: var-plot
+risks_v = pred_var["risk"].to_numpy()
+
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.hist(risks_v, bins=30, color="#4C78A8", alpha=0.7, edgecolor="white")
+ax.axvline(x=np.mean(risks_v), color="red", linestyle="--", label=f"Mean risk: {np.mean(risks_v):.2f}")
+ax.set_xlabel("Estimated Risk")
+ax.set_ylabel("Frequency")
+ax.set_title("VaR Risk Control — Distribution of Risks")
+ax.legend()
+plt.tight_layout()
+plt.show()
+```
+
+## Risk Comparison
+
+```{python}
+#| label: risk-comparison
+print(f"{'Risk Function':<25s} {'Mean_Risk':>12s} {'Flag_Rate':>12s}")
+print("-" * 51)
+
+for name, p in [
+    ("Inventory cost", pred_inv),
+    ("Asymmetric loss", pred_asym),
+    ("Threshold penalty", pred_thresh),
+    ("Financial VaR", pred_var),
+]:
+    mean_risk = p["risk"].mean()
+    flag_rate = p.filter(pl.col("exceeds_threshold")).height / p.height
+    print(f"{name:<25s} {mean_risk:>12.4f} {flag_rate:>12.1%}")
+```
+
+### Standard Conformal vs Risk Control
+
+```{python}
+#| label: standard-vs-risk
+base_pred = base.predict(test_df)
+base_intervals = base_pred.interval(0.9)
+base_cov = coverage_score(test_df[target_col], base_intervals["lower"], base_intervals["upper"])
+base_width = (base_intervals["upper"] - base_intervals["lower"]).mean()
+print(f"Standard conformal — Coverage: {base_cov:.4f}, Mean interval width: {base_width:.2f}")
+print(f"Risk control trades coverage guarantees for cost optimization")
+```
+
+# Part B: Multivariate Uncertainty
+
+## Copula Fundamentals
+
+Copulas model the **dependence structure** between variables separately from their marginal distributions. This enables joint sampling and multivariate prediction intervals.
+
+```{python}
+#| label: copula-setup
+from uncertainty_flow.multivariate import (
+    GaussianCopula,
+    ClaytonCopula,
+    GumbelCopula,
+    FrankCopula,
+    auto_select_copula,
+)
+
+mv = pl.read_parquet("../data/synthetic_multivariate.parquet")
+print(f"Shape: {mv.shape}")
+mv.head(3)
+```
+
+### Compute Residuals
+
+Copulas operate on residuals (differences between targets and their medians):
+
+```{python}
+#| label: copula-residuals
+targets_mv = ["y1", "y2", "y3"]
+y1 = mv["y1"].to_numpy()
+y2 = mv["y2"].to_numpy()
+y3 = mv["y3"].to_numpy()
+residuals = np.column_stack([y1, y2, y3])
+print(f"Residuals shape: {residuals.shape}")
+```
+
+### Compare Copula Families
+
+```{python}
+#| label: copula-comparison
+families = {
+    "Gaussian": GaussianCopula(),
+    "Clayton": ClaytonCopula(),
+    "Gumbel": GumbelCopula(),
+    "Frank": FrankCopula(),
+}
+
+rows = []
+for name, cop in families.items():
+    try:
+        cop.fit(residuals[:, :2])
+        ll = cop.log_likelihood(residuals[:, :2])
+        rows.append({
+            "family": name,
+            "theta": round(cop.theta_, 4),
+            "log_likelihood": round(ll, 2),
+        })
+    except Exception as e:
+        rows.append({"family": name, "theta": None, "log_likelihood": None})
+
+pl.DataFrame(rows)
+```
+
+### Auto-Select Best Copula
+
+```{python}
+#| label: auto-copula
+best_family = auto_select_copula(residuals[:, :2])
+print(f"BIC-selected copula family: {best_family}")
+```
+
+### Tail Dependence Visualization
+
+```{python}
+#| label: copula-scatter
+n_q = 11
+quantile_levels = np.linspace(0.05, 0.95, n_q)
+
+fig, axes = plt.subplots(2, 2, figsize=(10, 10))
+copulas = [
+    (GaussianCopula(), "Gaussian\n(linear dependence)"),
+    (ClaytonCopula(), "Clayton\n(lower tail dependence)"),
+    (GumbelCopula(), "Gumbel\n(upper tail dependence)"),
+    (FrankCopula(), "Frank\n(symmetric dependence)"),
+]
+
+marginals_2d = np.zeros((1, 2, n_q))
+for t in range(2):
+    for qi, q in enumerate(quantile_levels):
+        marginals_2d[0, t, qi] = np.quantile(residuals[:, t], q)
+
+for ax, (cop, title) in zip(axes.flat, copulas):
+    try:
+        cop.fit(residuals[:, :2])
+        samples = cop.sample(marginals_2d, n_samples=500, quantile_levels=quantile_levels, random_state=42)
+        ax.scatter(samples[:, 0], samples[:, 1], s=5, alpha=0.4, color="#4C78A8", label="Copula samples")
+    except Exception:
+        ax.text(0.5, 0.5, "fit failed", ha="center", transform=ax.transAxes)
+    ax.scatter(residuals[:, 0], residuals[:, 1], s=3, alpha=0.15, color="#E45756", label="Original")
+    ax.set_xlabel("y1 residual")
+    ax.set_ylabel("y2 residual")
+    ax.set_title(title)
+    ax.legend(fontsize=7)
+
+plt.suptitle("Copula Family Comparison — Joint Samples vs Original Data", fontsize=13)
+plt.tight_layout()
+plt.show()
+```
+
+## Joint Sampling
+
+```{python}
+#| label: joint-sampling
+copula_gauss = GaussianCopula()
+copula_gauss.fit(residuals[:, :2])
+
+joint = copula_gauss.sample(marginals_2d, n_samples=2000, quantile_levels=quantile_levels, random_state=42)
+
+fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+axes[0].scatter(joint[:, 0], joint[:, 1], s=3, alpha=0.3, color="#4C78A8")
+axes[0].set_xlabel("y1 residual")
+axes[0].set_ylabel("y2 residual")
+axes[0].set_title("Joint Samples (2000)")
+
+axes[1].hist(joint[:, 0], bins=40, alpha=0.7, color="#4C78A8", label="Sampled")
+axes[1].hist(residuals[:, 0], bins=40, alpha=0.4, color="#E45756", label="Original")
+axes[1].set_title("y1 Marginal")
+axes[1].legend(fontsize=8)
+
+axes[2].hist(joint[:, 1], bins=40, alpha=0.7, color="#4C78A8", label="Sampled")
+axes[2].hist(residuals[:, 1], bins=40, alpha=0.4, color="#E45756", label="Original")
+axes[2].set_title("y2 Marginal")
+axes[2].legend(fontsize=8)
+
+plt.tight_layout()
+plt.show()
+```
+
+## Multivariate Forecasting
+
+```{python}
+#| label: mv-forecasting
+from uncertainty_flow import QuantileForestForecaster
+
+feature_cols = [c for c in mv.columns if c not in targets_mv]
+
+plan_mv = select_validation_plan(mv, task_type="tabular", holdout_fraction=0.2, random_state=42)
+train_mv, test_mv = plan_mv.outer_split
+
+qf_mv = QuantileForestForecaster(targets=targets_mv, horizon=1, random_state=42)
+qf_mv.fit(train_mv, target=targets_mv)
+pred_mv = qf_mv.predict(test_mv)
+```
+
+```{python}
+#| label: mv-summary
+pred_mv.summary()
+```
+
+```{python}
+#| label: mv-intervals
+intervals_mv = pred_mv.interval(0.9)
+intervals_mv.head()
+```
+
+### Cross-Target Correlation
+
+```{python}
+#| label: cross-correlation
+medians = pred_mv.median()
+if isinstance(medians, pl.DataFrame):
+    corr_matrix = np.corrcoef(medians.to_numpy().T)
+else:
+    corr_matrix = np.array([[1.0]])
+
+fig, ax = plt.subplots(figsize=(6, 5))
+im = ax.imshow(corr_matrix, cmap="RdBu_r", vmin=-1, vmax=1)
+ax.set_xticks(range(len(targets_mv)))
+ax.set_yticks(range(len(targets_mv)))
+ax.set_xticklabels(targets_mv)
+ax.set_yticklabels(targets_mv)
+for i in range(len(targets_mv)):
+    for j in range(len(targets_mv)):
+        ax.text(j, i, f"{corr_matrix[i, j]:.2f}", ha="center", va="center", fontsize=12)
+ax.set_title("Cross-Target Correlation (Predicted Medians)")
+plt.colorbar(im, ax=ax)
+plt.tight_layout()
+plt.show()
+```
+
+## Key Takeaways
+
+| Concept | API |
+|---------|-----|
+| Risk control | `ConformalRiskControl(base_model, risk_function, target_risk)` |
+| Inventory cost | `inventory_cost(holding, stockout)` |
+| Asymmetric loss | `asymmetric_loss(over, under)` |
+| Threshold penalty | `threshold_penalty(threshold, above, below)` |
+| Financial VaR | `financial_var(var_level, excess_penalty)` |
+| Copula fitting | `GaussianCopula().fit(residuals_matrix)` |
+| Auto-select | `auto_select_copula(residuals_matrix)` → family name string |
+| Joint sampling | `copula.sample(marginals, n_samples, quantile_levels)` |
+| Multivariate forecast | `QuantileForestForecaster(targets=[...], horizon=N)` |

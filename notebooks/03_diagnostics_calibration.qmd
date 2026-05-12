@@ -1,0 +1,331 @@
+---
+title: "Diagnostics & Calibration"
+description: "Understand and improve your predictions — uncertainty decomposition, PIT diagnostics, recalibration, and SHAP attribution"
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+# Diagnostics & Calibration
+
+A model with 90% nominal coverage that actually achieves 85% is **miscalibrated**.
+This notebook shows how to:
+
+1. **Decompose uncertainty** into aleatoric (data noise) vs epistemic (model) components
+2. **Diagnose calibration** with PIT histograms and reliability diagrams
+3. **Identify uncertainty drivers** — which features make predictions uncertain
+4. **Recalibrate** miscalibrated models with isotonic regression
+5. **Attribute interval width** to features via SHAP
+
+## Setup
+
+```{python}
+#| label: setup
+#| cache: true
+import polars as pl
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import GradientBoostingRegressor
+
+from uncertainty_flow import (
+    ConformalRegressor,
+    coverage_score,
+    winkler_score,
+    pinball_loss,
+    EnsembleDecomposition,
+)
+from uncertainty_flow.utils import select_validation_plan
+from uncertainty_flow.calibration import RecalibratedModel
+from uncertainty_flow.calibration.residual_analysis import compute_uncertainty_drivers
+```
+
+```{python}
+#| label: data-load
+#| cache: true
+df = pl.read_parquet("../data/concrete.parquet")
+plan = select_validation_plan(df, task_type="tabular")
+
+train_df, test_df = plan.outer_split
+print(f"Train: {len(train_df)}  Test: {len(test_df)}")
+```
+
+```{python}
+#| label: fit-model
+model = ConformalRegressor(
+    base_model=GradientBoostingRegressor(random_state=42),
+    coverage_target=0.9,
+)
+model.fit(train_df, target="strength")
+pred = model.predict(test_df)
+y_true = test_df["strength"]
+```
+
+## Uncertainty Decomposition
+
+### Lightweight Heuristic
+
+`pred.uncertainty_decomposition()` gives a cheap per-prediction estimate without refitting:
+
+```{python}
+#| label: heuristic-decomposition
+decomp = pred.uncertainty_decomposition()
+print(f"Total:     {decomp['total']:.2f}")
+print(f"  Aleatoric (data noise): {decomp['aleatoric']:.2f}")
+print(f"  Epistemic (model):      {decomp['epistemic']:.2f}")
+```
+
+### Bootstrap Ensemble Decomposition
+
+`EnsembleDecomposition` refits the model on bootstrap resamples for a principled decomposition:
+
+```{python}
+#| label: ensemble-decomposition
+ensemble = EnsembleDecomposition(
+    model_factory=lambda: ConformalRegressor(
+        base_model=GradientBoostingRegressor(random_state=42),
+        coverage_target=0.9,
+    ),
+    train_data=train_df,
+    target="strength",
+    n_bootstrap=15,
+    random_state=42,
+)
+decomp_ens = ensemble.decompose(test_df)
+print(f"Ensemble — Total: {decomp_ens['total']:.2f}")
+print(f"  Aleatoric: {decomp_ens['aleatoric']:.2f}")
+print(f"  Epistemic: {decomp_ens['epistemic']:.2f}")
+```
+
+### Per-Sample Decomposition
+
+```{python}
+#| label: per-sample-decomp
+per_sample = ensemble.decompose_by_sample(test_df)
+per_sample.head()
+```
+
+```{python}
+#| label: decomposition-violin
+fig, ax = plt.subplots(figsize=(8, 5))
+positions = [1, 2, 3]
+parts = ax.violinplot(
+    [per_sample["aleatoric"].to_numpy(),
+     per_sample["epistemic"].to_numpy(),
+     per_sample["total"].to_numpy()],
+    positions=positions,
+    showmeans=True,
+    showmedians=True,
+)
+ax.set_xticks(positions)
+ax.set_xticklabels(["Aleatoric", "Epistemic", "Total"])
+ax.set_ylabel("Uncertainty (interval width)")
+ax.set_title("Per-Sample Uncertainty Decomposition")
+plt.tight_layout()
+plt.show()
+```
+
+### Comparison: Heuristic vs Ensemble
+
+```{python}
+#| label: decomp-comparison
+print("Method Comparison")
+print(f"  Heuristic:  aleatoric={decomp['aleatoric']:.2f}  epistemic={decomp['epistemic']:.2f}  total={decomp['total']:.2f}")
+print(f"  Ensemble:   aleatoric={decomp_ens['aleatoric']:.2f}  epistemic={decomp_ens['epistemic']:.2f}  total={decomp_ens['total']:.2f}")
+```
+
+## Calibration Diagnostics
+
+### PIT Histogram
+
+If predictions are perfectly calibrated, PIT values follow Uniform(0, 1).
+A U-shaped histogram means intervals are too narrow; a hump means too wide.
+
+```{python}
+#| label: pit-histogram
+pred.plot_pit(y_true)
+plt.show()
+```
+
+### Calibration Curve (Reliability Diagram)
+
+Compares expected (nominal) coverage to observed (empirical) coverage:
+
+```{python}
+#| label: calibration-curve
+cal = pred.calibration_curve(y_true, n_bins=20)
+expected = cal["expected_coverage"].to_numpy()
+observed = cal["observed_coverage"].to_numpy()
+
+fig, ax = plt.subplots(figsize=(7, 7))
+ax.plot([0, 1], [0, 1], "k--", alpha=0.5, label="Perfect calibration")
+ax.plot(expected, observed, "o-", color="#4C78A8", markersize=4, label="Model")
+ax.set_xlabel("Expected coverage")
+ax.set_ylabel("Observed coverage")
+ax.set_title("Reliability Diagram")
+ax.legend()
+ax.set_aspect("equal")
+plt.tight_layout()
+plt.show()
+```
+
+### Calibration Report
+
+```{python}
+#| label: calibration-report
+report = model.calibration_report(test_df, target="strength")
+print(report)
+```
+
+## Uncertainty Drivers
+
+Which features are most associated with high prediction uncertainty?
+
+```{python}
+#| label: uncertainty-drivers
+if hasattr(model, "uncertainty_drivers_") and model.uncertainty_drivers_ is not None:
+    drivers = model.uncertainty_drivers_
+else:
+    y_pred = pred.median().to_numpy()
+    residuals = y_true.to_numpy() - y_pred
+    feature_cols = [c for c in test_df.columns if c != "strength"]
+    drivers = compute_uncertainty_drivers(residuals, test_df.select(feature_cols))
+
+drivers
+```
+
+```{python}
+#| label: drivers-plot
+feat_names = drivers["feature"].to_numpy()
+correlations = drivers["residual_correlation"].to_numpy()
+abs_corr = np.abs(correlations)
+sort_idx = np.argsort(abs_corr)[::-1]
+
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.barh(feat_names[sort_idx], correlations[sort_idx], color="#4C78A8")
+ax.set_xlabel("Correlation with squared residuals")
+ax.set_title("Uncertainty Drivers — Feature Correlation with Heteroscedasticity")
+ax.invert_yaxis()
+plt.tight_layout()
+plt.show()
+```
+
+## Recalibration
+
+`RecalibratedModel` wraps a fitted model with isotonic regression (Kuleshov et al., 2018)
+to learn a monotone mapping from predicted to empirical coverage.
+
+We use a separate calibration split:
+
+```{python}
+#| label: recalibration-setup
+plan_3way = select_validation_plan(df, task_type="tabular")
+train_all, holdout = plan_3way.outer_split
+
+plan_inner = select_validation_plan(train_all, task_type="tabular")
+train_sub, calib_sub = plan_inner.outer_split
+
+model_base = ConformalRegressor(
+    base_model=GradientBoostingRegressor(random_state=42),
+    coverage_target=0.9,
+)
+model_base.fit(train_sub, target="strength")
+```
+
+```{python}
+#| label: recalibrate
+recal = RecalibratedModel(model=model_base)
+recal.fit(calib_sub, target="strength")
+pred_recal = recal.predict(holdout)
+y_hold = holdout["strength"]
+```
+
+### Before vs After
+
+```{python}
+#| label: before-after-metrics
+pred_before = model_base.predict(holdout)
+int_before = pred_before.interval(0.9)
+int_after = pred_recal.interval(0.9)
+
+print("Before Recalibration:")
+print(f"  Coverage: {coverage_score(y_hold, int_before['lower'], int_before['upper']):.4f}")
+print(f"  Winkler:  {winkler_score(y_hold, int_before['lower'], int_before['upper'], 0.9):.2f}")
+
+print("After Recalibration:")
+print(f"  Coverage: {coverage_score(y_hold, int_after['lower'], int_after['upper']):.4f}")
+print(f"  Winkler:  {winkler_score(y_hold, int_after['lower'], int_after['upper'], 0.9):.2f}")
+```
+
+### PIT Comparison
+
+```{python}
+#| label: pit-comparison
+fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+for ax, p, title in [
+    (axes[0], pred_before, "Before Recalibration"),
+    (axes[1], pred_recal, "After Recalibration"),
+]:
+    hist = p.pit_histogram(y_hold, n_bins=10)
+    centers = hist["bin_center"].to_numpy()
+    counts = hist["count"].to_numpy()
+    expected = hist["expected"].to_numpy()
+    width = centers[1] - centers[0] if len(centers) > 1 else 0.1
+    ax.bar(centers, counts, width=width * 0.9, alpha=0.7, color="#4C78A8", label="PIT counts")
+    ax.axhline(y=expected[0], color="red", linestyle="--", label="Uniform reference")
+    ax.set_xlabel("PIT value")
+    ax.set_ylabel("Count")
+    ax.set_title(title)
+    ax.legend()
+
+plt.tight_layout()
+plt.show()
+```
+
+## SHAP: What Drives Interval Width?
+
+```{python}
+#| label: shap
+#| error: true
+from uncertainty_flow.calibration import uncertainty_shap
+
+feature_cols = [c for c in test_df.columns if c != "strength"]
+X_test = test_df.select(feature_cols)
+
+shap_df = uncertainty_shap(model, X_test.head(50), background=X_test.head(20))
+shap_df.sort("interval_width_contribution", descending=True)
+```
+
+```{python}
+#| label: shap-plot
+#| error: true
+if shap_df.height > 0:
+    sorted_df = shap_df.sort("interval_width_contribution", descending=True)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.barh(
+        sorted_df["feature"].to_numpy(),
+        sorted_df["interval_width_contribution"].to_numpy(),
+        color="#E45756",
+    )
+    ax.set_xlabel("Interval width contribution (mean |SHAP upper - SHAP lower|)")
+    ax.set_title("What Drives Prediction Interval Width?")
+    ax.invert_yaxis()
+    plt.tight_layout()
+    plt.show()
+```
+
+## Key Takeaways
+
+| Diagnostic | What it tells you |
+|------------|-------------------|
+| `pred.uncertainty_decomposition()` | Quick aleatoric vs epistemic split (no refitting) |
+| `EnsembleDecomposition` | Principled decomposition via bootstrap refits |
+| `pred.plot_pit(y_true)` | Calibration check: flat = good |
+| `pred.calibration_curve(y_true)` | Reliability diagram |
+| `compute_uncertainty_drivers()` | Which features drive heteroscedasticity |
+| `RecalibratedModel` | Fix miscalibration with isotonic regression |
+| `uncertainty_shap()` | Feature attribution for interval width |

@@ -69,16 +69,19 @@ nav:
       - Overview: notebooks/index.md
       - Quick Start: notebooks/01-quick-start.md
       - Time Series: notebooks/02-time-series.md
-      - Uncertainty Decomposition: notebooks/03-uncertainty-decomposition.md
-      - Risk-Aware Decisions: notebooks/04-risk-aware-decisions.md
-      - Multivariate Copulas: notebooks/05-multivariate-copulas.md
-      - Methods & Benchmarks: notebooks/06-methods-benchmarks.md
-      - Split Strategies: notebooks/07-split-strategies.md
+      - Diagnostics & Calibration: notebooks/03-diagnostics-calibration.md
+      - Risk & Multivariate: notebooks/04-risk-copulas.md
+      - Methods & Benchmarks: notebooks/05-benchmarks.md
   - Benchmarks: benchmarks/README.md
   - Project:
       - Contributing: project/contributing.md
       - Changelog: project/changelog.md
       - Roadmap: project/roadmap.md
+
+extra_css:
+  - stylesheets/notebooks.css
+extra_javascript:
+  - javascripts/notebooks.js
 
 markdown_extensions:
   - admonition

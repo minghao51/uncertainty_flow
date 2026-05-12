@@ -1,0 +1,218 @@
+---
+title: "Methods & Benchmarks"
+description: "Every model in uncertainty_flow, when to use it, how they compare, and how to run your own benchmarks"
+date: today
+format:
+  html:
+    self-contained: true
+    embed-resources: true
+    code-fold: true
+    code-tools: true
+---
+
+# Methods & Benchmarks
+
+This notebook is a **model selection guide** backed by benchmark data.
+
+1. **Model Reference** — every model, its method, coverage guarantee, and use case
+2. **Key Findings** — data-driven insights from real benchmarks
+3. **Running Benchmarks** — Python API and CLI
+4. **Visual Comparison** — coverage vs sharpness across datasets
+
+## Model Reference
+
+| Model | Method | Coverage | Speed | Best For |
+|-------|--------|----------|-------|----------|
+| `ConformalRegressor` | Split conformal | Guaranteed (finite-sample) | Fast | Tabular regression, new users |
+| `ConformalForecaster` | Conformal + time features | Guaranteed (exchangeable) | Fast | Time series, any sklearn regressor |
+| `QuantileForestForecaster` | Quantile regression forest | Empirical | Medium | Sharp intervals, feature importance |
+| `DeepQuantileNet` | sklearn MLP quantile net | Empirical | Medium | Nonlinear patterns, no conformal |
+| `ConformalClassifier` | APS (Romano et al. 2020) | Guaranteed | Fast | Multi-class classification |
+| `AdaptiveConformalForecaster` | Gibbs & Candes ACI | Adaptive | Fast | Streaming / distribution shift |
+| `EnsembleBootstrapPI` | EnbPI (Xu & Xie 2021) | Empirical | Slow | Time series ensemble |
+| `ConformalRiskControl` | Risk-controlled conformal | On risk metric | Fast | Cost-sensitive decisions |
+
+## Benchmark Findings
+
+```{python}
+#| label: setup
+#| cache: true
+import polars as pl
+import numpy as np
+import matplotlib.pyplot as plt
+```
+
+```{python}
+#| label: load-data
+raw = pl.read_csv("../docs/benchmarks/comparison_table.csv", try_parse_dates=False)
+print(f"Datasets: {raw['dataset'].unique().to_list()}")
+print(f"Models: {raw['model'].unique().to_list()}")
+print(f"Total rows: {len(raw)}")
+```
+
+### Finding 1: Coverage-Accuracy Tradeoff
+
+```{python}
+#| label: coverage-table
+summary = raw.group_by("model").agg([
+    pl.col("coverage_90").mean().alias("mean_coverage_90"),
+    pl.col("winkler_90").mean().alias("mean_winkler_90"),
+    pl.col("crps").mean().alias("mean_crps"),
+    pl.col("mae").mean().alias("mean_mae"),
+    pl.col("train_time_sec").mean().alias("mean_train_time"),
+]).sort("mean_coverage_90", descending=True)
+summary
+```
+
+### Finding 2: Coverage vs Sharpness by Dataset
+
+```{python}
+#| label: scatter-grid
+datasets = raw["dataset"].unique().to_list()
+n_ds = len(datasets)
+
+fig, axes = plt.subplots(1, n_ds, figsize=(5 * n_ds, 5), sharey=True)
+if n_ds == 1:
+    axes = [axes]
+
+markers = {"conformal-regressor": "o", "conformal-forecaster": "s",
+           "quantile-forest": "^", "deep-quantile": "D"}
+colors_map = {"conformal-regressor": "#4C78A8", "conformal-forecaster": "#F58518",
+              "quantile-forest": "#54A24B", "deep-quantile": "#E45756"}
+
+for ax, ds in zip(axes, datasets):
+    subset = raw.filter(pl.col("dataset") == ds)
+    for row in subset.iter_rows(named=True):
+        m = row["model"]
+        ax.scatter(
+            row["coverage_90"], row["winkler_90"],
+            marker=markers.get(m, "o"),
+            c=colors_map.get(m, "gray"),
+            s=100, label=m if ds == datasets[0] else None,
+            edgecolors="black", linewidth=0.5,
+        )
+    ax.axvline(x=0.9, color="gray", linestyle="--", alpha=0.5)
+    ax.set_xlabel("Coverage (90%)")
+    ax.set_title(ds)
+
+axes[0].set_ylabel("Winkler score (90%)")
+axes[0].legend(fontsize=7, loc="upper left")
+
+plt.suptitle("Coverage vs Sharpness — Lower-Left is Better", fontsize=13)
+plt.tight_layout()
+plt.show()
+```
+
+### Finding 3: Model Rankings
+
+```{python}
+#| label: rankings
+ranked = summary.with_columns([
+    pl.col("mean_winkler_90").rank().alias("winkler_rank"),
+    pl.col("mean_crps").rank().alias("crps_rank"),
+    pl.col("mean_coverage_90").rank(descending=True).alias("coverage_rank"),
+]).select(["model", "coverage_rank", "winkler_rank", "crps_rank"])
+ranked
+```
+
+```{python}
+#| label: ranking-chart
+fig, ax = plt.subplots(figsize=(10, 5))
+models = ranked["model"].to_numpy()
+x = np.arange(len(models))
+width = 0.25
+
+ax.bar(x - width, ranked["coverage_rank"].to_numpy(), width, label="Coverage rank", color="#54A24B")
+ax.bar(x, ranked["winkler_rank"].to_numpy(), width, label="Winkler rank", color="#4C78A8")
+ax.bar(x + width, ranked["crps_rank"].to_numpy(), width, label="CRPS rank", color="#E45756")
+
+ax.set_xticks(x)
+ax.set_xticklabels(models, rotation=15, ha="right")
+ax.set_ylabel("Rank (1 = best)")
+ax.set_title("Model Rankings — Lower is Better")
+ax.legend()
+ax.invert_yaxis()
+plt.tight_layout()
+plt.show()
+```
+
+### Finding 4: Speed-Quality Tradeoff
+
+```{python}
+#| label: speed-quality
+fig, ax = plt.subplots(figsize=(8, 5))
+for row in summary.iter_rows(named=True):
+    m = row["model"]
+    ax.scatter(
+        row["mean_train_time"], row["mean_winkler_90"],
+        s=120, edgecolors="black", linewidth=0.5,
+        label=m, color=colors_map.get(m, "gray"),
+    )
+ax.set_xlabel("Mean train time (seconds)")
+ax.set_ylabel("Mean Winkler score (90%)")
+ax.set_title("Speed vs Quality — Lower-Left is Better")
+ax.legend(fontsize=8)
+plt.tight_layout()
+plt.show()
+```
+
+## Running Your Own Benchmarks
+
+### Python API
+
+```{python}
+#| label: python-api
+#| eval: false
+from uncertainty_flow.benchmarking import BenchmarkRunner, BenchmarkConfig
+from uncertainty_flow import ConformalRegressor, QuantileForestForecaster
+from sklearn.ensemble import GradientBoostingRegressor
+
+config = BenchmarkConfig(
+    models={
+        "conformal-gb": lambda: ConformalRegressor(
+            base_model=GradientBoostingRegressor(random_state=42),
+        ),
+        "qrf": lambda: QuantileForestForecaster(random_state=42),
+    },
+    datasets=["weather", "electricity"],
+    n_obs=1000,
+    horizon=3,
+)
+
+runner = BenchmarkRunner(config)
+results = runner.run()
+results.save("my_benchmark.json")
+```
+
+### CLI
+
+```{bash}
+#| label: cli-examples
+#| eval: false
+uf benchmark --models conformal-regressor quantile-forest --datasets weather electricity --n-obs 1000
+
+uf compare --files benchmark_run1.json benchmark_run2.json
+
+uf list-datasets
+
+uf auto-tune --model quantile-forest --dataset weather
+```
+
+## Recommendations
+
+| Scenario | Recommended Model | Why |
+|----------|-------------------|-----|
+| First time, tabular data | `ConformalRegressor` | Guaranteed coverage, simple API |
+| Time series, stationary | `ConformalForecaster` | Temporal awareness, guaranteed coverage |
+| Time series, distribution shift | `AdaptiveConformalForecaster` | ACI adapts intervals automatically |
+| Need sharpest intervals | `QuantileForestForecaster` | Native quantile predictions, empirically sharp |
+| Cost-sensitive decisions | `ConformalRiskControl` | Optimizes for your cost function, not just coverage |
+| Multi-class classification | `ConformalClassifier` | APS prediction sets with guaranteed coverage |
+| High-dimensional / complex | `DeepQuantileNet` | MLP can capture nonlinear patterns |
+
+## Key Takeaways
+
+- **Start with `ConformalRegressor`** — guaranteed coverage with any sklearn model
+- **Benchmark on your own data** — results vary by dataset; no single best model
+- **Use `BenchmarkRunner`** for systematic comparison across models and datasets
+- **Coverage ≠ quality** — also look at Winkler score (sharpness) and CRPS

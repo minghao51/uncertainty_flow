@@ -1,14 +1,19 @@
-# Quick Start: Conformal Regression
+---
+hide:
+  - navigation
+  - toc
+---
 
-Wrap any scikit-learn model with statistically rigorous coverage guarantees using ConformalRegressor
+# Quick Start: End-to-End Workflow
 
-<div style="margin: 0 -0.8rem">
-  <iframe
-    src="/uncertainty_flow/notebooks/html/01_quick_start.html"
-    style="width: 100%; height: 600px; border: 1px solid
-      var(--md-default-fg-color--lightest); border-radius: 4px;"
-    loading="lazy"
-  ></iframe>
+Complete lifecycle — conformal regression, classification, DistributionPrediction API, persistence, and validation strategies
+
+<div class="iframe-container" id="iframe-wrapper-01-quick-start">
+  <div class="iframe-controls">
+    <button onclick="toggleNotebookFullscreen(this)" class="md-button">Expand</button>
+    <a href="/uncertainty_flow/notebooks/html/01_quick_start.html" target="_blank" rel="noopener noreferrer" class="md-button">Open in New Tab</a>
+  </div>
+  <iframe src="/uncertainty_flow/notebooks/html/01_quick_start.html" allowfullscreen loading="lazy"></iframe>
 </div>
 
 [![Open in molab](https://marimo.io/molab-shield.svg)](https://molab.marimo.io/github/minghao51/uncertainty_flow/blob/main/notebooks/01_quick_start.qmd)

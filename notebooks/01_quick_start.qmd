@@ -1,6 +1,6 @@
 ---
-title: "Quick Start: Conformal Regression"
-description: "Wrap any scikit-learn model with statistically rigorous coverage guarantees using ConformalRegressor"
+title: "Quick Start: End-to-End Workflow"
+description: "Complete lifecycle — conformal regression, classification, DistributionPrediction API, persistence, and validation strategies"
 date: today
 format:
   html:
@@ -10,16 +10,18 @@ format:
     code-tools: true
 ---
 
-# Quick Start: Conformal Regression
+# Quick Start: End-to-End Workflow
 
-Wrap any scikit-learn model with **statistically rigorous coverage guarantees** using `ConformalRegressor`.
+Every model in **uncertainty_flow** returns a `DistributionPrediction` — not a point estimate.
+This notebook walks through the complete lifecycle:
 
-This notebook demonstrates the core workflow:
-
-1. Load tabular data (concrete compressive strength)
-2. Wrap a GradientBoostingRegressor with conformal prediction
-3. Extract intervals, quantiles, and samples from predictions
-4. Evaluate calibration
+1. Choosing the right validation strategy
+2. Conformal regression (tabular)
+3. The full `DistributionPrediction` API
+4. Parametric distribution fitting
+5. Comprehensive evaluation
+6. Model persistence (save / load)
+7. Conformal classification
 
 ## Setup
 
@@ -27,131 +29,272 @@ This notebook demonstrates the core workflow:
 #| label: setup
 #| cache: true
 import polars as pl
-from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.linear_model import Ridge
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestClassifier
 
-from uncertainty_flow.metrics import coverage_score, winkler_score
-from uncertainty_flow.utils.split import select_validation_plan
-from uncertainty_flow.wrappers import ConformalRegressor
+from uncertainty_flow import (
+    ConformalRegressor,
+    ConformalClassifier,
+    coverage_score,
+    winkler_score,
+    pinball_loss,
+)
+from uncertainty_flow.utils import select_validation_plan
 ```
 
-## Configuration
+## Validation Strategy
+
+Choosing the right train/test split matters. `select_validation_plan()` inspects your data shape and task type, then recommends a split strategy.
 
 ```{python}
-#| label: config
-target_col = "strength"
-base_model_choice = "GradientBoosting"
-coverage_target = 0.9
-```
-
-## Load Data
-
-```{python}
-#| label: load-data
+#| label: data-load
 #| cache: true
 df = pl.read_parquet("../data/concrete.parquet")
-print(f"Dataset shape: {df.shape}")
-df.head(10)
+print(f"Shape: {df.shape}")
+df.head(3)
 ```
 
-## Train / Test Split
+```{python}
+#| label: validation-plan
+plan = select_validation_plan(df, task_type="tabular")
+print(plan.metadata.strategy_name)
+```
+
+The plan provides ready-to-use splits:
 
 ```{python}
-#| label: split
-#| cache: true
-plan = select_validation_plan(df, task_type="tabular", random_state=42)
+#| label: validation-splits
 train_df, test_df = plan.outer_split
-actuals = test_df[target_col]
-print(f"Strategy: {plan.metadata.strategy_name} | Train: {len(train_df)} | Test: {len(test_df)}")
+print(f"Train: {len(train_df)}  Test: {len(test_df)}")
 ```
 
-## Train Conformal Model
+For small datasets (<250 rows), the plan automatically recommends cross-validation instead of holdout.
+
+## Conformal Regression
+
+Wrap any scikit-learn regressor with distribution-free coverage guarantees:
 
 ```{python}
-#| label: train
-#| cache: true
-base_cls = GradientBoostingRegressor if base_model_choice == "GradientBoosting" else Ridge
-base = base_cls(random_state=42)
-
+#| label: fit-regressor
 model = ConformalRegressor(
-    base_model=base,
-    coverage_target=coverage_target,
-    auto_tune=True,
-    random_state=42,
+    base_model=GradientBoostingRegressor(random_state=42),
+    coverage_target=0.9,
 )
-model.fit(train_df, target=target_col)
-print(model)
+model.fit(train_df, target="strength")
 ```
-
-## Predict
 
 ```{python}
 #| label: predict
-#| cache: true
 pred = model.predict(test_df)
-print(pred)
 ```
 
-## Intervals
+## DistributionPrediction API
+
+Every predict call returns a `DistributionPrediction`. Here's the full surface:
+
+### Intervals & Quantiles
 
 ```{python}
 #| label: intervals
-interval_df = pred.interval(confidence=coverage_target)
-print(interval_df.head(10))
+intervals = pred.interval(confidence=0.9)
+print(intervals.head())
 ```
-
-## Quantiles
 
 ```{python}
 #| label: quantiles
-quantiles_df = pred.quantile([0.05, 0.25, 0.5, 0.75, 0.95])
-print(quantiles_df.head(10))
+quantiles = pred.quantile([0.1, 0.5, 0.9])
+print(quantiles.head())
 ```
 
-## Mean
-
 ```{python}
-#| label: mean
-mean_series = pred.mean()
-print(mean_series.head(10))
+#| label: median
+pred.median().head()
 ```
 
-## Evaluate Coverage
+### Sampling
+
+Draw synthetic samples from the predicted distribution:
 
 ```{python}
-#| label: evaluate
-interval = pred.interval(confidence=coverage_target)
-coverage = coverage_score(actuals, interval["lower"], interval["upper"])
-winkler = winkler_score(
-    actuals, interval["lower"], interval["upper"], confidence=coverage_target
+#| label: sampling
+samples = pred.sample(n=500, random_state=42)
+print(samples.shape)
+samples.head()
+```
+
+### Summary
+
+One-row overview of the entire prediction distribution:
+
+```{python}
+#| label: summary
+pred.summary()
+```
+
+### Parametric Distribution Fitting
+
+Fit a parametric distribution (normal, Student-t, lognormal, gamma) to the quantile predictions:
+
+```{python}
+#| label: fit-dist
+dist = pred.fit_distribution(family="auto")
+print(dist)
+print(f"  Mean: {dist.mean:.2f}  Variance: {dist.variance:.2f}")
+```
+
+```{python}
+#| label: parametric-viz
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+x = np.linspace(dist.mean - 4 * np.sqrt(dist.variance),
+                dist.mean + 4 * np.sqrt(dist.variance), 200)
+
+axes[0].plot(x, dist.pdf(x))
+axes[0].set_title(f"PDF ({dist.family})")
+axes[0].set_xlabel("Concrete strength")
+
+axes[1].plot(x, dist.cdf(x))
+axes[1].set_title(f"CDF ({dist.family})")
+axes[1].set_xlabel("Concrete strength")
+
+plt.tight_layout()
+plt.show()
+```
+
+## Comprehensive Evaluation
+
+```{python}
+#| label: metrics
+y_true = test_df["strength"]
+intv = pred.interval(0.9)
+
+results = {
+    "coverage_90": coverage_score(y_true, intv["lower"], intv["upper"]),
+    "winkler_90": winkler_score(y_true, intv["lower"], intv["upper"], 0.9),
+    "pinball_50": pinball_loss(y_true, pred.median(), 0.5),
+    "crps": pred.crps(y_true),
+    "log_score": pred.log_score(y_true),
+}
+
+for name, value in results.items():
+    print(f"  {name:20s}: {value:.4f}")
+```
+
+```{python}
+#| label: metric-bar-chart
+fig, ax = plt.subplots(figsize=(8, 4))
+names = list(results.keys())
+values = list(results.values())
+colors = ["#4C78A8" if v != max(values) else "#E45756" for v in values]
+ax.barh(names, values, color=colors)
+ax.set_xlabel("Score")
+ax.set_title("Evaluation Metrics (lower is better for all except coverage)")
+ax.invert_yaxis()
+plt.tight_layout()
+plt.show()
+```
+
+## Visualization
+
+```{python}
+#| label: fan-chart
+pred.plot()
+plt.show()
+```
+
+## Persistence
+
+Save and reload models with the `.uf` archive format:
+
+```{python}
+#| label: save
+import tempfile
+import os
+
+with tempfile.TemporaryDirectory() as tmpdir:
+    path = os.path.join(tmpdir, "concrete_model.uf")
+    model.save(path)
+    print(f"Saved to {path}")
+
+    loaded = ConformalRegressor.load(path)
+    pred_loaded = loaded.predict(test_df)
+
+    assert np.allclose(
+        pred._quantiles, pred_loaded._quantiles
+    ), "Predictions differ after reload!"
+    print("Verification passed: predictions identical after save/load round-trip")
+```
+
+## Conformal Classification
+
+The library also supports conformal prediction for classification tasks via `ConformalClassifier`, which produces `PredictionSet` objects with guaranteed marginal coverage.
+
+```{python}
+#| label: classification-data
+wine = pl.read_parquet("../data/wine_quality.parquet")
+print(f"Shape: {wine.shape}")
+print(f"Classes: {wine['quality'].unique().sort().to_list()}")
+wine.head(3)
+```
+
+```{python}
+#| label: fit-classifier
+plan_cls = select_validation_plan(wine, task_type="tabular")
+train_w, test_w = plan_cls.outer_split
+
+clf = ConformalClassifier(
+    base_model=RandomForestClassifier(random_state=42, n_estimators=100),
+    coverage_target=0.9,
 )
-print(f"Coverage: {coverage:.3f} | Winkler score: {winkler:.2f}")
+clf.fit(train_w, target="quality")
+pred_set = clf.predict(test_w)
 ```
-
-## Prediction Plot
 
 ```{python}
-#| label: plot
-fig = pred.plot(
-    actuals=actuals,
-    confidence_bands=[0.5, 0.8, coverage_target],
-    title=f"Conformal Prediction — {target_col}",
-)
-fig
+#| label: prediction-set-api
+print(pred_set)
+print(f"\nCoverage target: {pred_set.coverage}")
+print(f"Average set size: {pred_set.size:.2f} (out of {len(clf._class_names_)} classes)")
 ```
-
-## Calibration Report
 
 ```{python}
-#| label: calibration
-calibration = model.calibration_report(test_df, target_col)
-print(calibration)
+#| label: prediction-set-examples
+print("Sample prediction sets (first 5):")
+for i in range(5):
+    classes = pred_set.set(i)
+    probs = pred_set.probabilities()
+    print(f"  Sample {i}: {classes}")
 ```
-
-## Uncertainty Drivers
 
 ```{python}
-#| label: drivers
-drivers = model.uncertainty_drivers_
-print(drivers)
+#| label: classification-summary
+pred_set.summary()
 ```
+
+```{python}
+#| label: set-size-dist
+sizes = pred_set.size_by_sample()
+fig, ax = plt.subplots(figsize=(8, 4))
+ax.hist(sizes, bins=range(1, max(sizes) + 2), align="left", rwidth=0.8, color="#4C78A8")
+ax.set_xlabel("Prediction set size (number of classes)")
+ax.set_ylabel("Frequency")
+ax.set_title("Distribution of Prediction Set Sizes")
+plt.tight_layout()
+plt.show()
+```
+
+## Key Takeaways
+
+| Concept | API |
+|---------|-----|
+| Auto validation split | `select_validation_plan(df, target, task_type)` |
+| Conformal regression | `ConformalRegressor(base_model).fit(df, target).predict(df)` |
+| Prediction intervals | `pred.interval(0.9)` |
+| Quantiles | `pred.quantile([0.1, 0.5, 0.9])` |
+| Samples | `pred.sample(n=500)` |
+| Summary | `pred.summary()` |
+| Parametric fit | `pred.fit_distribution(family="auto")` |
+| All metrics | `pred.crps(y)`, `pred.log_score(y)`, `coverage_score()`, `winkler_score()` |
+| Persistence | `model.save(path)` / `ModelClass.load(path)` |
+| Classification | `ConformalClassifier(base_model)` → `PredictionSet` |
