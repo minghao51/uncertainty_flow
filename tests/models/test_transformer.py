@@ -3,7 +3,8 @@
 import polars as pl
 import pytest
 
-from uncertainty_flow.core.config import CHRONOS_MODELS, get_config
+from uncertainty_flow.core.config import get_config
+from uncertainty_flow.models import CHRONOS_MODELS
 
 
 class TestTransformerForecasterInit:

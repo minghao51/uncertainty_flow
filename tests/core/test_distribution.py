@@ -157,19 +157,18 @@ class TestIntervalMethod:
             dp.interval(-0.1)
 
 
-class TestMeanMethod:
-    """Test mean() method."""
+class TestMedian:
+    """Test median() method."""
 
-    def test_mean_univariate(self):
-        """Should return median (0.5 quantile) for univariate and emit FutureWarning."""
+    def test_median_univariate(self):
+        """Should return median (0.5 quantile) for univariate."""
         matrix = np.array([[1, 2, 3], [4, 5, 6]])
         dp = DistributionPrediction(
             quantile_matrix=matrix,
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.warns(FutureWarning, match="median"):
-            result = dp.mean()
+        result = dp.median()
         assert isinstance(result, pl.Series)
         assert result.name == "median"
         assert result.to_list() == [2, 5]
@@ -204,8 +203,8 @@ class TestMultivariate:
         expected = [[1, 3, 10, 30], [4, 6, 40, 60]]
         assert result.to_numpy().tolist() == expected
 
-    def test_multivariate_mean(self):
-        """Should return DataFrame for multivariate mean."""
+    def test_multivariate_median(self):
+        """Should return DataFrame for multivariate median."""
         # 2 targets, 3 quantiles each -> 6 columns total
         matrix = np.array(
             [
@@ -223,6 +222,21 @@ class TestMultivariate:
         assert "price" in result.columns
         assert "volume" in result.columns
         assert result.to_numpy().tolist() == [[2, 20], [5, 50]]
+
+    def test_legacy_mean_method_removed(self):
+        """mean() should not exist on DistributionPrediction."""
+        matrix = np.array(
+            [
+                [1, 2, 3, 10, 20, 30],
+                [4, 5, 6, 40, 50, 60],
+            ]
+        )
+        dp = DistributionPrediction(
+            quantile_matrix=matrix,
+            quantile_levels=[0.25, 0.5, 0.75],
+            target_names=["price", "volume"],
+        )
+        assert not hasattr(dp, "mean")
 
 
 class TestPlotMethod:

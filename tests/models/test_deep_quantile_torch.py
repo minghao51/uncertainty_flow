@@ -13,7 +13,7 @@ TORCH_AVAILABLE = find_spec("torch") is not None
 
 
 pytestmark = pytest.mark.skipif(
-    not TORCH_AVAILABLE, reason="PyTorch not installed (pip install uncertainty-flow[torch])"
+    not TORCH_AVAILABLE, reason="PyTorch not installed (pip install uncertainty-flow[ml])"
 )
 
 

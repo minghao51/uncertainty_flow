@@ -124,7 +124,7 @@ class TestDashboardIntegration:
 
         # Verify predictions have required methods
         assert hasattr(predictions, "interval")
-        assert hasattr(predictions, "mean")
+        assert hasattr(predictions, "median")
 
         # Test interval extraction
         interval = predictions.interval(0.9)

@@ -60,6 +60,11 @@ class TestScoreDispatcher:
         result = score(dp, np.array([3.0, 4.0]), lambda p, y: 42.0)
         assert result == 42.0
 
+    def test_score_callable_receives_kwargs(self):
+        dp = _make_pred()
+        result = score(dp, np.array([3.0, 4.0]), lambda p, y, scale=1.0: 21.0 * scale, scale=2.0)
+        assert result == 42.0
+
     def test_score_unknown_raises(self):
         dp = _make_pred()
         with pytest.raises(ValueError, match="Unknown metric"):

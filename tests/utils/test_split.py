@@ -11,6 +11,7 @@ from uncertainty_flow.utils import (
     rolling_origin_splits,
     select_validation_plan,
 )
+from uncertainty_flow.utils.exceptions import UncertaintyFlowWarning
 
 
 class TestRandomHoldoutSplit:
@@ -78,7 +79,7 @@ class TestRandomHoldoutSplit:
             }
         )
         splitter = RandomHoldoutSplit(random_state=42)
-        with pytest.warns(UserWarning, match="Calibration set has only"):
+        with pytest.warns(UncertaintyFlowWarning, match="Calibration set contains only"):
             splitter.split(df, 0.4)  # 40 samples
 
 
@@ -150,7 +151,7 @@ class TestTemporalHoldoutSplit:
             }
         )
         splitter = TemporalHoldoutSplit()
-        with pytest.warns(UserWarning, match="Calibration set has only"):
+        with pytest.warns(UncertaintyFlowWarning, match="Calibration set contains only"):
             splitter.split(df, 0.4)  # 40 samples
 
 

@@ -127,8 +127,7 @@ class TestQuantileForestForecasterWorkflow:
         model.fit(time_series_data)
         pred = model.predict(time_series_data)
 
-        with pytest.warns(FutureWarning, match="median"):
-            mean = pred.mean()
+        mean = pred.median()
         assert isinstance(mean, pl.DataFrame)
         assert "price" in mean.columns
         assert "volume" in mean.columns
