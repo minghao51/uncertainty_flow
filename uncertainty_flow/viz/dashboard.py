@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.polars_bridge import to_numpy_series
 
 if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
@@ -54,7 +54,7 @@ def launch_dashboard(
     Notes
     -----
     Requires streamlit as an optional dependency:
-        pip install uncertainty-flow[viz]
+        pip install uncertainty-flow[ml]
 
     The dashboard includes:
         - Calibration curves (coverage vs. confidence)
@@ -178,7 +178,7 @@ def _render_calibration_tab(predictions, y_true, confidence):
             lower = interval[f"{first_target}_lower"].to_numpy()
             upper = interval[f"{first_target}_upper"].to_numpy()
 
-        y_true_arr = to_numpy_series_zero_copy(y_true)
+        y_true_arr = to_numpy_series(y_true)
         coverage = np.mean((y_true_arr >= lower) & (y_true_arr <= upper))
         empirical_coverages.append(coverage)
 
@@ -293,7 +293,7 @@ def _render_residuals_tab(predictions, y_true, features, confidence):
         upper = interval[f"{first_target}_upper"].to_numpy()
         mean = predictions.median().select(first_target).to_numpy().flatten()
 
-    y_true_arr = to_numpy_series_zero_copy(y_true)
+    y_true_arr = to_numpy_series(y_true)
 
     # Compute residuals
     residuals = y_true_arr - mean
@@ -426,7 +426,7 @@ def _render_summary_tab(model, predictions, y_true, confidence):
             lower = interval[f"{first_target}_lower"].to_numpy()
             upper = interval[f"{first_target}_upper"].to_numpy()
 
-        y_true_arr = to_numpy_series_zero_copy(y_true)
+        y_true_arr = to_numpy_series(y_true)
         coverage = np.mean((y_true_arr >= lower) & (y_true_arr <= upper))
         widths = upper - lower
 

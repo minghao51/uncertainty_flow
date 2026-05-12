@@ -6,13 +6,8 @@ Stores the predicted class sets with calibrated coverage guarantees.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
-
-if TYPE_CHECKING:
-    pass
 
 
 class PredictionSet:

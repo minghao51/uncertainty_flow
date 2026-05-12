@@ -12,7 +12,7 @@ from uncertainty_flow.metrics import coverage_score, winkler_score
 from uncertainty_flow.models import QuantileForestForecaster
 from uncertainty_flow.utils.auto_tuning import valid_calibration_candidates
 from uncertainty_flow.utils.exceptions import ConfigurationError
-from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
+from uncertainty_flow.utils.polars_bridge import to_numpy_series
 from uncertainty_flow.utils.split import select_validation_plan
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
@@ -110,9 +110,9 @@ def tune_quantile_forest(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
-    lower = to_numpy_series_zero_copy(interval_90["lower"])
-    upper = to_numpy_series_zero_copy(interval_90["upper"])
+    y_true = to_numpy_series(val_df[target])[-n_pred:]
+    lower = to_numpy_series(interval_90["lower"])
+    upper = to_numpy_series(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))
@@ -147,9 +147,9 @@ def tune_conformal_regressor(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
-    lower = to_numpy_series_zero_copy(interval_90["lower"])
-    upper = to_numpy_series_zero_copy(interval_90["upper"])
+    y_true = to_numpy_series(val_df[target])[-n_pred:]
+    lower = to_numpy_series(interval_90["lower"])
+    upper = to_numpy_series(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))
@@ -189,9 +189,9 @@ def tune_conformal_forecaster(
 
     interval_90 = pred.interval(0.9)
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(val_df[target])[-n_pred:]
-    lower = to_numpy_series_zero_copy(interval_90["lower"])
-    upper = to_numpy_series_zero_copy(interval_90["upper"])
+    y_true = to_numpy_series(val_df[target])[-n_pred:]
+    lower = to_numpy_series(interval_90["lower"])
+    upper = to_numpy_series(interval_90["upper"])
 
     cov = coverage_score(y_true, lower, upper)
     sharp = float(np.mean(upper - lower))

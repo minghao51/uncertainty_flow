@@ -12,7 +12,7 @@ from numpyro.infer.util import Predictive
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 
 
@@ -170,7 +170,7 @@ class BayesianQuantileRegressor(BaseUncertaintyModel):
             ModelNotFittedError: If model has not been fitted.
         """
         if not self._fitted:
-            error_model_not_fitted("BayesianQuantileRegressor")
+            raise ModelNotFittedError("BayesianQuantileRegressor")
 
         if self._posterior_samples_ is None:
             raise RuntimeError("Internal error: posterior samples not available after fitting")

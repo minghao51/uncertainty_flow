@@ -16,7 +16,7 @@ from ..utils.auto_tuning import (
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import error_invalid_data, error_model_not_fitted
+from ..utils.exceptions import InvalidDataError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import select_validation_plan
 
@@ -111,7 +111,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             first_target = next(iter(self._leaf_distributions))
             first_tree = self._leaf_distributions[first_target][0]
             if first_tree["quantiles"].shape[1] != len(fallback_levels):
-                error_invalid_data(
+                raise InvalidDataError(
                     "Current config quantile count does not match fitted leaf distributions. "
                     "Refit the model after setting the desired quantile configuration."
                 )
@@ -215,9 +215,9 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             y_calib = to_numpy(calib, [target]).flatten()
 
             if not np.all(np.isfinite(x_train)):
-                error_invalid_data("Feature matrix contains NaN or Inf values")
+                raise InvalidDataError("Feature matrix contains NaN or Inf values")
             if not np.all(np.isfinite(y_train)):
-                error_invalid_data("Target vector contains NaN or Inf values")
+                raise InvalidDataError("Target vector contains NaN or Inf values")
 
             rf = RandomForestRegressor(
                 n_estimators=self.n_estimators,
@@ -241,7 +241,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             elif self.copula_family in COPULA_FAMILIES:
                 selected = self.copula_family
             else:
-                error_invalid_data(
+                raise InvalidDataError(
                     f"Unknown copula_family: {self.copula_family}. "
                     f"Valid options: auto, gaussian, clayton, gumbel, frank, independent"
                 )
@@ -335,7 +335,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
             DistributionPrediction with quantile forecasts
         """
         if not self._fitted:
-            error_model_not_fitted("QuantileForestForecaster")
+            raise ModelNotFittedError("QuantileForestForecaster")
 
         # Materialize if needed
         data = materialize_lazyframe(data)
@@ -350,7 +350,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
 
             quantile_matrix = self._predict_quantiles(rf, leaf_dists, x)
             if quantile_matrix.shape[1] != len(quantile_levels):
-                error_invalid_data(
+                raise InvalidDataError(
                     "Stored leaf distribution quantiles do not match configured quantile levels. "
                     "Refit the model to regenerate compatible quantiles."
                 )

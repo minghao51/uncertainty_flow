@@ -7,7 +7,7 @@ import numpy as np
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe
 
 VALID_AGGREGATIONS = ("product", "copula", "independent")
@@ -123,7 +123,7 @@ class CrossModalAggregator(BaseUncertaintyModel):
             ModelNotFittedError: If called before fit().
         """
         if not self._fitted:
-            error_model_not_fitted("CrossModalAggregator")
+            raise ModelNotFittedError("CrossModalAggregator")
 
         if self._quantile_levels is None:
             raise RuntimeError("Internal error: quantile levels not set during fitting")

@@ -8,9 +8,11 @@ import polars as pl
 if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
 
+import warnings
+
 from ..metrics import coverage_score, winkler_score
-from ..utils.exceptions import warn_coverage_gap
-from .polars_bridge import to_numpy_series_zero_copy
+from ..utils.exceptions import UncertaintyFlowWarning
+from .polars_bridge import to_numpy_series
 
 
 def calibration_report(
@@ -76,7 +78,7 @@ def calibration_report(
                 upper = intervals[f"{t}_upper"]
 
             achieved = coverage_score(actuals, lower, upper)
-            sharpness_values = to_numpy_series_zero_copy(upper - lower)
+            sharpness_values = to_numpy_series(upper - lower)
             sharpness = float(np.mean(sharpness_values))
             winkler = winkler_score(actuals, lower, upper, level)
 
@@ -103,6 +105,11 @@ def calibration_report(
 
         # Warn if coverage gap > 5%
         if abs(avg_coverage - level) > 0.05:
-            warn_coverage_gap(level, avg_coverage)
+            warnings.warn(
+                f"Requested {level} coverage but achieved {avg_coverage:.2f}. "
+                f"Model may be miscalibrated. [UF-W003]",
+                UncertaintyFlowWarning,
+                stacklevel=3,
+            )
 
     return pl.DataFrame(results)

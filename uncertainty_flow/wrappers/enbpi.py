@@ -11,19 +11,14 @@ sequential score updates after each observation (similar to ACI).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 from sklearn.base import BaseEstimator, clone
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
-
-if TYPE_CHECKING:
-    pass
 
 
 class EnsembleBootstrapPI(BaseUncertaintyModel):
@@ -143,7 +138,7 @@ class EnsembleBootstrapPI(BaseUncertaintyModel):
         data: PolarsInput,
     ) -> DistributionPrediction:
         if not self._fitted:
-            error_model_not_fitted("EnsembleBootstrapPI")
+            raise ModelNotFittedError("EnsembleBootstrapPI")
 
         data = materialize_lazyframe(data)
         x = to_numpy(data, self._feature_cols_)
@@ -185,7 +180,7 @@ class EnsembleBootstrapPI(BaseUncertaintyModel):
 
     def update(self, y_true: float | np.ndarray) -> None:
         if not self._fitted:
-            error_model_not_fitted("EnsembleBootstrapPI")
+            raise ModelNotFittedError("EnsembleBootstrapPI")
 
         y_arr = np.atleast_1d(np.asarray(y_true, dtype=float))
 

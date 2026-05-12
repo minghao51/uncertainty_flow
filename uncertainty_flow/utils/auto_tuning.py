@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from itertools import product
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import polars as pl
 from sklearn.base import BaseEstimator
 
 from ..metrics import coverage_score, winkler_score
-from .polars_bridge import to_numpy_series_zero_copy
+from .polars_bridge import to_numpy_series
 
 
 def candidate_values(current: Any, defaults: list[Any]) -> list[Any]:
@@ -77,18 +77,18 @@ def score_distribution_prediction(
     scores = []
     for target in target_names:
         if isinstance(actuals, pl.DataFrame):
-            y_true = to_numpy_series_zero_copy(actuals[target])
+            y_true = to_numpy_series(actuals[target])
         else:
             y_true = actuals.to_numpy()
 
         if isinstance(mean_pred, pl.DataFrame):
-            median = to_numpy_series_zero_copy(mean_pred[target])
-            lower = to_numpy_series_zero_copy(interval[f"{target}_lower"])
-            upper = to_numpy_series_zero_copy(interval[f"{target}_upper"])
+            median = to_numpy_series(mean_pred[target])
+            lower = to_numpy_series(interval[f"{target}_lower"])
+            upper = to_numpy_series(interval[f"{target}_upper"])
         else:
             median = mean_pred.to_numpy()
-            lower = to_numpy_series_zero_copy(interval["lower"])
-            upper = to_numpy_series_zero_copy(interval["upper"])
+            lower = to_numpy_series(interval["lower"])
+            upper = to_numpy_series(interval["upper"])
 
         n = min(len(y_true), len(median))
         y_true = y_true[-n:]
@@ -108,3 +108,23 @@ def score_distribution_prediction(
         scores.append(mae + coverage_error * 0.5 + sharpness * 0.1 + winkler * 0.1)
 
     return float(np.mean(scores))
+
+
+def build_tune_splits(
+    data: pl.DataFrame,
+    *,
+    task_type: Literal["tabular", "time_series"],
+    random_state: int | None = None,
+    hybrid_mode: bool = False,
+) -> list[tuple[pl.DataFrame, pl.DataFrame]]:
+    """Build evaluation splits for auto-tuning, with CV averaging when inner splits exist."""
+    from .split import select_validation_plan
+
+    plan = select_validation_plan(
+        data,
+        task_type=task_type,
+        random_state=random_state,
+        holdout_fraction=0.2,
+        hybrid_mode=hybrid_mode,
+    )
+    return plan.inner_splits if plan.inner_splits else [plan.outer_split]

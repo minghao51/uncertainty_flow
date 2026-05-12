@@ -1,7 +1,6 @@
 """ConformalForecaster - time series forecasting with conformal prediction."""
 
 import warnings
-from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -12,17 +11,15 @@ from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
 from ..multivariate.copula import COPULA_FAMILIES, BaseCopula, auto_select_copula
 from ..utils.auto_tuning import (
+    build_tune_splits,
     candidate_values,
     estimator_param_candidates,
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import error_invalid_data, error_model_not_fitted
+from ..utils.exceptions import InvalidDataError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import select_validation_plan
-
-if TYPE_CHECKING:
-    pass
 
 
 class ConformalForecaster(BaseUncertaintyModel):
@@ -112,7 +109,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         if self._quantiles_:
             first_target = next(iter(self._quantiles_))
             if len(self._quantiles_[first_target]) != len(fallback_levels):
-                error_invalid_data(
+                raise InvalidDataError(
                     "Current config quantile count does not match fitted residual quantiles. "
                     "Refit the model after setting the desired quantile configuration."
                 )
@@ -120,14 +117,9 @@ class ConformalForecaster(BaseUncertaintyModel):
 
     def _auto_tune(self, data: pl.DataFrame) -> None:
         """Tune params using validation splits, with CV averaging when inner splits exist."""
-        plan = select_validation_plan(
-            data,
-            task_type="time_series",
-            random_state=self.random_state,
-            holdout_fraction=0.2,
-            hybrid_mode=False,
+        eval_splits = build_tune_splits(
+            data, task_type="time_series", random_state=self.random_state
         )
-        eval_splits = plan.inner_splits if plan.inner_splits else [plan.outer_split]
 
         best_score = float("inf")
         best_params: dict[str, float | int] = {}
@@ -267,7 +259,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             elif self.copula_family in COPULA_FAMILIES:
                 selected = self.copula_family
             else:
-                error_invalid_data(
+                raise InvalidDataError(
                     f"Unknown copula_family: {self.copula_family}. "
                     f"Valid options: auto, gaussian, clayton, gumbel, frank, independent"
                 )
@@ -296,7 +288,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             DistributionPrediction with quantile forecasts
         """
         if not self._fitted:
-            error_model_not_fitted("ConformalForecaster")
+            raise ModelNotFittedError("ConformalForecaster")
 
         steps = steps or self.horizon
 
@@ -318,7 +310,7 @@ class ConformalForecaster(BaseUncertaintyModel):
             # Add conformal quantiles
             target_quantiles = self._quantiles_[target]
             if len(target_quantiles) != len(quantile_levels):
-                error_invalid_data(
+                raise InvalidDataError(
                     "Stored quantiles do not match configured quantile levels. "
                     "Refit the model to regenerate compatible quantiles."
                 )

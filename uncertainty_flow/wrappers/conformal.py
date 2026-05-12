@@ -1,7 +1,6 @@
 """ConformalRegressor - wrap any sklearn model with conformal prediction."""
 
 import warnings
-from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -12,20 +11,14 @@ from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
 from ..utils.auto_tuning import (
+    build_tune_splits,
     estimator_param_candidates,
     score_distribution_prediction,
     valid_calibration_candidates,
 )
-from ..utils.exceptions import ConfigurationError, error_invalid_data, error_model_not_fitted
-from ..utils.polars_bridge import (
-    materialize_lazyframe,
-    to_numpy_series_zero_copy,
-    to_numpy_zero_copy,
-)
+from ..utils.exceptions import ConfigurationError, InvalidDataError, ModelNotFittedError
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy, to_numpy_series
 from ..utils.split import select_validation_plan
-
-if TYPE_CHECKING:
-    pass
 
 
 class ConformalRegressor(BaseUncertaintyModel):
@@ -110,14 +103,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         target: str,
     ) -> None:
         """Tune params using validation splits, with CV averaging when inner splits exist."""
-        plan = select_validation_plan(
-            data,
-            task_type="tabular",
-            random_state=self.random_state,
-            holdout_fraction=0.2,
-            hybrid_mode=False,
-        )
-        eval_splits = plan.inner_splits if plan.inner_splits else [plan.outer_split]
+        eval_splits = build_tune_splits(data, task_type="tabular", random_state=self.random_state)
 
         best_score = float("inf")
         best_params: dict[str, float | int] = {}
@@ -190,7 +176,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         self._target_col_ = target_str
 
         if target_str not in data.columns:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"Target column '{target_str}' not found in data. "
                 f"Available columns: {list(data.columns)}"
             )
@@ -200,7 +186,7 @@ class ConformalRegressor(BaseUncertaintyModel):
 
         feature_cols = [col for col in data.columns if col != target_str]
         if not feature_cols:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"No feature columns remaining after excluding target '{target_str}'. "
                 f"Data must have at least one feature column."
             )
@@ -216,10 +202,10 @@ class ConformalRegressor(BaseUncertaintyModel):
         train, calib = plan.outer_split
 
         # Convert to numpy - single collect already done above
-        x_train = to_numpy_zero_copy(train, feature_cols)
-        y_train = to_numpy_series_zero_copy(train[target_str]).flatten()
-        x_calib = to_numpy_zero_copy(calib, feature_cols)
-        y_calib = to_numpy_series_zero_copy(calib[target_str]).flatten()
+        x_train = to_numpy(train, feature_cols)
+        y_train = to_numpy_series(train[target_str]).flatten()
+        x_calib = to_numpy(calib, feature_cols)
+        y_calib = to_numpy_series(calib[target_str]).flatten()
 
         # Fit base model
         self.base_model.fit(x_train, y_train)
@@ -250,18 +236,18 @@ class ConformalRegressor(BaseUncertaintyModel):
             DistributionPrediction with quantile predictions
         """
         if not self._fitted:
-            error_model_not_fitted("ConformalRegressor")
+            raise ModelNotFittedError("ConformalRegressor")
 
         # Materialize LazyFrame if needed
         data = materialize_lazyframe(data)
 
         # Get predictions
-        x = to_numpy_zero_copy(data, self._feature_cols_)
+        x = to_numpy(data, self._feature_cols_)
         point_preds = self.base_model.predict(x)
 
         # Add conformal quantiles
         if self._quantiles_ is None:
-            error_model_not_fitted("ConformalRegressor")
+            raise ModelNotFittedError("ConformalRegressor")
         quantile_levels = self._resolve_quantile_levels()
         quantile_matrix = np.zeros((len(point_preds), len(quantile_levels)))
         for i, q in enumerate(self._quantiles_):

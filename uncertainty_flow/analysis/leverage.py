@@ -226,10 +226,10 @@ class FeatureLeverageAnalyzer:
         Raises:
             InvalidDataError: If data is empty or contains invalid data
         """
-        from ..utils.exceptions import error_invalid_data
+        from ..utils.exceptions import InvalidDataError
 
         if data.height == 0:
-            error_invalid_data("Cannot analyze leverage on empty DataFrame")
+            raise InvalidDataError("Cannot analyze leverage on empty DataFrame")
 
         baseline_pred = self.model.predict(data)
         baseline_width_matrix = _interval_width_matrix(baseline_pred, self.confidence)

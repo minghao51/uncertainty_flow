@@ -8,8 +8,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import InvalidDataError, error_invalid_data, error_quantile_invalid
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.exceptions import InvalidDataError, QuantileError
+from ..utils.polars_bridge import to_numpy_series
 
 if TYPE_CHECKING:
     from ..multivariate.copula import BaseCopula
@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 # Constants
 MAX_SAMPLE_CHUNK_SIZE = 100_000
 MAX_TOTAL_SAMPLES = 10_000_000
-PLOT_MAX_SAMPLES = 500
 _QUANTILE_DISTANCE_THRESHOLD = 0.05
 
 
@@ -61,22 +60,22 @@ class DistributionPrediction:
         copula: "BaseCopula | None" = None,
     ):
         if not np.all(np.isfinite(quantile_matrix)):
-            error_invalid_data("quantile_matrix contains NaN or Inf values")
+            raise InvalidDataError("quantile_matrix contains NaN or Inf values")
 
         if quantile_matrix.ndim != 2:
-            error_invalid_data(f"quantile_matrix must be 2D, got shape {quantile_matrix.shape}")
+            raise InvalidDataError(f"quantile_matrix must be 2D, got shape {quantile_matrix.shape}")
 
         if quantile_matrix.shape[0] == 0:
-            error_invalid_data("quantile_matrix must have at least one row")
+            raise InvalidDataError("quantile_matrix must have at least one row")
 
         if len(target_names) == 0:
-            error_invalid_data("target_names cannot be empty")
+            raise InvalidDataError("target_names cannot be empty")
 
         n_targets = len(target_names)
         expected_cols = n_targets * len(quantile_levels)
 
         if quantile_matrix.shape[1] != expected_cols:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"quantile_matrix has {quantile_matrix.shape[1]} columns "
                 f"but expected {expected_cols} columns for {n_targets} target(s) "
                 f"with {len(quantile_levels)} quantile levels each"
@@ -112,21 +111,17 @@ class DistributionPrediction:
         indices = [self._find_nearest_quantile_index(level) for level in q]
 
         if len(self._targets) == 1:
-            # Univariate
             columns = [f"q_{level:.3f}" for level in q]
             data = self._quantiles[:, indices]
         else:
-            # Multivariate
-            columns = []
-            data_parts = []
-
-            for target_idx, target in enumerate(self._targets):
-                for level in q:
-                    columns.append(f"{target}_q_{level:.3f}")
-                    q_idx = self._find_nearest_quantile_index(level)
-                    data_parts.append(self._quantiles[:, target_idx * self._n_quantiles + q_idx])
-
-            data = np.column_stack(data_parts)
+            columns = [f"{target}_q_{level:.3f}" for target in self._targets for level in q]
+            data = np.column_stack(
+                [
+                    self._quantile_slice(t_idx)[:, q_idx]
+                    for t_idx in range(len(self._targets))
+                    for q_idx in indices
+                ]
+            )
 
         return pl.DataFrame(data, schema=columns, orient="row")
 
@@ -144,14 +139,13 @@ class DistributionPrediction:
             Polars DataFrame with lower/upper bounds
         """
         if not (0 < confidence < 1):
-            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
+            raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
 
         alpha = (1 - confidence) / 2
         lower_idx = self._find_nearest_quantile_index(alpha)
         upper_idx = self._find_nearest_quantile_index(1 - alpha)
 
         if len(self._targets) == 1:
-            # Univariate
             columns = ["lower", "upper"]
             data = np.column_stack(
                 [
@@ -160,40 +154,17 @@ class DistributionPrediction:
                 ]
             )
         else:
-            # Multivariate
             columns = []
             data_parts = []
-
-            for target_idx, target in enumerate(self._targets):
+            for t_idx, target in enumerate(self._targets):
                 columns.append(f"{target}_lower")
                 columns.append(f"{target}_upper")
-                data_parts.append(self._quantiles[:, target_idx * self._n_quantiles + lower_idx])
-                data_parts.append(self._quantiles[:, target_idx * self._n_quantiles + upper_idx])
-
+                q_slice = self._quantile_slice(t_idx)
+                data_parts.append(q_slice[:, lower_idx])
+                data_parts.append(q_slice[:, upper_idx])
             data = np.column_stack(data_parts)
 
         return pl.DataFrame(data, schema=columns, orient="row")
-
-    def mean(self) -> pl.Series | pl.DataFrame:
-        """
-        Return the 0.5 quantile (median) as a point estimate.
-
-        .. deprecated::
-            Use :meth:`median` instead.  ``mean()`` will emit a
-            ``FutureWarning`` and will be removed in a future release.
-
-        Returns:
-            Polars Series for univariate, DataFrame for multivariate
-        """
-        import warnings
-
-        warnings.warn(
-            "DistributionPrediction.mean() returns the median, not the mean. "
-            "Use .median() instead. mean() will be removed in a future release.",
-            FutureWarning,
-            stacklevel=2,
-        )
-        return self.median()
 
     def median(self) -> pl.Series | pl.DataFrame:
         """Return the 0.5 quantile as a point estimate."""
@@ -203,10 +174,7 @@ class DistributionPrediction:
             return pl.Series("median", self._quantiles[:, median_idx])
         else:
             data = np.column_stack(
-                [
-                    self._quantiles[:, target_idx * self._n_quantiles + median_idx]
-                    for target_idx in range(len(self._targets))
-                ]
+                [self._quantile_slice(t_idx)[:, median_idx] for t_idx in range(len(self._targets))]
             )
             return pl.DataFrame(data, schema=self._targets, orient="row")
 
@@ -231,7 +199,7 @@ class DistributionPrediction:
         from ..metrics.crps import crps_quantile
 
         if self._n_quantiles < 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 "CRPS requires at least 2 quantile levels, "
                 f"but DistributionPrediction has {self._n_quantiles}"
             )
@@ -243,11 +211,10 @@ class DistributionPrediction:
 
         result = {}
         for t_idx, target in enumerate(self._targets):
-            q_start = t_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
+            q_slice = self._quantile_slice(t_idx)
             result[target] = crps_quantile(
-                y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr,
-                self._quantiles[:, q_start:q_end],
+                self._target_truth(y_arr, t_idx),
+                q_slice,
                 self._levels,
             )
         return result
@@ -261,8 +228,6 @@ class DistributionPrediction:
         """
         Evaluate the piecewise-linear CDF at observed values.
 
-        Given quantile knots (q_j, τ_j) for each sample, interpolate F(y).
-
         Args:
             quantile_values: (n_samples, n_quantiles) predicted quantile values.
             levels: (n_quantiles,) quantile levels.
@@ -272,30 +237,25 @@ class DistributionPrediction:
             (n_samples,) PIT values in [0, 1].
         """
         n, k = quantile_values.shape
-        pit = np.empty(n)
+        if k == 1:
+            return np.where(y <= quantile_values[:, 0], levels[0], 1.0)
 
+        pit = np.empty(n)
         for i in range(n):
             qi = quantile_values[i]
             yi = y[i]
-
-            if k == 1:
-                pit[i] = levels[0] if yi <= qi[0] else 1.0
-                continue
-
             if yi <= qi[0]:
                 if qi[0] == qi[1]:
                     pit[i] = levels[0] * 0.5
                 else:
                     frac = (yi - qi[0]) / (qi[1] - qi[0])
-                    pit[i] = levels[0] + frac * (levels[0])
-                pit[i] = max(pit[i], 0.0)
+                    pit[i] = max(levels[0] + frac * levels[0], 0.0)
             elif yi >= qi[-1]:
                 if qi[-1] == qi[-2]:
                     pit[i] = 1.0 - (1.0 - levels[-1]) * 0.5
                 else:
                     frac = (yi - qi[-1]) / (qi[-1] - qi[-2])
-                    pit[i] = levels[-1] + frac * (1.0 - levels[-1])
-                pit[i] = min(pit[i], 1.0)
+                    pit[i] = min(levels[-1] + frac * (1.0 - levels[-1]), 1.0)
             else:
                 j = int(np.searchsorted(qi, yi, side="right")) - 1
                 j = max(0, min(j, k - 2))
@@ -305,7 +265,6 @@ class DistributionPrediction:
                 else:
                     frac = (yi - qi[j]) / denom
                     pit[i] = levels[j] + frac * (levels[j + 1] - levels[j])
-
         return np.clip(pit, 0.0, 1.0)
 
     def _pit_values(
@@ -322,7 +281,7 @@ class DistributionPrediction:
             (n,) array for univariate, or {target: array} for multivariate.
         """
         if self._n_quantiles < 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 "PIT requires at least 2 quantile levels, "
                 f"but DistributionPrediction has {self._n_quantiles}"
             )
@@ -334,11 +293,10 @@ class DistributionPrediction:
 
         result = {}
         for t_idx, target in enumerate(self._targets):
-            q_start = t_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
-            q_slice = self._quantiles[:, q_start:q_end]
-            y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
-            result[target] = self._forward_cdf(q_slice, self._levels, y_col)
+            q_slice = self._quantile_slice(t_idx)
+            result[target] = self._forward_cdf(
+                q_slice, self._levels, self._target_truth(y_arr, t_idx)
+            )
         return result
 
     def pit_histogram(
@@ -450,54 +408,15 @@ class DistributionPrediction:
         y_true: pl.Series | pl.DataFrame | np.ndarray,
         n_bins: int = 10,
     ) -> None:
-        """
-        Plot PIT histogram with uniform reference line.
+        """Plot PIT histogram with uniform reference line. Requires matplotlib.
 
         Args:
             y_true: True values.
             n_bins: Number of histogram bins (default 10).
         """
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            raise ImportError(
-                "matplotlib is required for plotting. Install with: pip install matplotlib"
-            )
+        from ..viz._plotting import plot_pit as _plot_pit
 
-        hist = self.pit_histogram(y_true, n_bins=n_bins)
-
-        if isinstance(hist, dict):
-            targets = list(hist.keys())
-            n_targets = len(targets)
-            n_cols = min(3, n_targets)
-            n_rows = (n_targets + n_cols - 1) // n_cols
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(5 * n_cols, 4 * n_rows))
-            axes_flat = np.asarray(axes).flatten()
-            for i, t in enumerate(targets):
-                self._plot_pit_single(axes_flat[i], hist[t], title=t)
-            for j in range(n_targets, len(axes_flat)):
-                axes_flat[j].set_visible(False)
-            plt.tight_layout()
-            plt.show()
-        else:
-            fig, ax = plt.subplots(figsize=(8, 5))
-            self._plot_pit_single(ax, hist)
-            plt.tight_layout()
-            plt.show()
-
-    @staticmethod
-    def _plot_pit_single(ax, hist_df: pl.DataFrame, title: str | None = None) -> None:
-        centers = hist_df["bin_center"].to_numpy()
-        counts = hist_df["count"].to_numpy()
-        expected = hist_df["expected"].to_numpy()
-        width = centers[1] - centers[0] if len(centers) > 1 else 0.1
-
-        ax.bar(centers, counts, width=width * 0.9, alpha=0.7, label="PIT counts")
-        ax.axhline(y=expected[0], color="red", linestyle="--", label="Uniform reference")
-        ax.set_xlabel("PIT value")
-        ax.set_ylabel("Count")
-        ax.set_title(title or "PIT Histogram")
-        ax.legend(loc="best")
+        _plot_pit(self, y_true, n_bins=n_bins)
 
     def _coerce_y_true(self, y_true: pl.Series | pl.DataFrame | np.ndarray) -> np.ndarray:
         """Convert y_true input to a numpy array shaped for this prediction."""
@@ -505,7 +424,7 @@ class DistributionPrediction:
             cols = [y_true[t].to_numpy() for t in self._targets]
             return np.column_stack(cols)
         if isinstance(y_true, pl.Series):
-            return to_numpy_series_zero_copy(y_true)
+            return to_numpy_series(y_true)
         return np.asarray(y_true, dtype=np.float64)
 
     def sample(self, n: int, random_state: int | None = None) -> pl.DataFrame:
@@ -582,16 +501,13 @@ class DistributionPrediction:
         n: int,
         rng: np.random.Generator,
     ) -> pl.DataFrame:
-        """Sample jointly in chunks to keep memory bounded."""
+        """Sample jointly in chunks — delegates to _sample_joint_chunk."""
         chunks = []
         remaining = n
-
         while remaining > 0:
             chunk_size = min(remaining, MAX_SAMPLE_CHUNK_SIZE)
-            chunk = self._sample_joint_chunk(chunk_size, rng)
-            chunks.append(chunk)
+            chunks.append(self._sample_joint_chunk(chunk_size, rng))
             remaining -= chunk_size
-
         return pl.concat(chunks)
 
     def _sample_chunk(
@@ -603,16 +519,12 @@ class DistributionPrediction:
         uniform_samples = rng.uniform(0, 1, size=(self._n_samples, n))
         uniform_clipped = np.clip(uniform_samples, self._levels[0], self._levels[-1])
 
-        target_samples_list = []
-        for target_idx in range(len(self._targets)):
-            q_start = target_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
-            quantile_values = self._quantiles[:, q_start:q_end]
-
-            target_samples = self._vectorized_inverse_cdf(
-                quantile_values, uniform_clipped, self._levels
-            )
-            target_samples_list.append(target_samples.flatten())
+        target_samples_list = [
+            self._vectorized_inverse_cdf(
+                self._quantile_slice(t_idx), uniform_clipped, self._levels
+            ).flatten()
+            for t_idx in range(len(self._targets))
+        ]
 
         sample_matrix = np.column_stack(target_samples_list)
         sample_ids = np.repeat(np.arange(self._n_samples), n)
@@ -626,37 +538,13 @@ class DistributionPrediction:
         n: int,
         rng: np.random.Generator,
     ) -> pl.DataFrame:
-        """Sample with chunking for large n values."""
+        """Sample with chunking for large n values — delegates to _sample_chunk."""
         chunks = []
         remaining = n
-
         while remaining > 0:
             chunk_size = min(remaining, MAX_SAMPLE_CHUNK_SIZE)
-            uniform_samples = rng.uniform(0, 1, size=(self._n_samples, chunk_size))
-            uniform_clipped = np.clip(uniform_samples, self._levels[0], self._levels[-1])
-
-            target_samples_list = []
-            for target_idx in range(len(self._targets)):
-                q_start = target_idx * self._n_quantiles
-                q_end = q_start + self._n_quantiles
-                quantile_values = self._quantiles[:, q_start:q_end]
-
-                target_samples = self._vectorized_inverse_cdf(
-                    quantile_values, uniform_clipped, self._levels
-                )
-                target_samples_list.append(target_samples.flatten())
-
-            sample_matrix = np.column_stack(target_samples_list)
-            sample_ids = np.repeat(np.arange(self._n_samples), chunk_size)
-
-            chunk_df = pl.DataFrame(sample_matrix, schema=self._targets, orient="row")
-            chunk_df = chunk_df.with_columns(pl.Series("sample_id", sample_ids))
-            cols = ["sample_id"] + self._targets
-            chunk_df = chunk_df.select(cols)
-            chunks.append(chunk_df)
-
+            chunks.append(self._sample_chunk(chunk_size, rng))
             remaining -= chunk_size
-
         return pl.concat(chunks)
 
     @staticmethod
@@ -699,171 +587,50 @@ class DistributionPrediction:
         targets: str | list[str] = "all",
         max_targets: int = 6,
     ) -> None:
-        """
-        Fan chart of quantile bands.
-
-        If actuals provided: overlays true values and computes empirical coverage.
-        Requires matplotlib (soft dependency).
+        """Fan chart of quantile bands. Requires matplotlib.
 
         Args:
-            actuals: Optional actual values for comparison
-            confidence_bands: Confidence levels to display (default: [0.5, 0.8, 0.9, 0.95])
-            title: Optional plot title
-            targets: Target(s) to plot. ``"all"`` plots every target (uses subplot
-                grid for multivariate). Pass a list of target names to select specific
-                targets.
-            max_targets: Maximum number of subplot panels (default 6).
+            actuals: Optional actual values for comparison.
+            confidence_bands: Confidence levels (default: [0.5, 0.8, 0.9, 0.95]).
+            title: Optional plot title.
+            targets: Target(s) to plot. ``"all"`` plots every target.
+            max_targets: Maximum subplot panels (default 6).
         """
-        try:
-            import matplotlib.pyplot as plt
-        except ImportError:
-            raise ImportError(
-                "matplotlib is required for plotting. Install with: pip install matplotlib"
-            )
+        from ..viz._plotting import plot as _plot
 
-        if confidence_bands is None:
-            confidence_bands = [0.5, 0.8, 0.9, 0.95]
-
-        target_list = self._resolve_targets(targets, max_targets)
-        single = len(target_list) == 1
-
-        if single:
-            fig, ax = plt.subplots(figsize=(12, 6))
-            self._plot_single_target(
-                ax,
-                target_list[0],
-                actuals,
-                confidence_bands,
-                plot_indices=self._plot_slice(),
-                title=title,
-            )
-            plt.tight_layout()
-            plt.show()
-        else:
-            n_targets = len(target_list)
-            n_cols = min(3, n_targets)
-            n_rows = (n_targets + n_cols - 1) // n_cols
-            fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
-            if n_targets == 1:
-                axes = np.array([axes])
-            axes_flat = np.asarray(axes).flatten()
-
-            plot_indices = self._plot_slice()
-
-            for i, target in enumerate(target_list):
-                self._plot_single_target(
-                    axes_flat[i],
-                    target,
-                    actuals,
-                    confidence_bands,
-                    plot_indices=plot_indices,
-                    title=target,
-                )
-
-            for j in range(n_targets, len(axes_flat)):
-                axes_flat[j].set_visible(False)
-
-            fig.suptitle(title or "")
-            plt.tight_layout()
-            plt.show()
-
-    def _plot_slice(self) -> slice:
-        if self._n_samples > PLOT_MAX_SAMPLES:
-            step = max(1, self._n_samples // PLOT_MAX_SAMPLES)
-            return slice(None, None, step)
-        return slice(None)
-
-    def _resolve_targets(self, targets: str | list[str], max_targets: int) -> list[str]:
-        import warnings
-
-        if isinstance(targets, str):
-            if targets == "all":
-                selected = list(self._targets)
-            elif targets in self._targets:
-                selected = [targets]
-            else:
-                raise ValueError(f"Target {targets!r} not found. Available: {self._targets}")
-        else:
-            selected = list(targets)
-
-        for t in selected:
-            if t not in self._targets:
-                raise ValueError(f"Target {t!r} not found. Available: {self._targets}")
-
-        if len(selected) > max_targets:
-            warnings.warn(
-                f"{len(selected)} targets requested but max_targets={max_targets}. "
-                f"Showing first {max_targets}.",
-                UserWarning,
-                stacklevel=3,
-            )
-            selected = selected[:max_targets]
-
-        return selected
-
-    def _plot_single_target(
-        self,
-        ax,
-        target: str,
-        actuals: pl.Series | pl.DataFrame | None,
-        confidence_bands: list[float],
-        plot_indices: slice,
-        title: str | None = None,
-    ) -> None:
-        x_axis = range(self._n_samples)[plot_indices]
-
-        for confidence in reversed(confidence_bands):
-            interval = self.interval(confidence)
-            if len(self._targets) == 1:
-                lower_col, upper_col = "lower", "upper"
-            else:
-                lower_col = f"{target}_lower"
-                upper_col = f"{target}_upper"
-
-            lower = interval[lower_col]
-            upper = interval[upper_col]
-
-            alpha = 0.1 + (1 - confidence) * 0.3
-            ax.fill_between(
-                x_axis,
-                to_numpy_series_zero_copy(lower)[plot_indices],
-                to_numpy_series_zero_copy(upper)[plot_indices],
-                alpha=alpha,
-                label=f"{confidence * 100:.0f}% interval",
-            )
-
-        median_df = self.median()
-        if isinstance(median_df, pl.DataFrame):
-            median_series = median_df[target]
-        else:
-            median_series = median_df
-        ax.plot(to_numpy_series_zero_copy(median_series)[plot_indices], label="Median", linewidth=2)
-
-        if actuals is not None:
-            if isinstance(actuals, pl.DataFrame):
-                actuals_series = actuals[target]
-            elif isinstance(actuals, pl.Series):
-                actuals_series = actuals
-            else:
-                actuals_series = actuals
-            ax.plot(
-                to_numpy_series_zero_copy(actuals_series)[plot_indices],
-                label="Actuals",
-                linewidth=1.5,
-                alpha=0.7,
-            )
-
-        ax.set_xlabel("Sample")
-        ax.set_ylabel("Value")
-        if title:
-            ax.set_title(title)
-        ax.legend(loc="best")
+        _plot(
+            self,
+            actuals=actuals,
+            confidence_bands=confidence_bands,
+            title=title,
+            targets=targets,
+            max_targets=max_targets,
+        )
 
     @lru_cache(maxsize=128)
     def _find_nearest_quantile_index(self, q: float) -> int:
         """Find index of nearest quantile level. Cached for repeated lookups."""
         distances = np.abs(self._levels - q)
         return int(np.argmin(distances))
+
+    def _quantile_slice(self, target_idx: int) -> np.ndarray:
+        """Return (n_samples, n_quantiles) slice for a given target index."""
+        q_start = target_idx * self._n_quantiles
+        return self._quantiles[:, q_start : q_start + self._n_quantiles]
+
+    def _interval_columns(self, target: str) -> tuple[str, str]:
+        """Return (lower_col, upper_col) column name pair for a target."""
+        if len(self._targets) == 1:
+            return "lower", "upper"
+        return f"{target}_lower", f"{target}_upper"
+
+    def _target_truth(self, y_arr: np.ndarray, t_idx: int, i: int | None = None) -> np.ndarray:
+        """Extract truth values for a single target from a full y array."""
+        if y_arr.ndim == 1:
+            return y_arr
+        if i is not None:
+            return np.array([y_arr[i, t_idx]])
+        return y_arr[:, t_idx]
 
     def __repr__(self) -> str:
         parts = [
@@ -882,7 +649,7 @@ class DistributionPrediction:
     def posterior_samples(self) -> np.ndarray:
         """Return raw posterior parameter draws as a 2D matrix."""
         if self._posterior is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "posterior_samples() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
@@ -898,13 +665,13 @@ class DistributionPrediction:
             else:
                 matrices.append(arr_np.reshape(arr_np.shape[0], -1))
         if not matrices:
-            error_invalid_data("posterior data is empty")
+            raise InvalidDataError("posterior data is empty")
         return np.column_stack(matrices)
 
     def posterior_parameter_interval(self, confidence: float = 0.9) -> pl.DataFrame:
         """Compute parameter credible intervals from posterior draws."""
         if not (0 < confidence < 1):
-            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
+            raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
         samples = self.posterior_samples()
         alpha = (1 - confidence) / 2
         lower = np.quantile(samples, alpha, axis=0)
@@ -916,7 +683,7 @@ class DistributionPrediction:
         import warnings
 
         if not (0 < confidence < 1):
-            error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
+            raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
 
         if self._posterior_predictive is None:
             warnings.warn(
@@ -936,7 +703,7 @@ class DistributionPrediction:
     def rhat(self) -> np.ndarray:
         """Compute Gelman-Rubin R-hat convergence diagnostic from true chains."""
         if self._posterior_chains is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "rhat() requires posterior chain data. "
                 "Fit BayesianQuantileRegressor with num_chains > 1."
             )
@@ -945,15 +712,15 @@ class DistributionPrediction:
         for name, arr in self._posterior_chains.items():
             chains = np.asarray(arr)
             if chains.ndim < 2:
-                error_invalid_data(f"posterior chain array for '{name}' must be at least 2D")
+                raise InvalidDataError(f"posterior chain array for '{name}' must be at least 2D")
             n_chains = chains.shape[0]
             chain_len = chains.shape[1]
             if n_chains < 2:
-                error_invalid_data(
+                raise InvalidDataError(
                     f"rhat() requires at least 2 chains for '{name}', got {n_chains}."
                 )
             if chain_len < 2:
-                error_invalid_data(
+                raise InvalidDataError(
                     f"rhat() requires at least 2 draws per chain for '{name}', got {chain_len}."
                 )
             reshaped = chains.reshape(n_chains, chain_len, -1)
@@ -961,14 +728,14 @@ class DistributionPrediction:
             b = chain_len * np.var(chain_means, axis=0, ddof=1)
             w = np.mean(np.var(reshaped, axis=1, ddof=1), axis=0)
             if np.any(w < 1e-10):
-                error_invalid_data(
+                raise InvalidDataError(
                     f"Within-chain variance too close to zero for R-hat calculation for '{name}'."
                 )
             var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
             all_rhat.append(np.sqrt(var_hat / w))
 
         if not all_rhat:
-            error_invalid_data(
+            raise InvalidDataError(
                 "rhat() requires at least one posterior chain parameter to evaluate."
             )
         return np.concatenate(all_rhat)
@@ -976,7 +743,7 @@ class DistributionPrediction:
     def posterior_summary(self) -> pl.DataFrame:
         """Return summary statistics of posterior samples."""
         if self._posterior is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "posterior_summary() requires posterior data. "
                 "Use a BayesianQuantileRegressor to generate predictions with posteriors."
             )
@@ -996,7 +763,7 @@ class DistributionPrediction:
     def group_uncertainty(self) -> dict[str, float]:
         """Return per-group uncertainty contribution (interval width)."""
         if self._group_predictions is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "group_uncertainty() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
@@ -1011,7 +778,7 @@ class DistributionPrediction:
     def group_intervals(self, confidence: float = 0.9) -> dict[str, pl.DataFrame]:
         """Return per-group prediction intervals."""
         if self._group_predictions is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "group_intervals() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
@@ -1020,7 +787,7 @@ class DistributionPrediction:
     def cross_group_correlation(self) -> np.ndarray:
         """Return cross-group correlation matrix based on group median predictions."""
         if self._group_predictions is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "cross_group_correlation() requires group predictions. "
                 "Use a CrossModalAggregator to generate predictions with groups."
             )
@@ -1037,7 +804,7 @@ class DistributionPrediction:
     def treatment_effect(self) -> np.ndarray:
         """Return CATE point estimates."""
         if self._treatment_info is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "treatment_effect() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
@@ -1046,11 +813,11 @@ class DistributionPrediction:
     def average_treatment_effect(self) -> dict:
         """Return ATE with confidence interval."""
         if self._treatment_info is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
         if "ate" not in self._treatment_info or "ate_ci" not in self._treatment_info:
-            error_invalid_data(
+            raise InvalidDataError(
                 "average_treatment_effect() requires evaluated treatment metrics. "
                 "Call CausalUncertaintyEstimator.evaluate(...) on labeled data first."
             )
@@ -1062,7 +829,7 @@ class DistributionPrediction:
     def heterogeneity_score(self) -> float:
         """Return CATE variance as heterogeneity measure."""
         if self._treatment_info is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "heterogeneity_score() requires treatment info. "
                 "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
             )
@@ -1105,18 +872,16 @@ class DistributionPrediction:
         """
         return self._decomposition_for_target(0, confidence)
 
-    def _decomposition_for_target(self, target_idx: int, confidence: float) -> dict[str, float]:
-        interval = self.interval(confidence)
+    def _decomposition_for_target(
+        self, target_idx: int, confidence: float, interval: pl.DataFrame | None = None
+    ) -> dict[str, float]:
+        if interval is None:
+            interval = self.interval(confidence)
         target = self._targets[target_idx]
+        lower_col, upper_col = self._interval_columns(target)
 
-        if len(self._targets) == 1:
-            lower_col, upper_col = "lower", "upper"
-        else:
-            lower_col = f"{target}_lower"
-            upper_col = f"{target}_upper"
-
-        lower = to_numpy_series_zero_copy(interval[lower_col])
-        upper = to_numpy_series_zero_copy(interval[upper_col])
+        lower = to_numpy_series(interval[lower_col])
+        upper = to_numpy_series(interval[upper_col])
         widths = upper - lower
         aleatoric = float(np.mean(widths))
         epistemic = float(np.var(widths))
@@ -1162,16 +927,15 @@ class DistributionPrediction:
         )
 
         rows = []
+        interval = self.interval(confidence)
         for t_idx, target in enumerate(self._targets):
-            q_start = t_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
-            q_slice = self._quantiles[:, q_start:q_end]
+            q_slice = self._quantile_slice(t_idx)
 
             median_val = float(np.mean(q_slice[:, median_idx]))
             width = float(np.mean(q_slice[:, upper_idx] - q_slice[:, lower_idx]))
             narrow = float(np.mean(q_slice[:, upper_50_idx] - q_slice[:, lower_50_idx]))
 
-            decomp = self._decomposition_for_target(t_idx, confidence)
+            decomp = self._decomposition_for_target(t_idx, confidence, interval)
 
             rows.append(
                 {
@@ -1221,12 +985,11 @@ class DistributionPrediction:
 
         results = []
         for t_idx in range(len(self._targets)):
-            q_start = t_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
+            q_slice = self._quantile_slice(t_idx)
             if row_index is not None:
-                qv = self._quantiles[row_index, q_start:q_end]
+                qv = q_slice[row_index]
             else:
-                qv = np.mean(self._quantiles[:, q_start:q_end], axis=0)
+                qv = np.mean(q_slice, axis=0)
             results.append(fit_parametric(qv, self._levels, family=family))
         return results
 
@@ -1261,11 +1024,11 @@ class DistributionPrediction:
 
         result = {}
         for t_idx, target in enumerate(self._targets):
-            q_start = t_idx * self._n_quantiles
-            q_end = q_start + self._n_quantiles
-            y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
             result[target] = _log_score(
-                y_col, self._quantiles[:, q_start:q_end], self._levels, family=family
+                self._target_truth(y_arr, t_idx),
+                self._quantile_slice(t_idx),
+                self._levels,
+                family=family,
             )
         return result
 

@@ -11,17 +11,8 @@ from .exceptions import (
     QuantileError,
     UncertaintyFlowError,
     UncertaintyFlowWarning,
-    error_calibration_too_small,
-    error_invalid_data,
-    error_model_not_fitted,
-    error_quantile_invalid,
-    warn_calibration_size,
-    warn_coverage_gap,
-    warn_lazyframe_materialized,
-    warn_no_uncertainty_drivers,
-    warn_quantile_crossing,
 )
-from .polars_bridge import to_numpy, to_polars
+from .polars_bridge import to_numpy, to_numpy_series, to_polars
 from .split import (
     BaseSplit,
     RandomHoldoutSplit,
@@ -36,6 +27,7 @@ from .split import (
 
 __all__ = [
     "to_numpy",
+    "to_numpy_series",
     "to_polars",
     "BaseSplit",
     "RandomHoldoutSplit",
@@ -46,8 +38,6 @@ __all__ = [
     "ValidationSplitPlan",
     "select_validation_plan",
     "rolling_origin_splits",
-    "UncertaintyFlowWarning",
-    "UncertaintyFlowError",
     "CalibrationError",
     "CalibrationSizeError",
     "ConfigurationError",
@@ -56,13 +46,6 @@ __all__ = [
     "ModelError",
     "ModelNotFittedError",
     "QuantileError",
-    "warn_calibration_size",
-    "warn_quantile_crossing",
-    "warn_coverage_gap",
-    "warn_no_uncertainty_drivers",
-    "warn_lazyframe_materialized",
-    "error_calibration_too_small",
-    "error_invalid_data",
-    "error_model_not_fitted",
-    "error_quantile_invalid",
+    "UncertaintyFlowError",
+    "UncertaintyFlowWarning",
 ]

@@ -2,69 +2,61 @@
 
 __version__ = "0.5.0"
 
-# Core classes
 from .core import (
     DEFAULT_QUANTILES,
     BaseUncertaintyModel,
     DistributionPrediction,
 )
-
-# Metrics
 from .metrics import (
     coverage_score,
     pinball_loss,
     winkler_score,
 )
-
-# Models
 from .models import DeepQuantileNet, QuantileForestForecaster
 
 try:
-    from .models import DeepQuantileNetTorch  # noqa: F401
+    from .models.deep_quantile_torch import DeepQuantileNetTorch  # noqa: F401
 
-    _torch_available = DeepQuantileNetTorch is not None
+    _torch_available = True
 except ImportError:
     DeepQuantileNetTorch = None  # type: ignore[assignment]
     _torch_available = False
 
-# Utilities
+try:
+    from .models.transformer_forecaster import TransformerForecaster  # noqa: F401
+
+    _transformers_available = True
+except ImportError:
+    TransformerForecaster = None  # type: ignore[assignment]
+    _transformers_available = False
+
 from .utils import (
     RandomHoldoutSplit,
     TemporalHoldoutSplit,
     to_numpy,
+    to_numpy_series,
 )
-
-# Wrappers
 from .wrappers import (
+    AdaptiveConformalForecaster,
     ConformalClassifier,
     ConformalForecaster,
     ConformalRegressor,
     EnsembleBootstrapPI,
 )
 
-# Bayesian module (optional - requires numpyro)
 try:
-    from .bayesian import BayesianQuantileRegressor  # noqa: F401
+    from .bayesian.numpyro_model import BayesianQuantileRegressor  # noqa: F401
 
     _numpyro_available = True
 except ImportError:
+    BayesianQuantileRegressor = None  # type: ignore[assignment]
     _numpyro_available = False
 
-# Causal module (no extra deps)
-# Analysis module (no extra deps)
 from .analysis import FeatureLeverageAnalyzer
 from .causal import CausalUncertaintyEstimator
-
-# Counterfactual module (no extra deps)
 from .counterfactual import UncertaintyExplainer
-
-# Decomposition module (no extra deps)
 from .decomposition import EnsembleDecomposition
-
-# Multi-modal module (no extra deps)
 from .multimodal import CrossModalAggregator
-
-# Risk module (no extra deps)
 from .risk import (
     ConformalRiskControl,
     asymmetric_loss,
@@ -73,59 +65,52 @@ from .risk import (
     threshold_penalty,
 )
 
-# Visualization module (optional - requires streamlit)
 try:
     from .viz import launch_dashboard
 
     _viz_available = True
 except ImportError:
-    _viz_available = False
     launch_dashboard = None  # type: ignore[assignment]
+    _viz_available = False
 
 __all__ = [
-    # Core
     "BaseUncertaintyModel",
     "DistributionPrediction",
     "DEFAULT_QUANTILES",
-    # Metrics
+    "coverage_score",
     "pinball_loss",
     "winkler_score",
-    "coverage_score",
-    # Utilities
     "to_numpy",
+    "to_numpy_series",
     "RandomHoldoutSplit",
     "TemporalHoldoutSplit",
-    # Wrappers
     "ConformalRegressor",
     "ConformalForecaster",
     "ConformalClassifier",
+    "AdaptiveConformalForecaster",
     "EnsembleBootstrapPI",
-    # Models
     "DeepQuantileNet",
     "QuantileForestForecaster",
-    # Causal
     "CausalUncertaintyEstimator",
-    # Multi-Modal
     "CrossModalAggregator",
-    # Analysis
     "FeatureLeverageAnalyzer",
-    # Decomposition
     "EnsembleDecomposition",
-    # Risk
     "ConformalRiskControl",
     "asymmetric_loss",
     "inventory_cost",
     "financial_var",
     "threshold_penalty",
-    # Counterfactual
     "UncertaintyExplainer",
 ]
-
-if _viz_available:
-    __all__.append("launch_dashboard")
 
 if _torch_available:
     __all__.append("DeepQuantileNetTorch")
 
+if _transformers_available:
+    __all__.append("TransformerForecaster")
+
 if _numpyro_available:
     __all__.append("BayesianQuantileRegressor")
+
+if _viz_available:
+    __all__.append("launch_dashboard")

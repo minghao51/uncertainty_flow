@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.polars_bridge import as_numpy
 
 
 def calibration_error(
@@ -24,12 +24,7 @@ def calibration_error(
     Returns:
         Absolute calibration error (float). Lower is better. 0 = perfectly calibrated.
     """
-    if isinstance(y_true, pl.Series):
-        y_true = to_numpy_series_zero_copy(y_true)
-    if isinstance(lower, pl.Series):
-        lower = to_numpy_series_zero_copy(lower)
-    if isinstance(upper, pl.Series):
-        upper = to_numpy_series_zero_copy(upper)
+    y_true, lower, upper = as_numpy(y_true, lower, upper)
 
     empirical_coverage = np.mean((y_true >= lower) & (y_true <= upper))
 

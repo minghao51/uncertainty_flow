@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import error_invalid_data
+from ..utils.exceptions import InvalidDataError
 from ..utils.polars_bridge import materialize_lazyframe
 
 if TYPE_CHECKING:
@@ -78,18 +78,18 @@ class EnsembleDecomposition:
         random_state: int | None = None,
     ):
         if not callable(model_factory):
-            error_invalid_data("model_factory must be callable")
+            raise InvalidDataError("model_factory must be callable")
         if n_bootstrap < 1:
-            error_invalid_data(f"n_bootstrap must be at least 1, got {n_bootstrap}")
+            raise InvalidDataError(f"n_bootstrap must be at least 1, got {n_bootstrap}")
         if not (0 < confidence < 1):
-            error_invalid_data(f"confidence must be in (0, 1), got {confidence}")
+            raise InvalidDataError(f"confidence must be in (0, 1), got {confidence}")
         if train_data is None:
-            error_invalid_data("train_data is required")
+            raise InvalidDataError("train_data is required")
 
         self.model_factory = model_factory
         self.train_data = materialize_lazyframe(train_data)
         if self.train_data.is_empty():
-            error_invalid_data("train_data must contain at least one row")
+            raise InvalidDataError("train_data must contain at least one row")
 
         self.target = target
         self.confidence = confidence
@@ -154,7 +154,7 @@ class EnsembleDecomposition:
             Dictionary with `aleatoric`, `epistemic`, and `total`
         """
         if data.height == 0:
-            error_invalid_data("Cannot decompose uncertainty on empty DataFrame")
+            raise InvalidDataError("Cannot decompose uncertainty on empty DataFrame")
 
         point_stack, width_stack = self._predict_ensemble(data)
         aleatoric_by_sample = width_stack.mean(axis=(0, 2))
@@ -181,7 +181,7 @@ class EnsembleDecomposition:
             DataFrame with columns `aleatoric`, `epistemic`, and `total`
         """
         if data.height == 0:
-            error_invalid_data("Cannot decompose uncertainty on empty DataFrame")
+            raise InvalidDataError("Cannot decompose uncertainty on empty DataFrame")
 
         point_stack, width_stack = self._predict_ensemble(data)
         aleatoric = width_stack.mean(axis=(0, 2))

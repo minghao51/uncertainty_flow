@@ -11,7 +11,7 @@ from sklearn.preprocessing import StandardScaler
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput
-from ..utils.exceptions import error_invalid_data
+from ..utils.exceptions import InvalidDataError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 
 if TYPE_CHECKING:
@@ -64,11 +64,11 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         """Validate random_state parameter."""
         if random_state is not None:
             if not isinstance(random_state, int):
-                error_invalid_data(
+                raise InvalidDataError(
                     f"random_state must be an integer or None, got {type(random_state).__name__}"
                 )
             if random_state < 0:
-                error_invalid_data(f"random_state must be non-negative, got {random_state}")
+                raise InvalidDataError(f"random_state must be non-negative, got {random_state}")
         return random_state
 
     def fit(  # type: ignore[override]
@@ -94,9 +94,9 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         x, y = self._prepare_data(data, target)
 
         if not np.all(np.isfinite(x)):
-            error_invalid_data("Feature matrix contains NaN or Inf values")
+            raise InvalidDataError("Feature matrix contains NaN or Inf values")
         if not np.all(np.isfinite(y)):
-            error_invalid_data("Target vector contains NaN or Inf values")
+            raise InvalidDataError("Target vector contains NaN or Inf values")
 
         # Split into train and calibration sets
         n_total = len(y)
@@ -137,10 +137,10 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         Raises:
             ModelNotFittedError: If model has not been fitted.
         """
-        from ..utils.exceptions import error_model_not_fitted
+        from ..utils.exceptions import ModelNotFittedError
 
         if not self._fitted:
-            error_model_not_fitted(self.__class__.__name__)
+            raise ModelNotFittedError(self.__class__.__name__)
 
         x = self._prepare_predict_data(data)
         x_scaled = self._scaler_.transform(x)
@@ -186,18 +186,18 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         """
         if isinstance(data, np.ndarray):
             if not isinstance(target, np.ndarray):
-                error_invalid_data("If data is numpy array, target must also be numpy array")
+                raise InvalidDataError("If data is numpy array, target must also be numpy array")
             x = data
             y = target.flatten() if isinstance(target, np.ndarray) else target
             self._feature_cols_ = None
         else:
             data = materialize_lazyframe(data)
             if isinstance(target, np.ndarray):
-                error_invalid_data("If data is Polars, target must be string column name")
+                raise InvalidDataError("If data is Polars, target must be string column name")
             target_str = str(target)  # type: ignore[arg-type]  # target is str here
             self._feature_cols_ = [col for col in data.columns if col != target_str]
             if self._feature_cols_ is None:
-                error_invalid_data("Feature columns could not be determined from data")
+                raise InvalidDataError("Feature columns could not be determined from data")
             x = to_numpy(data, self._feature_cols_)
             y = to_numpy(data, [target_str]).flatten()
 
@@ -218,7 +218,7 @@ class BaseQuantileNeuralNet(BaseUncertaintyModel):
         else:
             data = materialize_lazyframe(data)
             if self._feature_cols_ is None:
-                error_invalid_data("Feature columns not set. Call fit() first.")
+                raise InvalidDataError("Feature columns not set. Call fit() first.")
             x = to_numpy(data, self._feature_cols_)
 
         return x

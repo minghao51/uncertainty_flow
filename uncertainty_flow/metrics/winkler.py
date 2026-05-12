@@ -3,8 +3,8 @@
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import error_invalid_data, error_quantile_invalid
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.exceptions import InvalidDataError, QuantileError
+from ..utils.polars_bridge import as_numpy
 
 
 def winkler_score(
@@ -43,26 +43,17 @@ def winkler_score(
         1.0
     """
     if not (0 < confidence < 1):
-        error_quantile_invalid(f"confidence must be in (0, 1), got {confidence}")
+        raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
 
-    # Convert to numpy
-    if isinstance(y_true, pl.Series):
-        y_true = to_numpy_series_zero_copy(y_true)
-    if isinstance(lower, pl.Series):
-        lower = to_numpy_series_zero_copy(lower)
-    if isinstance(upper, pl.Series):
-        upper = to_numpy_series_zero_copy(upper)
+    y_true, lower, upper = as_numpy(y_true, lower, upper)
 
-    # Validate bounds
     if np.any(lower > upper):
-        error_invalid_data("lower bound must be <= upper bound")
+        raise InvalidDataError("lower bound must be <= upper bound")
 
     alpha = 1 - confidence
 
-    # Width penalty
     width_penalty = upper - lower
 
-    # Miss penalty
     miss_penalty = np.zeros_like(y_true)
     below_mask = y_true < lower
     above_mask = y_true > upper
@@ -70,7 +61,6 @@ def winkler_score(
     miss_penalty[below_mask] = (2 / alpha) * (lower[below_mask] - y_true[below_mask])
     miss_penalty[above_mask] = (2 / alpha) * (y_true[above_mask] - upper[above_mask])
 
-    # Total score
     score = width_penalty + miss_penalty
 
     return float(np.mean(score))

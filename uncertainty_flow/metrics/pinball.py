@@ -3,8 +3,8 @@
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import error_quantile_invalid
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.exceptions import QuantileError
+from ..utils.polars_bridge import as_numpy
 
 
 def pinball_loss(
@@ -37,15 +37,10 @@ def pinball_loss(
         0.4
     """
     if not (0 < quantile < 1):
-        error_quantile_invalid(f"quantile must be in (0, 1), got {quantile}")
+        raise QuantileError(f"quantile must be in (0, 1), got {quantile}")
 
-    # Convert to numpy
-    if isinstance(y_true, pl.Series):
-        y_true = to_numpy_series_zero_copy(y_true)
-    if isinstance(y_pred, pl.Series):
-        y_pred = to_numpy_series_zero_copy(y_pred)
+    y_true, y_pred = as_numpy(y_true, y_pred)
 
-    # Compute pinball loss
     error = y_true - y_pred
     loss = np.maximum(quantile * error, (quantile - 1) * error)
 

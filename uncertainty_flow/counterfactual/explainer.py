@@ -208,13 +208,13 @@ class UncertaintyExplainer:
         For differentiable models (gradient search), this uses gradient
         descent with L1/L2 regularization.
         """
-        from ..utils.exceptions import error_invalid_data
+        from ..utils.exceptions import InvalidDataError
 
         if data.height == 0:
-            error_invalid_data("Cannot explain uncertainty on empty DataFrame")
+            raise InvalidDataError("Cannot explain uncertainty on empty DataFrame")
 
         if data.height > 1:
-            error_invalid_data(
+            raise InvalidDataError(
                 "explain_uncertainty expects exactly one row. "
                 "Use explain_batch() for multiple samples."
             )
@@ -308,10 +308,10 @@ class UncertaintyExplainer:
         ... )
         >>> print(comparison.sort("effectiveness", descending=True))
         """
-        from ..utils.exceptions import error_invalid_data
+        from ..utils.exceptions import InvalidDataError
 
         if data.height != 1:
-            error_invalid_data("compare_features requires single-row DataFrame")
+            raise InvalidDataError("compare_features requires single-row DataFrame")
 
         results = []
 

@@ -17,18 +17,15 @@ The APS procedure:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterator
+from typing import Iterator
 
 import numpy as np
 from sklearn.base import BaseEstimator, clone
 
 from ..core.prediction_set import PredictionSet
 from ..core.types import PolarsInput
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
-
-if TYPE_CHECKING:
-    pass
 
 
 class ConformalClassifier:
@@ -137,7 +134,7 @@ class ConformalClassifier:
 
     def predict(self, data: PolarsInput) -> PredictionSet:
         if not self._fitted:
-            error_model_not_fitted("ConformalClassifier")
+            raise ModelNotFittedError("ConformalClassifier")
         if self._model is None:
             raise RuntimeError("Internal error: model is None after fit")
         if self._threshold is None:
@@ -177,11 +174,23 @@ class ConformalClassifier:
         for start in range(0, n, batch_size):
             yield self.predict(data[start : start + batch_size])
 
-    def save(self, path: str | Path, **kwargs) -> None:
+    @property
+    def metadata(self) -> dict | None:
+        """Return persisted metadata, or None for unfitted models."""
+        cached_metadata = getattr(self, "_metadata", None)
+        if cached_metadata is not None:
+            return cached_metadata
+        if not self._fitted:
+            return None
+        from ..core._persistence import build_metadata
+
+        return build_metadata(self, include_metadata=True)
+
+    def save(self, path: str | Path, include_metadata: bool = True) -> None:
         """Persist the conformal classifier via the standard .uf archive."""
         from ..core._persistence import save_model_archive
 
-        save_model_archive(self, path, **kwargs)
+        self._metadata = save_model_archive(self, path, include_metadata=include_metadata)
 
     @classmethod
     def load(cls, path: str | Path, **kwargs) -> ConformalClassifier:

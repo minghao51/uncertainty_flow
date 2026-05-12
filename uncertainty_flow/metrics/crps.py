@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.polars_bridge import as_numpy
 
 
 def crps_quantile(
@@ -96,15 +96,12 @@ def crps_score(
         stacklevel=2,
     )
 
-    if isinstance(y_true, pl.Series):
-        y_true = to_numpy_series_zero_copy(y_true)
-    if isinstance(lower, pl.Series):
-        lower = to_numpy_series_zero_copy(lower)
-    if isinstance(upper, pl.Series):
-        upper = to_numpy_series_zero_copy(upper)
+    from scipy.stats import norm
+
+    y_true, lower, upper = as_numpy(y_true, lower, upper)
 
     alpha = 1 - confidence
-    z = _z_score(1 - alpha / 2)
+    z = float(norm.ppf(1 - alpha / 2))
 
     width = upper - lower
     midpoint = (upper + lower) / 2.0
@@ -113,8 +110,6 @@ def crps_score(
 
     z_obs = np.where(sigma > 0, (y_true - midpoint) / sigma, 0.0)
 
-    from scipy.stats import norm
-
     phi_z = norm.pdf(z_obs)
 
     crps_values = sigma * (z_obs * (2 * norm.cdf(z_obs) - 1) + 2 * phi_z - 1 / np.sqrt(np.pi))
@@ -122,9 +117,3 @@ def crps_score(
     crps_values = np.where(sigma > 0, crps_values, np.abs(y_true - midpoint))
 
     return float(np.mean(crps_values))
-
-
-def _z_score(p: float) -> float:
-    from scipy.stats import norm
-
-    return float(norm.ppf(p))

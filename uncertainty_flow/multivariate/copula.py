@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from abc import abstractmethod
 from enum import Enum
 from typing import TYPE_CHECKING, ClassVar, Literal
@@ -9,11 +10,7 @@ from typing import TYPE_CHECKING, ClassVar, Literal
 import numpy as np
 from scipy import stats
 
-from ..utils.exceptions import (
-    error_invalid_data,
-    error_model_not_fitted,
-    warn_copula_auto_selection_ndim,
-)
+from ..utils.exceptions import InvalidDataError, ModelNotFittedError, UncertaintyFlowWarning
 
 if TYPE_CHECKING:
     pass
@@ -53,7 +50,7 @@ class BaseCopula:
             ModelNotFittedError: If the model has not been fitted yet.
         """
         if not self.fitted_ or self.theta_ is None:
-            error_model_not_fitted(self.__class__.__name__)
+            raise ModelNotFittedError(self.__class__.__name__)
 
     @abstractmethod
     def fit(self, residuals: np.ndarray) -> "BaseCopula":
@@ -209,7 +206,7 @@ class GaussianCopula(BaseCopula):
             self (for method chaining)
         """
         if residuals.ndim != 2:
-            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
 
         n_samples, n_targets = residuals.shape
 
@@ -220,7 +217,7 @@ class GaussianCopula(BaseCopula):
                 constant_cols.append(t)
 
         if len(constant_cols) > 0:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"Target columns at indices {constant_cols} are constant (zero variance). "
                 "Cannot compute correlation matrix. Check if target values vary across samples."
             )
@@ -232,7 +229,7 @@ class GaussianCopula(BaseCopula):
         try:
             eigenvals = np.linalg.eigvals(self.correlation_matrix_)
             if np.any(np.isnan(eigenvals)):
-                error_invalid_data(
+                raise InvalidDataError(
                     "Correlation matrix contains NaN values. "
                     "This may indicate zero-variance columns or invalid residuals."
                 )
@@ -244,21 +241,21 @@ class GaussianCopula(BaseCopula):
                 try:
                     np.linalg.cholesky(self.correlation_matrix_)
                 except np.linalg.LinAlgError:
-                    error_invalid_data(
+                    raise InvalidDataError(
                         "Correlation matrix is too ill-conditioned to condition. "
                         "This may indicate very high correlation between targets."
                     )
                 eigenvals = np.linalg.eigvals(self.correlation_matrix_)
 
             if np.any(eigenvals < min_eigval):
-                error_invalid_data(
+                raise InvalidDataError(
                     f"Correlation matrix is too ill-conditioned. "
                     f"Minimum eigenvalue: {np.min(eigenvals):.2e}, "
                     f"Threshold: {min_eigval:.2e}. "
                     f"This may indicate very high correlation between targets."
                 )
         except np.linalg.LinAlgError as e:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"Failed to validate correlation matrix: {e}. "
                 f"Check for linear dependencies in your data."
             )
@@ -311,7 +308,7 @@ class GaussianCopula(BaseCopula):
         try:
             cov = self.correlation_matrix_
             if cov is None:
-                error_model_not_fitted("GaussianCopula")
+                raise ModelNotFittedError("GaussianCopula")
             normal_samples = stats.multivariate_normal.rvs(
                 mean=np.zeros(n_targets),
                 cov=cov,
@@ -322,7 +319,7 @@ class GaussianCopula(BaseCopula):
             # Fallback for singular correlation matrices
             cov = self.correlation_matrix_
             if cov is None:
-                error_model_not_fitted("GaussianCopula")
+                raise ModelNotFittedError("GaussianCopula")
             assert cov is not None
             normal_samples = rng.multivariate_normal(
                 mean=np.zeros(n_targets),
@@ -379,10 +376,10 @@ class ClaytonCopula(BaseCopula):
             self (for method chaining)
         """
         if residuals.ndim != 2:
-            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
 
         if residuals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"ClaytonCopula supports bivariate only, got {residuals.shape[1]} dimensions"
             )
 
@@ -454,7 +451,7 @@ class ClaytonCopula(BaseCopula):
         self._validate_fitted()
 
         if marginals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"ClaytonCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
@@ -515,10 +512,10 @@ class GumbelCopula(BaseCopula):
             self (for method chaining)
         """
         if residuals.ndim != 2:
-            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
 
         if residuals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"GumbelCopula supports bivariate only, got {residuals.shape[1]} dimensions"
             )
 
@@ -586,7 +583,7 @@ class GumbelCopula(BaseCopula):
         self._validate_fitted()
 
         if marginals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"GumbelCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
@@ -647,10 +644,10 @@ class FrankCopula(BaseCopula):
             self (for method chaining)
         """
         if residuals.ndim != 2:
-            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
 
         if residuals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"FrankCopula supports bivariate only, got {residuals.shape[1]} dimensions"
             )
 
@@ -736,7 +733,7 @@ class FrankCopula(BaseCopula):
         self._validate_fitted()
 
         if marginals.shape[1] != 2:
-            error_invalid_data(
+            raise InvalidDataError(
                 f"FrankCopula supports bivariate only, got {marginals.shape[1]} dimensions"
             )
 
@@ -802,9 +799,9 @@ class PairwiseChainCopula(BaseCopula):
             self
         """
         if residuals.ndim != 2:
-            error_invalid_data(f"residuals must be 2D, got shape {residuals.shape}")
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
         if residuals.shape[1] < 2:
-            error_invalid_data("PairwiseChainCopula requires at least 2 targets")
+            raise InvalidDataError("PairwiseChainCopula requires at least 2 targets")
 
         n_targets = residuals.shape[1]
         self._n_targets = n_targets
@@ -954,7 +951,12 @@ def auto_select_copula(
     best_family = "gaussian"
 
     if n_targets > 2:
-        warn_copula_auto_selection_ndim(n_targets)
+        warnings.warn(
+            f"Auto-selecting copula for {n_targets}D data. "
+            f"Only Gaussian copula supports dimensions > 2. [UF-W006]",
+            UncertaintyFlowWarning,
+            stacklevel=3,
+        )
 
     for family_name in families:
         copula_cls = COPULA_FAMILIES[family_name]

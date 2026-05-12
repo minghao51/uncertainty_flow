@@ -3,8 +3,8 @@
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import error_invalid_data
-from ..utils.polars_bridge import to_numpy_series_zero_copy
+from ..utils.exceptions import InvalidDataError
+from ..utils.polars_bridge import as_numpy
 
 
 def coverage_score(
@@ -34,19 +34,11 @@ def coverage_score(
         >>> coverage_score(y_true, lower, upper)
         0.6
     """
-    # Convert to numpy
-    if isinstance(y_true, pl.Series):
-        y_true = to_numpy_series_zero_copy(y_true)
-    if isinstance(lower, pl.Series):
-        lower = to_numpy_series_zero_copy(lower)
-    if isinstance(upper, pl.Series):
-        upper = to_numpy_series_zero_copy(upper)
+    y_true, lower, upper = as_numpy(y_true, lower, upper)
 
-    # Validate bounds
     if np.any(lower > upper):
-        error_invalid_data("lower bound must be <= upper bound")
+        raise InvalidDataError("lower bound must be <= upper bound")
 
-    # Count how many values are within the interval
     within_interval = (y_true >= lower) & (y_true <= upper)
 
     return float(np.mean(within_interval))

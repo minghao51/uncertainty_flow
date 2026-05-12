@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import error_invalid_data
+from ..utils.exceptions import InvalidDataError
 
 if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
@@ -189,7 +189,7 @@ class ConformalRiskControl:
             If model has not been fitted
         """
         if self._risk_threshold is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "ConformalRiskControl must be fitted before prediction. Call fit() first."
             )
 
@@ -221,7 +221,7 @@ class ConformalRiskControl:
     def _estimate_risk(self, proxy: np.ndarray) -> np.ndarray:
         """Estimate realized risk from the calibration proxy curve."""
         if self._proxy_grid is None or self._risk_curve is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "ConformalRiskControl must be fitted before prediction. Call fit() first."
             )
 
@@ -251,7 +251,7 @@ class ConformalRiskControl:
             If model has not been fitted
         """
         if self._risk_threshold is None:
-            error_invalid_data(
+            raise InvalidDataError(
                 "ConformalRiskControl must be fitted before accessing risk_threshold. "
                 "Call fit() first."
             )

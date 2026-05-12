@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import to_numpy_zero_copy_frame
+from ..utils.polars_bridge import to_numpy
 
 if TYPE_CHECKING:
     pass
@@ -64,7 +64,7 @@ def uncertainty_shap(
     except ImportError:
         raise ImportError(
             "shap is required for uncertainty_shap. "
-            "Install with: pip install 'uncertainty-flow[shap]'"
+            "Install with: pip install 'uncertainty-flow[ml]'"
         )
 
     if quantile_pairs is None:
@@ -73,8 +73,8 @@ def uncertainty_shap(
     if background is None:
         background = X.head(100)
 
-    background_np = to_numpy_zero_copy_frame(background)
-    x_np = to_numpy_zero_copy_frame(X)
+    background_np = to_numpy(background, background.columns)
+    x_np = to_numpy(X, X.columns)
     feature_names = X.columns
 
     pred = model.predict(X.head(1))

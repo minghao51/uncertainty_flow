@@ -1,8 +1,12 @@
 """Residual analysis for uncertainty driver detection."""
 
+import warnings
+
 import numpy as np
 import polars as pl
 from scipy import stats
+
+from ..utils.exceptions import UncertaintyFlowWarning
 
 
 def compute_uncertainty_drivers(
@@ -81,8 +85,11 @@ def compute_uncertainty_drivers(
 
     # Warn if no significant drivers found
     if df.filter(pl.col("p_value") < 0.05).height == 0:
-        from ..utils.exceptions import warn_no_uncertainty_drivers
-
-        warn_no_uncertainty_drivers()
+        warnings.warn(
+            "Residual correlation analysis found no significant drivers. "
+            "Intervals may be uniformly conservative. [UF-W004]",
+            UncertaintyFlowWarning,
+            stacklevel=3,
+        )
 
     return df

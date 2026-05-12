@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-import numpy as np
+import polars as pl
 
 from .calibration import calibration_error
 from .comparison import diebold_mariano_test, model_confidence_set, skill_score
@@ -53,21 +53,23 @@ _METRIC_NAMES = {
 }
 
 
+def _median_for_target(point, target: str) -> pl.Series:
+    """Extract median values for a target from either univariate or multivariate output."""
+    if isinstance(point, pl.DataFrame):
+        return point[target]
+    return point
+
+
 def score(
     pred: DistributionPrediction,
     y_true,
     metric: str | Callable,
     **kwargs,
 ) -> float | dict[str, float]:
-    """
-    Unified metric entry point.
+    """Unified metric entry point.
 
     Dispatches to the correct metric function based on ``metric`` name,
-    extracting the right inputs (intervals, quantiles, point estimates)
-    from the ``DistributionPrediction`` object.
-
-    For multivariate predictions (2+ targets), returns a ``{target: value}``
-    dict instead of a scalar float.
+    extracting the right inputs from the ``DistributionPrediction`` object.
 
     Args:
         pred: A ``DistributionPrediction`` from any model's ``.predict()``.
@@ -78,22 +80,13 @@ def score(
         **kwargs: Extra keyword arguments forwarded to the underlying metric.
 
     Returns:
-        Scalar metric value (float) for univariate predictions, or
-        ``{target: value}`` dict for multivariate predictions.
-
-    Examples:
-        >>> from uncertainty_flow.metrics import score
-        >>> crps = score(pred, y_true, metric="crps")
-        >>> cov = score(pred, y_true, metric="coverage")
+        Scalar for univariate, or ``{target: value}`` dict for multivariate.
     """
     if callable(metric):
         return float(metric(pred, y_true, **kwargs))
 
     if metric not in _METRIC_NAMES:
         raise ValueError(f"Unknown metric {metric!r}. Choose from: {sorted(_METRIC_NAMES)}")
-
-    confidence = kwargs.get("confidence", 0.9)
-    n_targets = len(pred._targets)
 
     if metric == "crps":
         return pred.crps(y_true)
@@ -102,9 +95,11 @@ def score(
         return pred.log_score(y_true, **{k: v for k, v in kwargs.items() if k == "family"})
 
     if metric == "energy_score":
-        n_samples = kwargs.get("n_samples", 1000)
-        random_state = kwargs.get("random_state", None)
-        return pred.energy_score(y_true, n_samples=n_samples, random_state=random_state)
+        return pred.energy_score(
+            y_true,
+            n_samples=kwargs.get("n_samples", 1000),
+            random_state=kwargs.get("random_state", None),
+        )
 
     if metric == "variogram_score":
         return variogram_score(
@@ -114,95 +109,44 @@ def score(
         )
 
     y_arr = pred._coerce_y_true(y_true)
-
-    if n_targets == 1:
-        return _score_univariate(pred, y_arr, metric, confidence)
-    return _score_multivariate(pred, y_arr, metric, confidence)
-
-
-def _score_univariate(
-    pred: DistributionPrediction,
-    y_arr: np.ndarray,
-    metric: str,
-    confidence: float,
-) -> float:
-    if metric == "mae":
-        point = pred.median()
-        y_pred = point.to_numpy() if hasattr(point, "to_numpy") else np.asarray(point)
-        return float(mae_score(y_arr, y_pred))
-
-    if metric == "rmse":
-        point = pred.median()
-        y_pred = point.to_numpy() if hasattr(point, "to_numpy") else np.asarray(point)
-        return float(rmse_score(y_arr, y_pred))
-
-    interval_df = pred.interval(confidence)
-    lower = interval_df["lower"].to_numpy()
-    upper = interval_df["upper"].to_numpy()
-
-    if metric == "coverage":
-        return float(coverage_score(y_arr, lower, upper))
-    if metric == "winkler":
-        return float(winkler_score(y_arr, lower, upper, confidence))
-    if metric == "calibration_error":
-        return float(calibration_error(y_arr, lower, upper, confidence))
-
-    if metric == "pinball":
-        total = 0.0
-        for level in pred._levels:
-            q_vals = pred.quantile(float(level)).to_numpy().flatten()
-            total += pinball_loss(y_arr, q_vals, float(level))
-        return total / len(pred._levels)
-
-    raise ValueError(f"Unhandled metric: {metric!r}")
-
-
-def _score_multivariate(
-    pred: DistributionPrediction,
-    y_arr: np.ndarray,
-    metric: str,
-    confidence: float,
-) -> dict[str, float]:
+    confidence = kwargs.get("confidence", 0.9)
+    targets = pred._targets
+    n_targets = len(targets)
     results: dict[str, float] = {}
 
-    for t_idx, target in enumerate(pred._targets):
-        if y_arr.ndim == 2:
-            y_col = y_arr[:, t_idx]
-        else:
-            y_col = y_arr
+    for t_idx, target in enumerate(targets):
+        y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
+        median_col = (
+            _median_for_target(pred.median(), target) if metric in ("mae", "rmse") else None
+        )
 
         if metric == "mae":
-            point = pred.median()
-            y_pred = (
-                point[target].to_numpy()
-                if hasattr(point, "to_numpy")
-                else np.asarray(point)[:, t_idx]
-            )
-            results[target] = float(mae_score(y_col, y_pred))
+            results[target] = float(mae_score(y_col, median_col.to_numpy()))
             continue
 
         if metric == "rmse":
-            point = pred.median()
-            y_pred = (
-                point[target].to_numpy()
-                if hasattr(point, "to_numpy")
-                else np.asarray(point)[:, t_idx]
-            )
-            results[target] = float(rmse_score(y_col, y_pred))
+            results[target] = float(rmse_score(y_col, median_col.to_numpy()))
             continue
 
         if metric == "pinball":
             total = 0.0
             for level in pred._levels:
                 q_df = pred.quantile(float(level))
-                q_vals = q_df[f"{target}_q_{level:.3f}"].to_numpy()
+                if n_targets == 1:
+                    q_vals = q_df.to_numpy().flatten()
+                else:
+                    q_vals = q_df[f"{target}_q_{level:.3f}"].to_numpy()
                 total += pinball_loss(y_col, q_vals, float(level))
             results[target] = total / len(pred._levels)
             continue
 
         interval_df = pred.interval(confidence)
-        lower = interval_df[f"{target}_lower"].to_numpy()
-        upper = interval_df[f"{target}_upper"].to_numpy()
+        if n_targets == 1:
+            lower = interval_df["lower"].to_numpy()
+            upper = interval_df["upper"].to_numpy()
+        else:
+            lower = interval_df[f"{target}_lower"].to_numpy()
+            upper = interval_df[f"{target}_upper"].to_numpy()
 
         if metric == "coverage":
             results[target] = float(coverage_score(y_col, lower, upper))
@@ -211,4 +155,6 @@ def _score_multivariate(
         elif metric == "calibration_error":
             results[target] = float(calibration_error(y_col, lower, upper, confidence))
 
+    if n_targets == 1:
+        return results[targets[0]]
     return results

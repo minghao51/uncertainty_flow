@@ -3,6 +3,12 @@
 from .deep_quantile import DeepQuantileNet
 from .quantile_forest import QuantileForestForecaster
 
+CHRONOS_MODELS = {
+    "chronos-bolt-tiny": "amazon/chronos-bolt-tiny",
+    "chronos-bolt-small": "amazon/chronos-bolt-small",
+    "chronos-bolt-base": "amazon/chronos-bolt-base",
+}
+
 # Torch models are optional - only import if torch is available
 try:
     from .deep_quantile_torch import DeepQuantileNetTorch  # noqa: F401
@@ -20,7 +26,7 @@ try:
 except ImportError:
     _transformers_available = False
 
-__all__ = ["DeepQuantileNet", "QuantileForestForecaster"]
+__all__ = ["CHRONOS_MODELS", "DeepQuantileNet", "QuantileForestForecaster"]
 
 if _torch_available:
     __all__.append("DeepQuantileNetTorch")

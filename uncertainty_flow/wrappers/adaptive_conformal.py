@@ -8,19 +8,14 @@ intervals based on recent coverage performance.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import error_model_not_fitted
-from ..utils.polars_bridge import materialize_lazyframe, to_numpy_series_zero_copy
-
-if TYPE_CHECKING:
-    pass
+from ..utils.exceptions import ModelNotFittedError
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy_series
 
 
 class AdaptiveConformalForecaster(BaseUncertaintyModel):
@@ -118,7 +113,7 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
         self._feature_cols = [c for c in data.columns if c != target_str]
 
         pred = self.model.predict(data)
-        y_true = to_numpy_series_zero_copy(data[target_str])
+        y_true = to_numpy_series(data[target_str])
 
         if len(pred._targets) == 1:
             median_vals = pred.median()
@@ -153,7 +148,7 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
             DistributionPrediction with intervals reflecting current alpha_t.
         """
         if not self._fitted:
-            error_model_not_fitted("AdaptiveConformalForecaster")
+            raise ModelNotFittedError("AdaptiveConformalForecaster")
 
         data = materialize_lazyframe(data)
         pred = self.model.predict(data)
@@ -250,7 +245,7 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
                 multivariate).
         """
         if not self._fitted:
-            error_model_not_fitted("AdaptiveConformalForecaster")
+            raise ModelNotFittedError("AdaptiveConformalForecaster")
 
         if self._last_point_pred is None:
             raise RuntimeError(
@@ -298,7 +293,7 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
                 multivariate.
         """
         if isinstance(y_true, pl.Series):
-            y_arr = to_numpy_series_zero_copy(y_true)
+            y_arr = to_numpy_series(y_true)
         else:
             y_arr = np.asarray(y_true, dtype=float)
 

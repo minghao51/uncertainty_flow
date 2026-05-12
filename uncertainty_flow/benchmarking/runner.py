@@ -23,7 +23,7 @@ from uncertainty_flow.utils.exceptions import (
     DataError,
     ModelNotFittedError,
 )
-from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
+from uncertainty_flow.utils.polars_bridge import to_numpy_series
 from uncertainty_flow.utils.split import RollingOriginSplit
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
@@ -371,17 +371,17 @@ class BenchmarkRunner:
         interval_80 = pred.interval(0.8)
 
         n_pred = len(interval_90)
-        y_true = to_numpy_series_zero_copy(test_df[self.target])[-n_pred:]
-        lower_90 = to_numpy_series_zero_copy(
+        y_true = to_numpy_series(test_df[self.target])[-n_pred:]
+        lower_90 = to_numpy_series(
             interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
         )
-        upper_90 = to_numpy_series_zero_copy(
+        upper_90 = to_numpy_series(
             interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
         )
-        lower_80 = to_numpy_series_zero_copy(
+        lower_80 = to_numpy_series(
             interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
         )
-        upper_80 = to_numpy_series_zero_copy(
+        upper_80 = to_numpy_series(
             interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
         )
 
@@ -491,17 +491,17 @@ class BenchmarkRunner:
             interval_80 = pred.interval(0.8)
 
             n_pred = len(interval_90)
-            y_true = to_numpy_series_zero_copy(test_df[self.target])[-n_pred:]
-            lower_90 = to_numpy_series_zero_copy(
+            y_true = to_numpy_series(test_df[self.target])[-n_pred:]
+            lower_90 = to_numpy_series(
                 interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
             )
-            upper_90 = to_numpy_series_zero_copy(
+            upper_90 = to_numpy_series(
                 interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
             )
-            lower_80 = to_numpy_series_zero_copy(
+            lower_80 = to_numpy_series(
                 interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
             )
-            upper_80 = to_numpy_series_zero_copy(
+            upper_80 = to_numpy_series(
                 interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
             )
 

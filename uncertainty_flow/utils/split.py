@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
@@ -10,7 +11,7 @@ from typing import TYPE_CHECKING, Literal
 import polars as pl
 from sklearn.model_selection import KFold
 
-from .exceptions import error_calibration_too_small, warn_calibration_size
+from .exceptions import CalibrationSizeError, UncertaintyFlowWarning
 
 if TYPE_CHECKING:
     pass
@@ -49,9 +50,14 @@ class BaseSplit(ABC):
     ) -> None:
         """Validate calibration set size."""
         if n_calib < 20:
-            error_calibration_too_small(n_calib)
+            raise CalibrationSizeError(n_calib)
         if n_calib < 50:
-            warn_calibration_size(n_calib)
+            warnings.warn(
+                f"Calibration set contains only {n_calib} samples. "
+                f"Consider increasing calibration size for more stable uncertainty estimates. [UF-W001]",
+                UncertaintyFlowWarning,
+                stacklevel=3,
+            )
 
 
 class RandomHoldoutSplit(BaseSplit):

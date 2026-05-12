@@ -16,8 +16,8 @@ from sklearn.isotonic import IsotonicRegression
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import error_model_not_fitted
-from ..utils.polars_bridge import materialize_lazyframe, to_numpy_series_zero_copy
+from ..utils.exceptions import ModelNotFittedError
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy_series
 
 if TYPE_CHECKING:
     pass
@@ -193,7 +193,7 @@ class RecalibratedModel(BaseUncertaintyModel):
             DistributionPrediction with recalibrated quantile values.
         """
         if not self._fitted:
-            error_model_not_fitted("RecalibratedModel")
+            raise ModelNotFittedError("RecalibratedModel")
 
         data = materialize_lazyframe(data)
         pred = self.model.predict(data)
@@ -285,7 +285,7 @@ class RecalibratedModel(BaseUncertaintyModel):
         pred: DistributionPrediction,
     ) -> np.ndarray:
         targets = pred._targets
-        cols = [to_numpy_series_zero_copy(data[t]) for t in targets]
+        cols = [to_numpy_series(data[t]) for t in targets]
         if len(cols) == 1:
             return cols[0]
         return np.column_stack(cols)

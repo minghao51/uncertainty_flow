@@ -181,17 +181,17 @@ class EvolutionarySearch:
         SearchResult
             Counterfactual explanation with minimal changes
         """
-        from ..utils.exceptions import error_invalid_data
+        from ..utils.exceptions import InvalidDataError
 
         if data.height != 1:
-            error_invalid_data("data must have exactly one row for counterfactual search")
+            raise InvalidDataError("data must have exactly one row for counterfactual search")
 
         # Get original prediction
         original_pred = self.model.predict(data)
         original_width = _interval_width(original_pred, self.confidence)
 
         if original_width == 0:
-            error_invalid_data("Original interval width is zero, cannot reduce uncertainty")
+            raise InvalidDataError("Original interval width is zero, cannot reduce uncertainty")
 
         target_width = original_width * (1 - target_reduction)
 
@@ -513,17 +513,17 @@ class GradientSearch:
         SearchResult
             Counterfactual explanation with minimal changes
         """
-        from ..utils.exceptions import error_invalid_data
+        from ..utils.exceptions import InvalidDataError
 
         if data.height != 1:
-            error_invalid_data("data must have exactly one row for counterfactual search")
+            raise InvalidDataError("data must have exactly one row for counterfactual search")
 
         # Get original prediction
         original_pred = self.model.predict(data)
         original_width = _interval_width(original_pred, self.confidence)
 
         if original_width == 0:
-            error_invalid_data("Original interval width is zero, cannot reduce uncertainty")
+            raise InvalidDataError("Original interval width is zero, cannot reduce uncertainty")
 
         target_width = original_width * (1 - target_reduction)
 

@@ -10,8 +10,8 @@ from sklearn.linear_model import LogisticRegression
 from ..core.base import BaseUncertaintyModel
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
-from ..utils.polars_bridge import materialize_lazyframe, to_numpy, to_numpy_series_zero_copy
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
+from ..utils.polars_bridge import materialize_lazyframe, to_numpy, to_numpy_series
 
 if TYPE_CHECKING:
     pass
@@ -136,8 +136,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         ]
 
         feature_cols = self._feature_cols_
-        t = to_numpy_series_zero_copy(data[self.treatment_col]).astype(float)
-        y = to_numpy_series_zero_copy(data[target_str]).astype(float)
+        t = to_numpy_series(data[self.treatment_col]).astype(float)
+        y = to_numpy_series(data[target_str]).astype(float)
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":
@@ -170,7 +170,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
             DistributionPrediction with CATE-based uncertainty bands.
         """
         if not self._fitted:
-            error_model_not_fitted("CausalUncertaintyEstimator")
+            raise ModelNotFittedError("CausalUncertaintyEstimator")
 
         data = materialize_lazyframe(data)
 
@@ -215,7 +215,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
             Dictionary with ``ate`` and ``ate_ci``.
         """
         if not self._fitted:
-            error_model_not_fitted("CausalUncertaintyEstimator")
+            raise ModelNotFittedError("CausalUncertaintyEstimator")
 
         data = materialize_lazyframe(data)
 
@@ -225,8 +225,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
             )
 
         feature_cols = self._feature_cols_
-        t = to_numpy_series_zero_copy(data[self.treatment_col]).astype(float)
-        y = to_numpy_series_zero_copy(data[self._target_col_]).astype(float)
+        t = to_numpy_series(data[self.treatment_col]).astype(float)
+        y = to_numpy_series(data[self._target_col_]).astype(float)
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":

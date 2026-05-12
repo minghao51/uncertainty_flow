@@ -9,12 +9,13 @@ import polars as pl
 
 from ..calibration.residual_analysis import compute_uncertainty_drivers
 from ..core.base import BaseUncertaintyModel
-from ..core.config import CHRONOS_MODELS, get_config
+from ..core.config import get_config
 from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
-from ..utils.exceptions import ConfigurationError, error_model_not_fitted
+from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe
 from ..utils.split import TemporalHoldoutSplit
+from . import CHRONOS_MODELS
 
 if TYPE_CHECKING:
     pass
@@ -125,7 +126,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         except ImportError:
             raise ImportError(
                 "chronos-forecasting is required for TransformerForecaster. "
-                "Install with: pip install 'uncertainty-flow[transformers]'"
+                "Install with: pip install 'uncertainty-flow[ml]'"
             )
 
         data = materialize_lazyframe(data)
@@ -176,7 +177,7 @@ class TransformerForecaster(BaseUncertaintyModel):
         pandas_df["timestamp"] = pd.date_range("2000-01-01", periods=len(pandas_df), freq="h")
 
         if self._pipeline is None:
-            error_model_not_fitted("TransformerForecaster")
+            raise ModelNotFittedError("TransformerForecaster")
         context_length = min(len(data), getattr(self._pipeline.model, "context_length", len(data)))
         if len(data) > context_length:
             pandas_df = pandas_df.tail(context_length)
@@ -223,7 +224,7 @@ class TransformerForecaster(BaseUncertaintyModel):
             DistributionPrediction with quantile forecasts
         """
         if not self._fitted:
-            error_model_not_fitted("TransformerForecaster")
+            raise ModelNotFittedError("TransformerForecaster")
 
         data = materialize_lazyframe(data)
 
@@ -255,7 +256,7 @@ class TransformerForecaster(BaseUncertaintyModel):
                 quantile_matrix[0, i] = np.median(values) if len(values) > 1 else values[0]
 
         if self._quantiles_ is None:
-            error_model_not_fitted("TransformerForecaster")
+            raise ModelNotFittedError("TransformerForecaster")
         for i, q in enumerate(self._quantiles_):
             quantile_matrix[0, i] = quantile_matrix[0, i] + q
 

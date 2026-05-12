@@ -45,7 +45,7 @@ from uncertainty_flow.metrics import (
     rmse_score,
     winkler_score,
 )
-from uncertainty_flow.utils.polars_bridge import to_numpy_series_zero_copy
+from uncertainty_flow.utils.polars_bridge import to_numpy_series
 from uncertainty_flow.wrappers import ConformalRegressor
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -436,10 +436,10 @@ def _get_point_prediction(pred) -> np.ndarray:
     """Extract median/point prediction from any prediction type."""
     if isinstance(pred, SimpleDistributionPrediction):
         return (pred.lower_90 + pred.upper_90) / 2.0
-    mean_val = pred.mean()
+    mean_val = pred.median()
     if isinstance(mean_val, pl.DataFrame):
         return mean_val.to_numpy().flatten()
-    return to_numpy_series_zero_copy(mean_val)
+    return to_numpy_series(mean_val)
 
 
 def _evaluate_model(
@@ -460,11 +460,11 @@ def _evaluate_model(
     interval_80 = pred.interval(0.8)
 
     n_pred = len(interval_90)
-    y_true = to_numpy_series_zero_copy(df[target])[-n_pred:]
-    lower_90 = to_numpy_series_zero_copy(interval_90["lower"])
-    upper_90 = to_numpy_series_zero_copy(interval_90["upper"])
-    lower_80 = to_numpy_series_zero_copy(interval_80["lower"])
-    upper_80 = to_numpy_series_zero_copy(interval_80["upper"])
+    y_true = to_numpy_series(df[target])[-n_pred:]
+    lower_90 = to_numpy_series(interval_90["lower"])
+    upper_90 = to_numpy_series(interval_90["upper"])
+    lower_80 = to_numpy_series(interval_80["lower"])
+    upper_80 = to_numpy_series(interval_80["upper"])
 
     y_pred = _get_point_prediction(pred)
     if len(y_pred) > n_pred:

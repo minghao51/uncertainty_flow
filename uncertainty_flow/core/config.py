@@ -5,13 +5,7 @@ from typing import List
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from ..utils.exceptions import ConfigurationError, error_quantile_invalid
-
-CHRONOS_MODELS = {
-    "chronos-bolt-tiny": "amazon/chronos-bolt-tiny",
-    "chronos-bolt-small": "amazon/chronos-bolt-small",
-    "chronos-bolt-base": "amazon/chronos-bolt-base",
-}
+from ..utils.exceptions import ConfigurationError, QuantileError
 
 
 class QuantileConfig(BaseSettings):
@@ -21,12 +15,6 @@ class QuantileConfig(BaseSettings):
     - UNCERTAINTY_FLOW_DEFAULT_QUANTILES: Comma-separated list of quantiles
     - UNCERTAINTY_FLOW_MIN_CALIBRATION_SIZE: Minimum calibration set size
     - UNCERTAINTY_FLOW_WARN_CALIBRATION_SIZE: Warning threshold for calibration size
-
-    Examples:
-        >>> from uncertainty_flow.core.config import get_config
-        >>> config = get_config()
-        >>> config.default_quantiles
-        [0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]
     """
 
     model_config = SettingsConfigDict(
@@ -37,19 +25,7 @@ class QuantileConfig(BaseSettings):
     )
 
     default_quantiles: List[float] = Field(
-        default=[
-            0.05,
-            0.1,
-            0.2,
-            0.3,
-            0.4,
-            0.5,
-            0.6,
-            0.7,
-            0.8,
-            0.9,
-            0.95,
-        ],
+        default=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95],
         description="Default quantile levels to predict.",
     )
 
@@ -67,34 +43,19 @@ class QuantileConfig(BaseSettings):
 
     default_chronos_model: str = Field(
         default="chronos-bolt-small",
-        description=(
-            "Default Chronos model for TransformerForecaster. "
-            "Options: chronos-bolt-small (default), chronos-bolt-tiny (fastest), chronos-bolt-base."
-        ),
+        description="Default Chronos model for TransformerForecaster.",
     )
 
     @field_validator("default_quantiles")
     @classmethod
     def validate_quantiles(cls, v: List[float]) -> List[float]:
-        """Validate that quantiles are in (0, 1) and sorted.
-
-        Args:
-            v: List of quantile levels
-
-        Returns:
-            Sorted list of unique quantile levels
-
-        Raises:
-            ValueError: If quantiles are invalid
-        """
         if not v:
-            error_quantile_invalid("Quantile list cannot be empty")
+            raise QuantileError("Quantile list cannot be empty")
 
         for q in v:
             if not 0 < q < 1:
-                error_quantile_invalid(f"Quantile {q} must be in (0, 1)")
+                raise QuantileError(f"Quantile {q} must be in (0, 1)")
 
-        # Remove duplicates and sort
         unique_sorted = sorted(set(v))
         if len(unique_sorted) != len(v):
             import warnings
@@ -104,21 +65,11 @@ class QuantileConfig(BaseSettings):
                 UserWarning,
                 stacklevel=2,
             )
-
         return unique_sorted
 
     @field_validator("warn_calibration_size")
     @classmethod
     def warn_threshold_greater_than_min(cls, v: int, info) -> int:
-        """Ensure warning threshold is >= minimum size.
-
-        Args:
-            v: Warning threshold value
-            info: Field validation info
-
-        Returns:
-            Validated warning threshold
-        """
         if "min_calibration_size" in info.data and v < info.data["min_calibration_size"]:
             raise ConfigurationError(
                 f"warn_calibration_size ({v}) must be >= min_calibration_size "
@@ -127,23 +78,11 @@ class QuantileConfig(BaseSettings):
         return v
 
 
-# Global configuration instance
 _config: QuantileConfig | None = None
 
 
 def get_config() -> QuantileConfig:
-    """Get the global configuration instance.
-
-    Creates a default instance on first call.
-
-    Returns:
-        QuantileConfig: Global configuration
-
-    Examples:
-        >>> from uncertainty_flow.core.config import get_config
-        >>> config = get_config()
-        >>> print(config.default_quantiles)
-    """
+    """Get the global configuration instance, creating a default on first call."""
     global _config
     if _config is None:
         _config = QuantileConfig()
@@ -151,26 +90,12 @@ def get_config() -> QuantileConfig:
 
 
 def set_config(config: QuantileConfig) -> None:
-    """Set a custom global configuration.
-
-    Args:
-        config: Custom configuration to use
-
-    Examples:
-        >>> from uncertainty_flow.core.config import QuantileConfig, set_config
-        >>> custom = QuantileConfig(default_quantiles=[0.1, 0.5, 0.9])
-        >>> set_config(custom)
-    """
+    """Set a custom global configuration."""
     global _config
     _config = config
 
 
 def reset_config() -> None:
-    """Reset configuration to defaults.
-
-    Examples:
-        >>> from uncertainty_flow.core.config import reset_config
-        >>> reset_config()
-    """
+    """Reset configuration to defaults."""
     global _config
     _config = None
