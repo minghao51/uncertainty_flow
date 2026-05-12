@@ -17,7 +17,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra opinion
+      - run: uv sync --extra dev
       - uses: pre-commit/action@v3.0.1
 
   typecheck:
@@ -27,7 +27,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra opinion
+      - run: uv sync --extra dev
       - run: uv run mypy uncertainty_flow/
 
   test:
@@ -41,8 +41,22 @@ jobs:
         with:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
-      - run: uv sync --extra opinion
+      - run: uv sync --extra dev
       - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
+      - name: Report touched modules in this branch
+        run: uv run python scripts/report_touched_modules.py
+
+  optional-stack:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: "3.11"
+      - run: uv sync --extra dev --extra ml
+      - name: Run optional dependency tests (NumPyro + Torch)
+        run: uv run pytest -q tests/bayesian/test_numpyro_model.py tests/models/test_deep_quantile_torch.py
 
   docs-check:
     runs-on: ubuntu-24.04
@@ -57,6 +71,14 @@ jobs:
         run: uv run quarto render notebooks/
       - name: Generate notebook doc stubs
         run: uv run python scripts/generate_notebook_docs.py
+      - name: Verify notebook docs are in sync
+        run: git diff --exit-code -- docs/notebooks
+      - name: Verify notebook links use noopener
+        run: |
+          if rg 'target="_blank"(?![^>]*rel="noopener noreferrer")' docs/notebooks/*.md -n -P; then
+            echo "Found target=_blank links without rel=noopener noreferrer"
+            exit 1
+          fi
       - name: Build documentation
         run: uv run mkdocs build
 
@@ -67,6 +89,8 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
-      - run: uv sync --extra opinion
+      - run: uv sync --extra dev
+      - name: Validate security/warning policy metadata
+        run: uv run python scripts/ci_policy_checks.py
       - run: uv run bandit -r uncertainty_flow -s B101,B110,B301,B403
-      - run: uv run pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839
+      - run: uv run pip-audit --ignore-vuln CVE-2026-3219 --ignore-vuln CVE-2026-1839  # owner=ml-platform expires=2026-12-31
