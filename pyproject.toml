@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-opinion = [
+dev = [
     "pytest>=9.0.3",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
@@ -25,6 +25,8 @@ opinion = [
     "bandit>=1.7.9",
     "pip-audit>=2.7.0",
     "psutil>=5.9.0",
+]
+ml = [
     "torch>=2.0.0",
     "chronos-forecasting>=2.0",
     "shap>=0.44.0",
@@ -78,7 +80,8 @@ filterwarnings = [
     "ignore:invalid value encountered in multiply:RuntimeWarning",
     "ignore:invalid value encountered in log:RuntimeWarning",
     "ignore:An input array is constant",
-    "ignore::uncertainty_flow.utils.exceptions.UncertaintyFlowWarning",
+    "ignore:FigureCanvasAgg is non-interactive, and thus cannot be shown",
+    "ignore:Nearest quantile levels differ significantly from requested",
 ]
 
 [tool.coverage.run]
@@ -130,6 +133,6 @@ skips = ["B101", "B110", "B403"]
 
 [dependency-groups]
 dev = [
-    "matplotlib>=3.10.8",
+    "uncertainty-flow[dev,docs]",
     "pre-commit>=4.6.0",
 ]
