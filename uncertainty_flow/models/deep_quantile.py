@@ -2,16 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from sklearn.base import RegressorMixin
 from sklearn.neural_network import MLPRegressor
 
 from .base_quantile import BaseQuantileNeuralNet
-
-if TYPE_CHECKING:
-    pass
 
 
 class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
@@ -195,15 +192,18 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
             self._head_coefs_[q] = coefs[j]
             self._head_intercepts_[q] = intercepts[j]
 
-    def _predict_backend_raw(self, trunk_features: np.ndarray) -> np.ndarray:
+    def _build_coef_matrix(self) -> tuple[np.ndarray, np.ndarray]:
         coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])
         intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
+        return coef_matrix, intercepts
+
+    def _predict_backend_raw(self, trunk_features: np.ndarray) -> np.ndarray:
+        coef_matrix, intercepts = self._build_coef_matrix()
         return trunk_features @ coef_matrix + intercepts
 
     def _predict_backend(self, x: np.ndarray) -> np.ndarray:
         trunk_features = self._extract_trunk_features(x)
-        coef_matrix = np.column_stack([self._head_coefs_[q] for q in self.quantile_levels])
-        intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
+        coef_matrix, intercepts = self._build_coef_matrix()
         return trunk_features @ coef_matrix + intercepts  # type: ignore[no-any-return]
 
     def _extract_trunk_features(self, x: np.ndarray) -> np.ndarray:

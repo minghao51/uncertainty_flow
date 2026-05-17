@@ -322,15 +322,136 @@ class TestUncertaintyExplainerCompareFeatures:
             assert effectiveness == sorted(effectiveness, reverse=True)
 
 
+class TestIntervalWidth:
+    def test_interval_width_multi_target(self):
+        from uncertainty_flow.core.distribution import DistributionPrediction
+        from uncertainty_flow.counterfactual.search import _interval_width
+
+        q = np.array([[0.0, 1.0, 2.0, 3.0, 4.0, 5.0]])
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        width = _interval_width(pred, 0.8)
+        assert isinstance(width, float)
+        assert width > 0
+
+
+class TestEvolutionarySearchInternals:
+    def test_initialize_population_respects_fixed_features(
+        self,
+        sample_forecaster,
+        sample_single_row,
+    ):
+        searcher = EvolutionarySearch(sample_forecaster, population_size=5, random_state=42)
+        bounds = {"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)}
+        pop = searcher._initialize_population(sample_single_row, bounds, ["x1"])
+        assert pop.shape == (5, 3)
+        for i in range(5):
+            assert pop[i, 0] == 0.5  # x1 fixed at original value
+
+    def test_evaluate_population_returns_correct_shape(self, sample_forecaster, sample_single_row):
+        searcher = EvolutionarySearch(sample_forecaster, population_size=3, random_state=42)
+        bounds = {"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)}
+        pop = searcher._initialize_population(sample_single_row, bounds, [])
+        fitness, widths = searcher._evaluate_population(pop, sample_single_row, 1.0, 5.0)
+        assert fitness.shape == (3,)
+        assert widths.shape == (3,)
+
+    def test_evaluate_population_handles_exception(self, sample_forecaster, sample_single_row):
+        searcher = EvolutionarySearch(sample_forecaster, population_size=2, random_state=42)
+        bad_pop = np.array([[np.inf, np.inf, np.inf], [1.0, 1.0, 1.0]])
+        fitness, widths = searcher._evaluate_population(bad_pop, sample_single_row, 1.0, 5.0)
+        # At least one individual should get high fitness (inf values may cause issues)
+        assert np.any(fitness >= 1e5) or np.any(np.isinf(fitness))
+
+    def test_crossover_produces_offspring(self, sample_forecaster):
+        searcher = EvolutionarySearch(sample_forecaster, random_state=42, crossover_prob=1.0)
+        parents = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+        offspring = searcher._crossover(parents)
+        assert offspring.shape == parents.shape
+
+    def test_mutation_preserves_fixed_features(self, sample_forecaster, sample_single_row):
+        searcher = EvolutionarySearch(
+            sample_forecaster, mutation_rate=1.0, mutation_scale=0.5, random_state=42
+        )
+        bounds = {"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)}
+        pop = np.array([[0.5, 0.0, 0.0]])
+        mutated = searcher._mutate(pop, bounds, ["x1"], sample_single_row)
+        assert mutated[0, 0] == 0.5  # fixed feature unchanged
+
+    def test_tournament_selection_selects_best(self, sample_forecaster):
+        searcher = EvolutionarySearch(sample_forecaster, elitism_count=1, random_state=42)
+        pop = np.array([[10.0], [0.0], [5.0]])
+        fitness = np.array([100.0, 0.0, 50.0])
+        selected = searcher._tournament_selection(pop, fitness)
+        assert selected.shape[0] == 2  # pop_size - elitism_count
+
+
+class TestExplainerAutoDetection:
+    def test_init_searcher_auto_uses_evolutionary(self, sample_forecaster):
+        explainer = UncertaintyExplainer(sample_forecaster)
+        from uncertainty_flow.counterfactual.search import EvolutionarySearch
+
+        assert isinstance(explainer._searcher, EvolutionarySearch)
+
+    def test_init_searcher_gradient_method(self, sample_forecaster):
+        explainer = UncertaintyExplainer(sample_forecaster, method="gradient")
+        from uncertainty_flow.counterfactual.search import GradientSearch
+
+        assert isinstance(explainer._searcher, GradientSearch)
+
+    def test_is_differentiable_model_true_for_torch_model(self):
+        class TorchLikeModel:
+            pass
+
+        explainer = UncertaintyExplainer.__new__(UncertaintyExplainer)
+        explainer.model = TorchLikeModel()
+        assert explainer._is_differentiable_model() is True
+
+    def test_is_differentiable_model_false_for_sklearn(self):
+        class SklearnLikeModel:
+            pass
+
+        explainer = UncertaintyExplainer.__new__(UncertaintyExplainer)
+        explainer.model = SklearnLikeModel()
+        assert explainer._is_differentiable_model() is False
+
+    def test_invalid_method_raises(self):
+        from uncertainty_flow.counterfactual import UncertaintyExplainer
+
+        with pytest.raises(ValueError, match="Invalid method"):
+            UncertaintyExplainer(None, method="bad_method")  # type: ignore[arg-type]
+
+
+class TestExplainerCompareFeaturesEdgeCases:
+    def test_compare_features_multi_row_raises(self, sample_forecaster, sample_features_small):
+        explainer = UncertaintyExplainer(sample_forecaster)
+        with pytest.raises(Exception, match="single.row"):
+            explainer.compare_features(sample_features_small, features=["x1"])
+
+
+class TestSearchResultEdgeCases:
+    def test_to_polars_no_changes(self):
+        from uncertainty_flow.counterfactual.search import SearchResult
+
+        original = pl.DataFrame({"x1": [1.0]})
+        result = SearchResult(
+            counterfactual=original,
+            original=original,
+            changes={},
+            interval_width_reduction=0.0,
+            original_width=5.0,
+            new_width=5.0,
+        )
+        df = result.to_polars()
+        assert df.height == 0
+
+
 class TestUncertaintyExplainerEdgeCases:
-    """Test edge cases."""
+    """Test edge cases for explainer."""
 
     def test_explain_empty_dataframe(self, sample_forecaster):
-        """Should raise error for empty DataFrame."""
-
         explainer = UncertaintyExplainer(sample_forecaster)
         empty_df = pl.DataFrame()
-        with pytest.raises(Exception):  # InvalidDataError
+        with pytest.raises(Exception):
             explainer.explain_uncertainty(empty_df, target_reduction=0.3)
 
     def test_explain_with_conformal_regressor(self, sample_data):
@@ -338,7 +459,6 @@ class TestUncertaintyExplainerEdgeCases:
         base_model = GradientBoostingRegressor(n_estimators=10, random_state=42)
         model = ConformalRegressor(base_model=base_model, random_state=42)
         model.fit(sample_data, target="y")
-
         explainer = UncertaintyExplainer(model, random_state=42)
         test_row = sample_data.head(1).drop("y")
         result = explainer.explain_uncertainty(

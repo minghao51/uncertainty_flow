@@ -5,7 +5,9 @@ import polars as pl
 import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
+from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.risk import ConformalRiskControl, asymmetric_loss
+from uncertainty_flow.risk.control import _interval_half_width, _prediction_mean
 from uncertainty_flow.wrappers import ConformalRegressor
 
 
@@ -167,6 +169,74 @@ def sample_model(sample_data):
     model = ConformalRegressor(base_model)
     model.fit(sample_data, target="y")
     return model
+
+
+class TestInternalHelpers:
+    def test_prediction_mean_multi_target(self):
+        n = 5
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(-1, 3, n),
+                np.linspace(0, 4, n),
+                np.linspace(1, 5, n),
+                np.linspace(2, 6, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        result = _prediction_mean(pred)
+        assert len(result) == n
+
+    def test_interval_half_width_multi_target(self):
+        n = 5
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(-1, 3, n),
+                np.linspace(0, 4, n),
+                np.linspace(1, 5, n),
+                np.linspace(2, 6, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        result = _interval_half_width(pred, 0.8)
+        assert len(result) == n
+
+    def test_risk_metric_fn_mean(self):
+        rc = ConformalRiskControl(
+            None,  # type: ignore[arg-type]
+            asymmetric_loss(),
+            calibration_method="mean",
+        )
+        fn = rc._risk_metric_fn()
+        assert callable(fn)
+        result = fn(np.array([0.1, 0.2, 0.3]))
+        assert result == pytest.approx(0.2)
+
+    def test_fit_shape_mismatch_raises(self, sample_model, sample_data):
+        """Should raise ValueError when risk function returns wrong shape."""
+        risk_control = ConformalRiskControl(
+            sample_model,
+            lambda y_true, y_pred: np.array([1.0]),
+        )
+        with pytest.raises(ValueError, match="risk_function must return one scalar risk"):
+            risk_control.fit(sample_data, target="y")
+
+
+class TestConformalRiskControlMeanMethod:
+    def test_fit_with_mean_method(self, sample_model, sample_data):
+        risk_fn = asymmetric_loss()
+        risk_control = ConformalRiskControl(
+            sample_model,
+            risk_fn,
+            target_risk=0.1,
+            calibration_method="mean",
+            random_state=42,
+        )
+        risk_control.fit(sample_data, target="y")
+        assert risk_control._risk_threshold is not None
 
 
 @pytest.fixture

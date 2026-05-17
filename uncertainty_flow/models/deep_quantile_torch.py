@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 import torch
@@ -12,9 +12,6 @@ from torch.utils.data import DataLoader, TensorDataset
 from ..core.types import PolarsInput
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from .base_quantile import BaseQuantileNeuralNet
-
-if TYPE_CHECKING:
-    pass
 
 
 class QuantileNetTorch(nn.Module):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -13,9 +13,6 @@ from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput
 from ..utils.exceptions import InvalidDataError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
-
-if TYPE_CHECKING:
-    pass
 
 
 class BaseQuantileNeuralNet(BaseUncertaintyModel):

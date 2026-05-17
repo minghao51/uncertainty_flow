@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 
 from ..utils.polars_bridge import to_numpy
-
-if TYPE_CHECKING:
-    pass
 
 
 def uncertainty_shap(

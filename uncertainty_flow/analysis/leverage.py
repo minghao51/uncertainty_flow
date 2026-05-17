@@ -11,14 +11,6 @@ if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
 
 
-def _interval_indices(prediction, confidence: float) -> tuple[int, int]:
-    """Return lower/upper quantile indices for a confidence level."""
-    alpha = (1 - confidence) / 2
-    lower_idx = prediction._find_nearest_quantile_index(alpha)
-    upper_idx = prediction._find_nearest_quantile_index(1 - alpha)
-    return lower_idx, upper_idx
-
-
 def _point_matrix(prediction) -> np.ndarray:
     """Return point predictions as a 2D array with one column per target."""
     median_idx = prediction._find_nearest_quantile_index(0.5)
@@ -35,19 +27,14 @@ def _point_matrix(prediction) -> np.ndarray:
 
 def _interval_width_matrix(prediction, confidence: float) -> np.ndarray:
     """Return interval widths as a 2D array with one column per target."""
-    lower_idx, upper_idx = _interval_indices(prediction, confidence)
-
     if len(prediction._targets) == 1:
-        widths = prediction._quantiles[:, upper_idx] - prediction._quantiles[:, lower_idx]
-        return widths.reshape(-1, 1)
+        lower_s, upper_s = prediction.interval_bounds(confidence)
+        return (upper_s.to_numpy() - lower_s.to_numpy()).reshape(-1, 1)
 
     width_columns = []
-    for target_idx in range(len(prediction._targets)):
-        base_idx = target_idx * prediction._n_quantiles
-        lower = prediction._quantiles[:, base_idx + lower_idx]
-        upper = prediction._quantiles[:, base_idx + upper_idx]
-        width_columns.append(upper - lower)
-
+    for target_name in prediction._targets:
+        lower_s, upper_s = prediction.interval_bounds(confidence, target=target_name)
+        width_columns.append(upper_s.to_numpy() - lower_s.to_numpy())
     return np.column_stack(width_columns)
 
 

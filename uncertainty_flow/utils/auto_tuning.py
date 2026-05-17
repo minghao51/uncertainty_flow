@@ -83,8 +83,9 @@ def score_distribution_prediction(
 
         if isinstance(mean_pred, pl.DataFrame):
             median = to_numpy_series(mean_pred[target])
-            lower = to_numpy_series(interval[f"{target}_lower"])
-            upper = to_numpy_series(interval[f"{target}_upper"])
+            lower_s, upper_s = pred.interval_bounds(confidence, target=target)
+            lower = to_numpy_series(lower_s)
+            upper = to_numpy_series(upper_s)
         else:
             median = mean_pred.to_numpy()
             lower = to_numpy_series(interval["lower"])

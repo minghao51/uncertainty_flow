@@ -96,7 +96,10 @@ hide:
 <div class="iframe-container" id="iframe-wrapper-{qmd.stem.replace("_", "-")}">
   <div class="iframe-controls">
     <button onclick="toggleNotebookFullscreen(this)" class="md-button">Expand</button>
-    <a href="{base}/notebooks/{html_path}" target="_blank" rel="noopener noreferrer" class="md-button">Open in New Tab</a>
+    <a href="{base}/notebooks/{html_path}"
+       target="_blank"
+       rel="noopener noreferrer"
+       class="md-button">Open in New Tab</a>
   </div>
   <iframe src="{base}/notebooks/{html_path}" allowfullscreen loading="lazy"></iframe>
 </div>

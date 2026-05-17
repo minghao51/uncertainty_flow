@@ -209,6 +209,34 @@ class TestConformalClassifier:
         assert len(sets[0]) == 1
         assert sets[0][0] == "a"
 
+    def test_predict_without_model_raises(self):
+        model = ConformalClassifier(LogisticRegression())
+        model._fitted = True
+        with pytest.raises(RuntimeError, match="model is None"):
+            model.predict(None)
+
+    def test_predict_without_threshold_raises(self):
+        model = ConformalClassifier(LogisticRegression())
+        model._fitted = True
+        model._model = type("M", (), {"predict_proba": lambda x: x})()
+        with pytest.raises(RuntimeError, match="threshold is None"):
+            model.predict(None)
+
+    def test_metadata_not_fitted_returns_none(self):
+        model = ConformalClassifier(LogisticRegression())
+        assert model.metadata is None
+
+    def test_build_prediction_sets_include_all_when_threshold_high(self):
+        probs = np.array([[0.6, 0.4], [0.51, 0.49]])
+        sets = ConformalClassifier._build_prediction_sets(probs, 0.99, ["a", "b"])
+        assert len(sets) == 2
+        assert len(sets[0]) == 2
+
+    def test_build_prediction_sets_threshold_exact_cumsum(self):
+        probs = np.array([[0.5, 0.3, 0.2]])
+        sets = ConformalClassifier._build_prediction_sets(probs, 0.8, ["a", "b", "c"])
+        assert len(sets[0]) == 2
+
     def test_aps_threshold_uses_miscoverage_alpha(self):
         model = ConformalClassifier(
             base_model=LogisticRegression(),

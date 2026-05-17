@@ -37,9 +37,8 @@ def _interval_width_matrix(
 
     width_columns = []
     for target_name in prediction._targets:
-        lower = interval[f"{target_name}_lower"].to_numpy()
-        upper = interval[f"{target_name}_upper"].to_numpy()
-        width_columns.append(upper - lower)
+        lower_s, upper_s = prediction.interval_bounds(confidence, target=target_name)
+        width_columns.append(upper_s.to_numpy() - lower_s.to_numpy())
     return np.column_stack(width_columns)
 
 
@@ -115,7 +114,7 @@ class EnsembleDecomposition:
                 bootstrap_seed = int(self._rng.integers(0, np.iinfo(np.int32).max))
                 try:
                     setattr(model, "random_state", bootstrap_seed)
-                except Exception:
+                except (AttributeError, TypeError):
                     pass
 
             if self.target is None:

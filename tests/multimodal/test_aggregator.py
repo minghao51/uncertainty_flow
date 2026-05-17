@@ -68,7 +68,7 @@ class TestCrossModalAggregatorInit:
         agg = CrossModalAggregator(feature_groups=FEATURE_GROUPS, aggregation="independent")
         assert agg.aggregation == "independent"
 
-    def test_init_copula_aggregation(self):
+    def test_init_copula_not_implemented(self):
         agg = CrossModalAggregator(feature_groups=FEATURE_GROUPS, aggregation="copula")
         assert agg.aggregation == "copula"
 

@@ -81,7 +81,7 @@ def compute_uncertainty_drivers(
         )
 
     df = pl.DataFrame(results)
-    df = df.sort(by="residual_correlation", descending=True)
+    df = df.sort(by=pl.col("residual_correlation").abs(), descending=True)
 
     # Warn if no significant drivers found
     if df.filter(pl.col("p_value") < 0.05).height == 0:

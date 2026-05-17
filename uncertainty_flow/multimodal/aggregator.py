@@ -10,7 +10,12 @@ from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe
 
-VALID_AGGREGATIONS = ("product", "copula", "independent")
+AGGREGATION_CAPABILITIES = {
+    "product": "supported",
+    "copula": "reserved",
+    "independent": "supported",
+}
+VALID_AGGREGATIONS = tuple(AGGREGATION_CAPABILITIES)
 
 
 class CrossModalAggregator(BaseUncertaintyModel):
@@ -37,7 +42,7 @@ class CrossModalAggregator(BaseUncertaintyModel):
         aggregation: str = "product",
         random_state: int | None = None,
     ):
-        if aggregation not in VALID_AGGREGATIONS:
+        if aggregation not in AGGREGATION_CAPABILITIES:
             raise ConfigurationError(
                 f"Invalid aggregation '{aggregation}'. Must be one of {VALID_AGGREGATIONS}"
             )

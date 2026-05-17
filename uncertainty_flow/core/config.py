@@ -1,8 +1,8 @@
 """Configuration management for uncertainty_flow using Pydantic settings."""
 
-from typing import List
+from __future__ import annotations
 
-from pydantic import Field, field_validator
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from ..utils.exceptions import ConfigurationError, QuantileError
@@ -24,7 +24,7 @@ class QuantileConfig(BaseSettings):
         extra="ignore",
     )
 
-    default_quantiles: List[float] = Field(
+    default_quantiles: list[float] = Field(
         default=[0.05, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95],
         description="Default quantile levels to predict.",
     )
@@ -48,7 +48,7 @@ class QuantileConfig(BaseSettings):
 
     @field_validator("default_quantiles")
     @classmethod
-    def validate_quantiles(cls, v: List[float]) -> List[float]:
+    def validate_quantiles(cls, v: list[float]) -> list[float]:
         if not v:
             raise QuantileError("Quantile list cannot be empty")
 
@@ -69,7 +69,7 @@ class QuantileConfig(BaseSettings):
 
     @field_validator("warn_calibration_size")
     @classmethod
-    def warn_threshold_greater_than_min(cls, v: int, info) -> int:
+    def warn_threshold_greater_than_min(cls, v: int, info: ValidationInfo) -> int:
         if "min_calibration_size" in info.data and v < info.data["min_calibration_size"]:
             raise ConfigurationError(
                 f"warn_calibration_size ({v}) must be >= min_calibration_size "

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 
@@ -11,14 +9,11 @@ from ..calibration.residual_analysis import compute_uncertainty_drivers
 from ..core.base import BaseUncertaintyModel
 from ..core.config import get_config
 from ..core.distribution import DistributionPrediction
-from ..core.types import PolarsInput, TargetSpec
+from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe
 from ..utils.split import TemporalHoldoutSplit
 from . import CHRONOS_MODELS
-
-if TYPE_CHECKING:
-    pass
 
 
 class TransformerForecaster(BaseUncertaintyModel):
@@ -157,8 +152,6 @@ class TransformerForecaster(BaseUncertaintyModel):
 
         residuals = y_calib - calib_forecasts
 
-        from ..core.types import DEFAULT_QUANTILES
-
         self._quantiles_ = np.quantile(residuals, DEFAULT_QUANTILES)
 
         if self.uncertainty_features:
@@ -193,8 +186,6 @@ class TransformerForecaster(BaseUncertaintyModel):
         Returns:
             Numpy array of point forecasts (median, q=0.5)
         """
-        from ..core.types import DEFAULT_QUANTILES
-
         pandas_df = self._prepare_forecast_df(data)
 
         quantile_levels = [q for q in DEFAULT_QUANTILES if 0.1 <= q <= 0.9]
@@ -231,8 +222,6 @@ class TransformerForecaster(BaseUncertaintyModel):
         steps = steps or self.horizon
 
         pandas_df = self._prepare_forecast_df(data)
-
-        from ..core.types import DEFAULT_QUANTILES
 
         quantile_levels = [q for q in DEFAULT_QUANTILES if 0.1 <= q <= 0.9]
 

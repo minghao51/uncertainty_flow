@@ -38,6 +38,13 @@ This file is kept for historical reference. The canonical changelog is at the re
 - CLI benchmarking with 108+ HuggingFace datasets, auto-tuning, and structured output
 - `auto_tune` parameter on supported models for automatic hyperparameter search
 
+### Changed
+- `CrossModalAggregator` now keeps `aggregation="copula"` as a reserved option and raises
+  `NotImplementedError` during prediction (instead of constructor-time rejection), matching
+  documented behavior.
+- `BenchmarkRunner.to_dict()` now includes both `results` and backward-compatible `models`
+  keys with identical payloads.
+
 ---
 
 ## Release Notes Template

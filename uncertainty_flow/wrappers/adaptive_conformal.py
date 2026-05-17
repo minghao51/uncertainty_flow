@@ -122,8 +122,11 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
             else:
                 point_preds = median_vals.to_numpy()
         else:
-            median_df = pred.median()
-            point_preds = median_df[target_str].to_numpy()
+            median_result = pred.median()
+            if isinstance(median_result, pl.DataFrame):
+                point_preds = median_result[target_str].to_numpy()
+            else:
+                point_preds = median_result.to_numpy()
 
         residuals = np.abs(y_true - point_preds)
         self._scores = residuals.tolist()
@@ -167,44 +170,33 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
 
         # Scale factors: map quantile levels to conformal interval bounds.
         # The outermost levels should map to +/- q_value around the median.
-        lower_scale = 0.5 - pred._levels[0]
-        upper_scale = pred._levels[-1] - 0.5
-        lower_scale = max(lower_scale, 1e-12)
-        upper_scale = max(upper_scale, 1e-12)
+        lower_scale = max(0.5 - pred._levels[0], 1e-12)
+        upper_scale = max(pred._levels[-1] - 0.5, 1e-12)
+
+        def _apply_conformal_scaling(point_preds: np.ndarray, n_quantiles: int) -> np.ndarray:
+            result = np.empty((len(point_preds), n_quantiles))
+            for j in range(n_quantiles):
+                level = pred._levels[j]
+                if level < 0.5:
+                    result[:, j] = point_preds - q_value * (0.5 - level) / lower_scale
+                elif level > 0.5:
+                    result[:, j] = point_preds + q_value * (level - 0.5) / upper_scale
+                else:
+                    result[:, j] = point_preds
+            return result
 
         if len(pred._targets) == 1:
             median_idx = pred._find_nearest_quantile_index(0.5)
             point_preds = pred._quantiles[:, median_idx].copy()
-
-            output_quantiles = np.empty((n_pred, n_quantiles))
-            for j in range(n_quantiles):
-                level = pred._levels[j]
-                if level < 0.5:
-                    output_quantiles[:, j] = point_preds - q_value * (0.5 - level) / lower_scale
-                elif level > 0.5:
-                    output_quantiles[:, j] = point_preds + q_value * (level - 0.5) / upper_scale
-                else:
-                    output_quantiles[:, j] = point_preds
+            output_quantiles = _apply_conformal_scaling(point_preds, n_quantiles)
         else:
             output_quantiles = pred._quantiles.copy()
             for t_idx in range(len(pred._targets)):
                 q_start = t_idx * n_quantiles
                 median_idx = pred._find_nearest_quantile_index(0.5)
                 point_preds = pred._quantiles[:, q_start + median_idx].copy()
-
-                for j in range(n_quantiles):
-                    col_idx = q_start + j
-                    level = pred._levels[j]
-                    if level < 0.5:
-                        output_quantiles[:, col_idx] = (
-                            point_preds - q_value * (0.5 - level) / lower_scale
-                        )
-                    elif level > 0.5:
-                        output_quantiles[:, col_idx] = (
-                            point_preds + q_value * (level - 0.5) / upper_scale
-                        )
-                    else:
-                        output_quantiles[:, col_idx] = point_preds
+                scaled = _apply_conformal_scaling(point_preds, n_quantiles)
+                output_quantiles[:, q_start : q_start + n_quantiles] = scaled
 
         output_quantiles = np.sort(output_quantiles, axis=1)
 

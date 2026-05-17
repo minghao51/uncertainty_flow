@@ -5,15 +5,12 @@ from __future__ import annotations
 import warnings
 from abc import abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, ClassVar, Literal
+from typing import ClassVar, Literal
 
 import numpy as np
 from scipy import stats
 
 from ..utils.exceptions import InvalidDataError, ModelNotFittedError, UncertaintyFlowWarning
-
-if TYPE_CHECKING:
-    pass
 
 
 class CopulaFamily(str, Enum):
@@ -70,7 +67,7 @@ class BaseCopula:
 
     def _compute_bic(self, log_likelihood: float, n_params: int, n_samples: int) -> float:
         """Compute BIC for model selection."""
-        return float(float(n_params) * np.log(n_samples) - 2 * log_likelihood)
+        return float(n_params * np.log(n_samples) - 2 * log_likelihood)
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
         """

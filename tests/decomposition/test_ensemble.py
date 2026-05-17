@@ -8,6 +8,10 @@ import pytest
 
 from uncertainty_flow.core import BaseUncertaintyModel, DistributionPrediction
 from uncertainty_flow.decomposition import EnsembleDecomposition
+from uncertainty_flow.decomposition.ensemble import (
+    _interval_width_matrix,
+    _point_prediction_matrix,
+)
 from uncertainty_flow.models import QuantileForestForecaster
 
 
@@ -282,3 +286,61 @@ def fitted_sample_forecaster(sample_data):
     model = quantile_forest_factory()
     model.fit(sample_data.select(["x1", "x2", "x3", "y"]))
     return model
+
+
+class TestInternalHelpers:
+    def test_point_prediction_matrix_multi_target(self):
+        n = 10
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(-1, 3, n),
+                np.linspace(0, 4, n),
+                np.linspace(1, 5, n),
+                np.linspace(2, 6, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        mat = _point_prediction_matrix(pred)
+        assert mat.shape == (n, 2)
+
+    def test_interval_width_matrix_multi_target(self):
+        n = 10
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(0, 4, n),
+                np.linspace(2, 6, n),
+                np.linspace(-1, 3, n),
+                np.linspace(1, 5, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        mat = _interval_width_matrix(pred, 0.8)
+        assert mat.shape == (n, 2)
+
+
+class TestFitEnsembleEdgeCases:
+    def test_setattr_failure_does_not_block(self, sample_data):
+        """Ensemble fit should not fail when model rejects random_state."""
+
+        class ReadonlyRandomStateModel(LinearBootstrapToyModel):
+            @property
+            def random_state(self):
+                return 0
+
+            @random_state.setter
+            def random_state(self, value):
+                raise AttributeError("read-only")
+
+        decomposer = EnsembleDecomposition(
+            model_factory=lambda: ReadonlyRandomStateModel(),
+            train_data=sample_data.select(["x", "y"]),
+            target="y",
+            n_bootstrap=3,
+            random_state=42,
+        )
+        decomposer._fit_ensemble()
+        assert len(decomposer._ensemble_models) == 3

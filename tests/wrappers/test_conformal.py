@@ -309,4 +309,4 @@ class TestConformalRegressorUncertaintyDrivers:
         drivers = model.uncertainty_drivers_
         if drivers.height > 1:
             correlations = drivers["residual_correlation"].to_list()
-            assert correlations == sorted(correlations, reverse=True)
+            assert correlations == sorted(correlations, key=abs, reverse=True)

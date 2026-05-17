@@ -6,7 +6,7 @@ from __future__ import annotations
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import click
 
@@ -19,9 +19,6 @@ from uncertainty_flow.benchmarking import (
     auto_tune,
 )
 from uncertainty_flow.benchmarking.datasets import download_dataset
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -248,7 +245,7 @@ def benchmark(
     click.echo(f"  Estimators: {n_estimators}")
     if target:
         click.echo(f"  Target: {target}")
-    click.echo(f"  Models: {model if model != 'all' else 'all'}")
+    click.echo(f"  Models: {model}")
     click.echo()
 
     runner = BenchmarkRunner(config)

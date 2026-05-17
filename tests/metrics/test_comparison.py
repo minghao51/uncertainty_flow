@@ -150,3 +150,54 @@ class TestModelConfidenceSet:
         mcs = model_confidence_set({"good": good, "bad": bad}, y_true, metric="mae")
         scores = {row["model"]: row["score"] for row in mcs.iter_rows(named=True)}
         assert scores["good"] < scores["bad"]
+
+
+class TestExtractErrorsPinball:
+    def test_pinball_metric_via_skill_score(self, predictions):
+        pred_a, pred_b, y_arr = predictions
+        result = skill_score(pred_a, pred_b, y_arr, metric="pinball")
+        assert result.shape[0] == 1
+        assert result["skill_score"][0] is not None
+
+    def test_pinball_multivariate(self):
+        levels = [0.1, 0.5, 0.9]
+        y_true = np.array([[0.0, 10.0], [1.0, 11.0]])
+        q_t1 = np.array([[-1.0, 0.0, 1.0], [0.0, 1.0, 2.0]])
+        q_t2 = np.array([[9.0, 10.0, 11.0], [10.0, 11.0, 12.0]])
+        pred_a = DistributionPrediction(
+            np.column_stack([q_t1, q_t2]),
+            levels,
+            target_names=["t1", "t2"],
+        )
+        pred_b = DistributionPrediction(
+            np.column_stack([q_t1 + 2, q_t2 - 2]),
+            levels,
+            target_names=["t1", "t2"],
+        )
+        result = skill_score(pred_a, pred_b, y_true, metric="pinball")
+        assert result["skill_score"][0] is not None
+
+
+class TestSkillScoreEdgeCases:
+    def test_zero_baseline_score_handled(self, predictions):
+        pred_a, _, y_arr = predictions
+        result = skill_score(pred_a, pred_a, y_arr, metric="crps")
+        assert result["skill_score"][0] == 0.0
+
+
+class TestDieboldMarianoEdgeCases:
+    def test_reject_branch(self, predictions):
+        pred_a, pred_b, y_arr = predictions
+        err_a = np.abs(y_arr - pred_a.median().to_numpy().ravel())
+        err_b = np.abs(y_arr - pred_b.median().to_numpy().ravel()) * 1000
+        result = diebold_mariano_test(err_a, err_b, one_sided=False)
+        assert result["result"][0] == "reject"
+        assert result["better_model"][0] == "A"
+
+
+class TestModelConfidenceSetEdgeCases:
+    def test_three_models_with_elimination(self, predictions):
+        pred_a, pred_b, y_arr = predictions
+        pred_c = pred_b
+        result = model_confidence_set({"A": pred_a, "B": pred_b, "C": pred_c}, y_arr, metric="mae")
+        assert result.shape[0] == 3

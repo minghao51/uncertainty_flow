@@ -158,11 +158,6 @@ class ConformalRiskControl:
         self._risk_curve = risk_curve
         self._risk_threshold = threshold
 
-        if self._risk_threshold is None:
-            raise ValueError(
-                f"Unknown calibration_method: {self.calibration_method}. Use 'quantile' or 'mean'."
-            )
-
         return self
 
     def predict(

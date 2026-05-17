@@ -6,15 +6,12 @@ import logging
 import warnings
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import polars as pl
 from sklearn.model_selection import KFold
 
 from .exceptions import CalibrationSizeError, UncertaintyFlowWarning
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +51,8 @@ class BaseSplit(ABC):
         if n_calib < 50:
             warnings.warn(
                 f"Calibration set contains only {n_calib} samples. "
-                f"Consider increasing calibration size for more stable uncertainty estimates. [UF-W001]",
+                "Consider increasing calibration size for more stable uncertainty "
+                "estimates. [UF-W001]",
                 UncertaintyFlowWarning,
                 stacklevel=3,
             )
@@ -445,7 +443,7 @@ def select_validation_plan(
             n_splits = len(inner_splits)
             strategy_name = "kfold_cv"
             reason = "small tabular dataset uses CV for more stable tuning"
-        if hybrid_mode:
+        elif hybrid_mode:
             inner_splits = _build_kfold_splits(
                 outer_train,
                 n_splits=min(cv_splits, max(2, len(outer_train) // 20)),

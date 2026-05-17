@@ -11,7 +11,7 @@ from uncertainty_flow.utils import (
     rolling_origin_splits,
     select_validation_plan,
 )
-from uncertainty_flow.utils.exceptions import UncertaintyFlowWarning
+from uncertainty_flow.utils.exceptions import CalibrationSizeError, UncertaintyFlowWarning
 
 
 class TestRandomHoldoutSplit:
@@ -294,3 +294,104 @@ class TestSlidingWindowSplit:
         splitter = SlidingWindowSplit(n_splits=2, train_size=50, horizon=5)
         with pytest.raises(ValueError, match="too short"):
             splitter.splits(df)
+
+
+class TestRollingOriginSplitValidation:
+    def test_rejects_negative_n_splits(self):
+        with pytest.raises(ValueError, match="n_splits must be"):
+            RollingOriginSplit(n_splits=0)
+
+    def test_rejects_zero_min_train_size(self):
+        with pytest.raises(ValueError, match="min_train_size"):
+            RollingOriginSplit(min_train_size=0)
+
+    def test_rejects_negative_horizon(self):
+        with pytest.raises(ValueError, match="horizon must be"):
+            RollingOriginSplit(horizon=0)
+
+    def test_rejects_negative_gap(self):
+        with pytest.raises(ValueError, match="gap must be"):
+            RollingOriginSplit(gap=-1)
+
+    def test_requested_more_splits_than_available(self):
+        df = pl.DataFrame({"x": range(60), "y": range(60)})
+        splitter = RollingOriginSplit(n_splits=10, min_train_size=50, horizon=5)
+        with pytest.raises(ValueError, match="Requested 10 splits"):
+            splitter.splits(df)
+
+    def test_fold_beyond_data_raises(self):
+        df = pl.DataFrame({"x": range(60), "y": range(60)})
+        splitter = RollingOriginSplit(n_splits=2, min_train_size=55, horizon=5)
+        with pytest.raises(ValueError, match="Requested 2 splits"):
+            splitter.splits(df)
+
+
+class TestSlidingWindowSplitValidation:
+    def test_rejects_negative_n_splits(self):
+        with pytest.raises(ValueError, match="n_splits must be"):
+            SlidingWindowSplit(n_splits=0)
+
+    def test_rejects_zero_train_size(self):
+        with pytest.raises(ValueError, match="train_size must be"):
+            SlidingWindowSplit(train_size=0)
+
+    def test_rejects_negative_horizon(self):
+        with pytest.raises(ValueError, match="horizon must be"):
+            SlidingWindowSplit(horizon=0)
+
+    def test_rejects_negative_gap(self):
+        with pytest.raises(ValueError, match="gap must be"):
+            SlidingWindowSplit(gap=-1)
+
+    def test_fold_beyond_data_raises(self):
+        df = pl.DataFrame({"x": range(200), "y": range(200)})
+        splitter = SlidingWindowSplit(n_splits=5, train_size=100, horizon=50, step=30)
+        with pytest.raises(ValueError, match="extends beyond"):
+            splitter.splits(df)
+
+
+class TestValidationPlanEdgeCases:
+    def test_tabular_hybrid_adds_inner_splits(self):
+        df = pl.DataFrame({"x": range(300), "y": range(300)})
+        plan = select_validation_plan(df, task_type="tabular", random_state=7, hybrid_mode=True)
+        assert plan.metadata.strategy_name == "random_outer_plus_oos_inner_cv"
+        assert len(plan.inner_splits) >= 2
+
+    def test_time_series_rolling_not_enough_data(self):
+        df = pl.DataFrame({"x": range(100), "y": range(100)})
+        plan = select_validation_plan(
+            df,
+            task_type="time_series",
+            rolling_origin=True,
+            rolling_min_train=90,
+            rolling_horizon=20,
+        )
+        assert plan.metadata.strategy_name == "temporal_holdout"
+        assert len(plan.inner_splits) == 0
+
+    def test_time_series_rolling_with_enough_data(self):
+        df = pl.DataFrame({"x": range(300), "y": range(300)})
+        plan = select_validation_plan(
+            df,
+            task_type="time_series",
+            rolling_origin=True,
+            rolling_min_train=50,
+            rolling_horizon=5,
+        )
+        assert plan.metadata.strategy_name == "rolling_origin"
+
+    def test_calibration_size_error_message(self):
+        splitter = RandomHoldoutSplit(random_state=42)
+        df = pl.DataFrame({"x": range(30), "y": range(30)})
+        with pytest.raises(CalibrationSizeError, match="Calibration set too small"):
+            splitter.split(df, 0.5)
+
+    def test_select_plan_does_not_log_when_disabled(self):
+        df = pl.DataFrame({"x": range(120), "y": range(120)})
+        plan = select_validation_plan(
+            df,
+            task_type="tabular",
+            random_state=7,
+            enable_logging=False,
+        )
+        assert plan.metadata.n_samples == 120

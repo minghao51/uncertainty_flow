@@ -65,9 +65,6 @@ wheels/
 .cla/
 .claude
 .mypy_cache/
-.planning/*
-!.planning/codebase/
-!.planning/codebase/**
 results/
 
 # Data files

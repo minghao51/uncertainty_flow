@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Callable
 
 import numpy as np
 from scipy import optimize, stats
@@ -80,11 +81,11 @@ class ParametricDistribution:
 class _FamilySpec:
     name: str
     param_keys: list[str]
-    rv_factory: callable
-    initial_fit: callable
+    rv_factory: Callable
+    initial_fit: Callable
     bounds: list[tuple[float | None, float | None]]
-    x0_from_params: callable
-    params_from_x: callable
+    x0_from_params: Callable
+    params_from_x: Callable
 
 
 def _normal_rv(p: dict[str, float]) -> stats.rv_continuous:
@@ -103,19 +104,19 @@ def _gamma_rv(p: dict[str, float]) -> stats.rv_continuous:
     return stats.gamma(a=p["a"], loc=p["loc"], scale=p["scale"])
 
 
-def _fit_normal(qv: np.ndarray, ql: np.ndarray) -> dict[str, float]:  # noqa: ARG001
+def _fit_normal(qv: np.ndarray) -> dict[str, float]:
     loc = float(np.mean(qv))
     scale = float(max(np.std(qv), 1e-8))
     return {"loc": loc, "scale": scale}
 
 
-def _fit_student_t(qv: np.ndarray, ql: np.ndarray) -> dict[str, float]:  # noqa: ARG001
+def _fit_student_t(qv: np.ndarray) -> dict[str, float]:
     loc = float(np.mean(qv))
     scale = float(max(np.std(qv), 1e-8))
     return {"df": 5.0, "loc": loc, "scale": scale}
 
 
-def _fit_lognormal(qv: np.ndarray, ql: np.ndarray) -> dict[str, float]:  # noqa: ARG001
+def _fit_lognormal(qv: np.ndarray) -> dict[str, float]:
     pos = qv[qv > 0]
     if len(pos) < 2:
         pos = np.abs(qv) + 1e-8
@@ -125,7 +126,7 @@ def _fit_lognormal(qv: np.ndarray, ql: np.ndarray) -> dict[str, float]:  # noqa:
     return {"s": sigma, "loc": 0.0, "scale": float(np.exp(mu))}
 
 
-def _fit_gamma(qv: np.ndarray, ql: np.ndarray) -> dict[str, float]:  # noqa: ARG001
+def _fit_gamma(qv: np.ndarray) -> dict[str, float]:
     pos = qv[qv > 0]
     if len(pos) < 2:
         pos = np.abs(qv) + 1e-8
@@ -287,7 +288,7 @@ def fit_parametric(
         for fam in ParametricDistribution._FAMILIES:
             spec = _FAMILY_REGISTRY[fam]
             try:
-                init = spec.initial_fit(qv, ql)
+                init = spec.initial_fit(qv)
                 refined = _refine_params_impl(fam, init, qv, ql)
                 ks = _ks_distance_impl(spec, refined, qv, ql)
                 if ks < best_ks:
@@ -297,12 +298,12 @@ def fit_parametric(
                 continue
         if best_dist is None:
             spec = _FAMILY_REGISTRY["normal"]
-            init = spec.initial_fit(qv, ql)
+            init = spec.initial_fit(qv)
             best_dist = ParametricDistribution("normal", init, qv, ql)
         return best_dist
 
     spec = _FAMILY_REGISTRY[family]
-    init = spec.initial_fit(qv, ql)
+    init = spec.initial_fit(qv)
     refined = _refine_params_impl(family, init, qv, ql)
     return ParametricDistribution(family, refined, qv, ql)
 
@@ -318,8 +319,7 @@ def _fit_family(
     quantile_levels: np.ndarray,
 ) -> dict[str, float]:
     """Initial parameter fit for a distribution family (public for testing)."""
-    qv = np.sort(quantile_values)
-    return _FAMILY_REGISTRY[family].initial_fit(qv, quantile_levels)
+    return _FAMILY_REGISTRY[family].initial_fit(np.sort(quantile_values))
 
 
 def _refine_params(

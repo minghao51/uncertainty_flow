@@ -6,6 +6,15 @@ import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow.analysis import FeatureLeverageAnalyzer
+from uncertainty_flow.analysis.leverage import (
+    _format_recommendation,
+    _generate_recommendation,
+    _interval_width_matrix,
+    _mean_upper_triangle_abs,
+    _point_matrix,
+    _rank_correlation_matrix,
+)
+from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.models import QuantileForestForecaster
 
 
@@ -414,3 +423,98 @@ def sample_multivariate_forecaster(sample_multivariate_data):
     )
     model.fit(sample_multivariate_data)
     return model
+
+
+class TestRecommendationBranches:
+    def test_accept_uncertainty(self):
+        rec = _generate_recommendation(10.0, 1.0, 0.1)
+        assert rec == "accept_uncertainty"
+
+    def test_collect_more_data(self):
+        rec = _generate_recommendation(1.0, 5.0, 0.1)
+        assert rec == "collect_more_data"
+
+    def test_high_leverage(self):
+        rec = _generate_recommendation(3.0, 3.0, 0.8)
+        assert rec == "high_leverage"
+
+    def test_low_leverage(self):
+        rec = _generate_recommendation(3.0, 3.0, 0.1)
+        assert rec == "low_leverage"
+
+    def test_recommendation_threshold_boundary(self):
+        rec = _generate_recommendation(3.0, 3.0, 0.5)
+        assert rec == "low_leverage"
+
+
+class TestFormatRecommendation:
+    def test_all_keys_present(self):
+        for key in ["accept_uncertainty", "collect_more_data", "high_leverage", "low_leverage"]:
+            result = _format_recommendation(key)
+            assert isinstance(result, str)
+            assert len(result) > 0
+
+    def test_unknown_key(self):
+        assert _format_recommendation("unknown") == "Unknown"
+
+
+class TestInternalHelpers:
+    def test_point_matrix_multi_target(self):
+        n = 10
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(-1, 3, n),
+                np.linspace(0, 4, n),
+                np.linspace(1, 5, n),
+                np.linspace(2, 6, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        mat = _point_matrix(pred)
+        assert mat.shape == (n, 2)
+
+    def test_interval_width_matrix_multi_target(self):
+        n = 10
+        q = np.column_stack(
+            [
+                np.linspace(-2, 2, n),
+                np.linspace(0, 4, n),
+                np.linspace(2, 6, n),
+                np.linspace(-1, 3, n),
+                np.linspace(1, 5, n),
+                np.linspace(3, 7, n),
+            ]
+        )
+        pred = DistributionPrediction(q, [0.1, 0.5, 0.9], target_names=["a", "b"])
+        mat = _interval_width_matrix(pred, 0.8)
+        assert mat.shape == (n, 2)
+
+    def test_rank_correlation_single_target(self):
+        mat = np.random.randn(10, 1)
+        corr = _rank_correlation_matrix(mat)
+        assert corr.shape == (1, 1)
+
+    def test_mean_upper_triangle_single_pair(self):
+        assert _mean_upper_triangle_abs(np.eye(2)) == 0.0
+
+    def test_mean_upper_triangle_single_row(self):
+        assert _mean_upper_triangle_abs(np.array([[1.0]])) == 0.0
+
+
+class TestAnalyzeEmptyResults:
+    def test_all_constant_features_returns_schema(self, sample_forecaster):
+        analyzer = FeatureLeverageAnalyzer(sample_forecaster)
+        data = pl.DataFrame({"x1": [5.0] * 10, "x2": [3.0] * 10, "x3": [7.0] * 10})
+        result = analyzer.analyze(data)
+        assert isinstance(result, pl.DataFrame)
+        assert result.height == 0
+
+
+class TestDecompositionFallback:
+    def test_single_bin_fallback(self, sample_forecaster):
+        analyzer = FeatureLeverageAnalyzer(sample_forecaster)
+        alea, epi = analyzer._compute_decomposition(np.ones(20), np.random.randn(20) ** 2)
+        assert alea == 0.0
+        assert epi == 0.0

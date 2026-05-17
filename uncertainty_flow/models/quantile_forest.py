@@ -1,7 +1,6 @@
 """QuantileForestForecaster - Quantile Regression Forest for time series."""
 
 import warnings
-from typing import TYPE_CHECKING
 
 import numpy as np
 import polars as pl
@@ -19,9 +18,6 @@ from ..utils.auto_tuning import (
 from ..utils.exceptions import InvalidDataError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from ..utils.split import select_validation_plan
-
-if TYPE_CHECKING:
-    pass
 
 
 class QuantileForestForecaster(BaseUncertaintyModel):

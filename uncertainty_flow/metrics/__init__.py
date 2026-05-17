@@ -92,20 +92,22 @@ def score(
         return pred.crps(y_true)
 
     if metric == "log_score":
-        return pred.log_score(y_true, **{k: v for k, v in kwargs.items() if k == "family"})
+        return pred.log_score(y_true, family=kwargs.get("family", "auto"))
 
     if metric == "energy_score":
         return pred.energy_score(
             y_true,
             n_samples=kwargs.get("n_samples", 1000),
-            random_state=kwargs.get("random_state", None),
+            random_state=kwargs.get("random_state"),
         )
 
     if metric == "variogram_score":
         return variogram_score(
             pred,
             y_true,
-            **{k: v for k, v in kwargs.items() if k in ("n_samples", "p", "random_state")},
+            n_samples=kwargs.get("n_samples", 1000),
+            p=kwargs.get("p", 0.5),
+            random_state=kwargs.get("random_state"),
         )
 
     y_arr = pred._coerce_y_true(y_true)
@@ -114,10 +116,12 @@ def score(
     n_targets = len(targets)
     results: dict[str, float] = {}
 
+    median_result = pred.median() if metric in ("mae", "rmse") else None
+
     for t_idx, target in enumerate(targets):
         y_col = y_arr[:, t_idx] if y_arr.ndim == 2 else y_arr
         median_col = (
-            _median_for_target(pred.median(), target) if metric in ("mae", "rmse") else None
+            _median_for_target(median_result, target) if median_result is not None else None
         )
 
         if metric == "mae":
@@ -140,13 +144,9 @@ def score(
             results[target] = total / len(pred._levels)
             continue
 
-        interval_df = pred.interval(confidence)
-        if n_targets == 1:
-            lower = interval_df["lower"].to_numpy()
-            upper = interval_df["upper"].to_numpy()
-        else:
-            lower = interval_df[f"{target}_lower"].to_numpy()
-            upper = interval_df[f"{target}_upper"].to_numpy()
+        lower_s, upper_s = pred.interval_bounds(confidence, target=target)
+        lower = lower_s.to_numpy()
+        upper = upper_s.to_numpy()
 
         if metric == "coverage":
             results[target] = float(coverage_score(y_col, lower, upper))

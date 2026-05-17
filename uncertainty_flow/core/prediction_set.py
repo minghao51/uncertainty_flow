@@ -41,7 +41,7 @@ class PredictionSet:
         self._n_samples = len(class_sets)
         self._n_classes = len(class_names)
 
-    def set(self, sample_index: int | None = None) -> list[str] | list[list[str]]:
+    def prediction_sets(self, sample_index: int | None = None) -> list[str] | list[list[str]]:
         """Return the prediction set for one or all samples.
 
         Args:
@@ -53,6 +53,10 @@ class PredictionSet:
         if sample_index is not None:
             return self._class_sets[sample_index]
         return self._class_sets
+
+    def set(self, sample_index: int | None = None) -> list[str] | list[list[str]]:
+        """Backward-compatible alias for :meth:`prediction_sets`."""
+        return self.prediction_sets(sample_index)
 
     @property
     def coverage(self) -> float:

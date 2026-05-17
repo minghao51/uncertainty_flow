@@ -157,6 +157,16 @@ class TestEnsembleBootstrapPI:
         with pytest.raises(ValueError, match="must match"):
             model.update(np.array([1.0, 2.0]))
 
+    def test_predict_before_fit_raises(self):
+        model = EnsembleBootstrapPI(LinearRegression(), n_estimators=5)
+        with pytest.raises(ModelNotFittedError):
+            model.predict(None)
+
+    def test_update_without_fit_raises(self):
+        model = EnsembleBootstrapPI(LinearRegression(), n_estimators=5)
+        with pytest.raises(ModelNotFittedError):
+            model.update(0.5)
+
     def test_higher_coverage_target_gives_wider_intervals(self, small_df):
         low = EnsembleBootstrapPI(
             base_model=LinearRegression(),

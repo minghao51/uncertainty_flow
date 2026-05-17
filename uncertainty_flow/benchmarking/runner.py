@@ -9,7 +9,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import Any, Callable
 
 import numpy as np
 import polars as pl
@@ -30,26 +30,7 @@ from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 from .datasets import DatasetInfo, load_dataset
 from .tuning import TuningConfig, auto_tune_model
 
-if TYPE_CHECKING:
-    pass
-
 logger = logging.getLogger(__name__)
-
-SEARCH_SPACE = {
-    "quantile-forest": {
-        "n_estimators": [20, 30, 50],
-        "horizon": [2, 3, 5],
-    },
-    "conformal-regressor": {
-        "n_estimators": [20, 30, 50],
-        "calibration_size": [0.15, 0.20, 0.25, 0.30],
-    },
-    "conformal-forecaster": {
-        "n_estimators": [20, 30, 50],
-        "calibration_size": [0.15, 0.20, 0.25],
-        "lags": [1, 2, 3],
-    },
-}
 
 
 @dataclass
@@ -367,23 +348,14 @@ class BenchmarkRunner:
         logger.info("Predicting with benchmark model '%s'", model_name)
         pred = benchmark.predict(test_df)
 
-        interval_90 = pred.interval(0.9)
-        interval_80 = pred.interval(0.8)
-
-        n_pred = len(interval_90)
+        n_pred = len(pred.interval(0.9))
         y_true = to_numpy_series(test_df[self.target])[-n_pred:]
-        lower_90 = to_numpy_series(
-            interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
-        )
-        upper_90 = to_numpy_series(
-            interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
-        )
-        lower_80 = to_numpy_series(
-            interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
-        )
-        upper_80 = to_numpy_series(
-            interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
-        )
+        lower_90_s, upper_90_s = pred.interval_bounds(0.9)
+        lower_80_s, upper_80_s = pred.interval_bounds(0.8)
+        lower_90 = to_numpy_series(lower_90_s)
+        upper_90 = to_numpy_series(upper_90_s)
+        lower_80 = to_numpy_series(lower_80_s)
+        upper_80 = to_numpy_series(upper_80_s)
 
         cov_90 = coverage_score(y_true, lower_90, upper_90)
         cov_80 = coverage_score(y_true, lower_80, upper_80)
@@ -454,6 +426,8 @@ class BenchmarkRunner:
             min_train_size=self.config.rolling_min_train,
             horizon=self.config.rolling_horizon,
         )
+        if self.df is None:
+            raise DataError("Data not loaded. Call load_data() first.")
         splits = splitter.splits(self.df)
 
         tuned_params = tuning_result.best_params if tuning_result is not None else {}
@@ -487,23 +461,15 @@ class BenchmarkRunner:
             train_time = time.time() - start
 
             pred = benchmark.predict(test_df)
-            interval_90 = pred.interval(0.9)
-            interval_80 = pred.interval(0.8)
 
-            n_pred = len(interval_90)
+            n_pred = len(pred.interval(0.9))
             y_true = to_numpy_series(test_df[self.target])[-n_pred:]
-            lower_90 = to_numpy_series(
-                interval_90["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
-            )
-            upper_90 = to_numpy_series(
-                interval_90["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
-            )
-            lower_80 = to_numpy_series(
-                interval_80["lower" if len(pred._targets) == 1 else f"{pred._targets[0]}_lower"]
-            )
-            upper_80 = to_numpy_series(
-                interval_80["upper" if len(pred._targets) == 1 else f"{pred._targets[0]}_upper"]
-            )
+            lower_90_s, upper_90_s = pred.interval_bounds(0.9)
+            lower_80_s, upper_80_s = pred.interval_bounds(0.8)
+            lower_90 = to_numpy_series(lower_90_s)
+            upper_90 = to_numpy_series(upper_90_s)
+            lower_80 = to_numpy_series(lower_80_s)
+            upper_80 = to_numpy_series(upper_80_s)
 
             cov_90s.append(coverage_score(y_true, lower_90, upper_90))
             cov_80s.append(coverage_score(y_true, lower_80, upper_80))
@@ -584,34 +550,33 @@ class BenchmarkRunner:
     def to_dict(self) -> dict[str, Any]:
         """Convert result to dictionary for JSON serialization."""
         if self._run_result is None:
-            return {"metadata": {}, "results": []}
+            return {"metadata": {}, "results": [], "models": []}
+        results = [
+            {
+                "model": r.model_name,
+                "coverage_90": r.coverage_90,
+                "coverage_80": r.coverage_80,
+                "sharpness_90": r.sharpness_90,
+                "sharpness_80": r.sharpness_80,
+                "winkler_90": r.winkler_90,
+                "winkler_80": r.winkler_80,
+                "pinball_loss": r.pinball_loss,
+                "train_time_sec": r.train_time_sec,
+                "n_samples": r.n_samples,
+                "tuned_params": r.tuned_params,
+                "was_tuned": r.was_tuned,
+                "validation_coverage_90": r.validation_coverage_90,
+                "validation_sharpness_90": r.validation_sharpness_90,
+                "validation_winkler_90": r.validation_winkler_90,
+                "validation_split_type": r.validation_split_type,
+                "validation_strategy": r.validation_strategy,
+                "validation_n_splits": r.validation_n_splits,
+                "test_split_type": r.test_split_type,
+            }
+            for r in self._run_result.models
+        ]
         return {
-            # Backward-compatible aliases:
             "dataset": self._run_result.dataset_name,
-            "models": [
-                {
-                    "model": r.model_name,
-                    "coverage_90": r.coverage_90,
-                    "coverage_80": r.coverage_80,
-                    "sharpness_90": r.sharpness_90,
-                    "sharpness_80": r.sharpness_80,
-                    "winkler_90": r.winkler_90,
-                    "winkler_80": r.winkler_80,
-                    "pinball_loss": r.pinball_loss,
-                    "train_time_sec": r.train_time_sec,
-                    "n_samples": r.n_samples,
-                    "tuned_params": r.tuned_params,
-                    "was_tuned": r.was_tuned,
-                    "validation_coverage_90": r.validation_coverage_90,
-                    "validation_sharpness_90": r.validation_sharpness_90,
-                    "validation_winkler_90": r.validation_winkler_90,
-                    "validation_split_type": r.validation_split_type,
-                    "validation_strategy": r.validation_strategy,
-                    "validation_n_splits": r.validation_n_splits,
-                    "test_split_type": r.test_split_type,
-                }
-                for r in self._run_result.models
-            ],
             "metadata": {
                 "run_id": self._run_result.run_id,
                 "timestamp": self._run_result.timestamp,
@@ -624,30 +589,8 @@ class BenchmarkRunner:
                 "target_coverage": self.config.target_coverage,
             },
             "errors": self._run_result.errors,
-            "results": [
-                {
-                    "model": r.model_name,
-                    "coverage_90": r.coverage_90,
-                    "coverage_80": r.coverage_80,
-                    "sharpness_90": r.sharpness_90,
-                    "sharpness_80": r.sharpness_80,
-                    "winkler_90": r.winkler_90,
-                    "winkler_80": r.winkler_80,
-                    "pinball_loss": r.pinball_loss,
-                    "train_time_sec": r.train_time_sec,
-                    "n_samples": r.n_samples,
-                    "tuned_params": r.tuned_params,
-                    "was_tuned": r.was_tuned,
-                    "validation_coverage_90": r.validation_coverage_90,
-                    "validation_sharpness_90": r.validation_sharpness_90,
-                    "validation_winkler_90": r.validation_winkler_90,
-                    "validation_split_type": r.validation_split_type,
-                    "validation_strategy": r.validation_strategy,
-                    "validation_n_splits": r.validation_n_splits,
-                    "test_split_type": r.test_split_type,
-                }
-                for r in self._run_result.models
-            ],
+            "results": results,
+            "models": results,
         }
 
     def save_json(self, path: Path | str) -> None:

@@ -3,8 +3,8 @@
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import InvalidDataError, QuantileError
-from ..utils.polars_bridge import as_numpy
+from ..utils.exceptions import QuantileError
+from ..utils.polars_bridge import as_numpy, validate_bounds
 
 
 def winkler_score(
@@ -47,8 +47,7 @@ def winkler_score(
 
     y_true, lower, upper = as_numpy(y_true, lower, upper)
 
-    if np.any(lower > upper):
-        raise InvalidDataError("lower bound must be <= upper bound")
+    validate_bounds(lower, upper)
 
     alpha = 1 - confidence
 

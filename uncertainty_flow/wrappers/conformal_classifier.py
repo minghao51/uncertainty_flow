@@ -228,9 +228,7 @@ class ConformalClassifier:
                     break
 
         n = len(aps_scores)
-        quantile_idx = int(np.ceil((n + 1) * (1.0 - miscoverage_alpha)))
-        quantile_idx = min(quantile_idx, n) - 1
-        quantile_idx = max(quantile_idx, 0)
+        quantile_idx = int(np.clip(np.ceil((n + 1) * (1.0 - miscoverage_alpha)) - 1, 0, n - 1))
 
         sorted_scores = np.sort(aps_scores)
         return float(sorted_scores[quantile_idx])

@@ -10,6 +10,13 @@ if TYPE_CHECKING:
     from ..core.distribution import DistributionPrediction
 
 
+def _ensure_2d(y_arr: np.ndarray, d: int) -> np.ndarray:
+    """Tile 1-D y_true across *d* columns for vectorised multivariate scoring."""
+    if y_arr.ndim == 1:
+        return np.tile(y_arr[:, None], (1, d))
+    return y_arr
+
+
 def energy_score(
     pred: DistributionPrediction,
     y_true,
@@ -53,8 +60,7 @@ def energy_score(
     sm2 = np.column_stack([sample_df2[t].to_numpy() for t in targets])
     sm2 = sm2.reshape(n_obs, n_samples, d)
 
-    if y_arr.ndim == 1:
-        y_arr = np.tile(y_arr[:, None], (1, d))
+    y_arr = _ensure_2d(y_arr, d)
 
     term1 = np.zeros(n_obs)
     term2 = np.zeros(n_obs)
@@ -113,8 +119,7 @@ def variogram_score(
     sample_matrix = np.column_stack([sample_df[t].to_numpy() for t in targets])
     sample_matrix = sample_matrix.reshape(n_obs, n_samples, d)
 
-    if y_arr.ndim == 1:
-        y_arr = np.tile(y_arr[:, None], (1, d))
+    y_arr = _ensure_2d(y_arr, d)
 
     scores = np.zeros(n_obs)
 

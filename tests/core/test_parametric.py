@@ -9,6 +9,7 @@ from uncertainty_flow.core.parametric import (
     _fit_family,
     _ks_distance,
     _refine_params,
+    _refine_params_impl,
     fit_parametric,
 )
 
@@ -178,3 +179,25 @@ class TestDistributionPredictionFitDistribution:
         assert len(dists) == 2
         assert dists[0].mean == pytest.approx(0.0, abs=0.5)
         assert dists[1].mean == pytest.approx(5.0, abs=1.0)
+
+
+class TestParametricEdgeCases:
+    def test_optimization_fallback_returns_initial(self):
+        qv = np.array([-1.0, 0.0, 1.0])
+        ql = np.array([0.1, 0.5, 0.9])
+        init = _fit_family("normal", qv, ql)
+        refined = _refine_params_impl("normal", init, qv * 1e100, ql)
+        assert isinstance(refined, dict)
+        assert "loc" in refined
+
+    def test_auto_fallback_when_all_families_fail(self):
+        qv = np.array([np.nan, np.nan, np.nan])
+        ql = np.array([0.1, 0.5, 0.9])
+        dist = fit_parametric(qv, ql, family="auto")
+        assert dist.family == "normal"
+
+    def test_ks_distance_overflow_returns_inf(self):
+        qv = np.array([1e308, 1e308, 1e308])
+        ql = np.array([0.1, 0.5, 0.9])
+        ks = _ks_distance("normal", {"loc": 1e308, "scale": 1e308}, qv, ql)
+        assert ks == np.inf

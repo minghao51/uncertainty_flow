@@ -169,14 +169,9 @@ def _render_calibration_tab(predictions, y_true, confidence):
     empirical_coverages = []
 
     for level in confidence_levels:
-        interval = predictions.interval(level)
-        if len(predictions._targets) == 1:
-            lower = interval["lower"].to_numpy()
-            upper = interval["upper"].to_numpy()
-        else:
-            first_target = predictions._targets[0]
-            lower = interval[f"{first_target}_lower"].to_numpy()
-            upper = interval[f"{first_target}_upper"].to_numpy()
+        lower_s, upper_s = predictions.interval_bounds(level)
+        lower = lower_s.to_numpy()
+        upper = upper_s.to_numpy()
 
         y_true_arr = to_numpy_series(y_true)
         coverage = np.mean((y_true_arr >= lower) & (y_true_arr <= upper))
@@ -225,15 +220,9 @@ def _render_intervals_tab(predictions, y_true, confidence):
 
     st.subheader("Prediction Intervals")
 
-    interval = predictions.interval(confidence)
-
-    if len(predictions._targets) == 1:
-        lower = interval["lower"].to_numpy()
-        upper = interval["upper"].to_numpy()
-    else:
-        first_target = predictions._targets[0]
-        lower = interval[f"{first_target}_lower"].to_numpy()
-        upper = interval[f"{first_target}_upper"].to_numpy()
+    lower_s, upper_s = predictions.interval_bounds(confidence)
+    lower = lower_s.to_numpy()
+    upper = upper_s.to_numpy()
 
     widths = upper - lower
 
@@ -281,16 +270,13 @@ def _render_residuals_tab(predictions, y_true, features, confidence):
 
     st.subheader("Residual Analysis")
 
-    interval = predictions.interval(confidence)
-
+    lower_s, upper_s = predictions.interval_bounds(confidence)
+    lower = lower_s.to_numpy()
+    upper = upper_s.to_numpy()
     if len(predictions._targets) == 1:
-        lower = interval["lower"].to_numpy()
-        upper = interval["upper"].to_numpy()
         mean = predictions.median().to_numpy()
     else:
         first_target = predictions._targets[0]
-        lower = interval[f"{first_target}_lower"].to_numpy()
-        upper = interval[f"{first_target}_upper"].to_numpy()
         mean = predictions.median().select(first_target).to_numpy().flatten()
 
     y_true_arr = to_numpy_series(y_true)
@@ -364,15 +350,9 @@ def _render_feature_analysis_tab(predictions, y_true, features, confidence):
 
     st.subheader("Feature-Uncertainty Relationships")
 
-    interval = predictions.interval(confidence)
-
-    if len(predictions._targets) == 1:
-        lower = interval["lower"].to_numpy()
-        upper = interval["upper"].to_numpy()
-    else:
-        first_target = predictions._targets[0]
-        lower = interval[f"{first_target}_lower"].to_numpy()
-        upper = interval[f"{first_target}_upper"].to_numpy()
+    lower_s, upper_s = predictions.interval_bounds(confidence)
+    lower = lower_s.to_numpy()
+    upper = upper_s.to_numpy()
 
     widths = upper - lower
 
@@ -417,14 +397,9 @@ def _render_summary_tab(model, predictions, y_true, confidence):
         st.write(f"Number of samples: `{len(y_true)}`")
         st.write(f"Confidence level: `{confidence:.1%}`")
 
-        interval = predictions.interval(confidence)
-        if len(predictions._targets) == 1:
-            lower = interval["lower"].to_numpy()
-            upper = interval["upper"].to_numpy()
-        else:
-            first_target = predictions._targets[0]
-            lower = interval[f"{first_target}_lower"].to_numpy()
-            upper = interval[f"{first_target}_upper"].to_numpy()
+        lower_s, upper_s = predictions.interval_bounds(confidence)
+        lower = lower_s.to_numpy()
+        upper = upper_s.to_numpy()
 
         y_true_arr = to_numpy_series(y_true)
         coverage = np.mean((y_true_arr >= lower) & (y_true_arr <= upper))

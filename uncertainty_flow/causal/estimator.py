@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
@@ -12,9 +10,6 @@ from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy, to_numpy_series
-
-if TYPE_CHECKING:
-    pass
 
 VALID_METHODS = ("doubly_robust", "s_learner", "t_learner")
 
@@ -178,9 +173,9 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":
-            mu1, mu0 = self._predict_counterfactuals_dr(x, data, feature_cols)
+            mu1, mu0 = self._predict_counterfactuals_single_model(x, data, feature_cols)
         elif self.method == "s_learner":
-            mu1, mu0 = self._predict_counterfactuals_sl(x, data, feature_cols)
+            mu1, mu0 = self._predict_counterfactuals_single_model(x, data, feature_cols)
         elif self.method == "t_learner":
             mu1, mu0 = self._predict_counterfactuals_tl(x)
         else:
@@ -230,12 +225,12 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         x = to_numpy(data, feature_cols)
 
         if self.method == "doubly_robust":
-            mu1, mu0 = self._predict_counterfactuals_dr(x, data, feature_cols)
+            mu1, mu0 = self._predict_counterfactuals_single_model(x, data, feature_cols)
             e = self._propensity_predict(x)
             e = np.clip(e, 0.01, 0.99)
             scores = mu1 - mu0 + t * (y - mu1) / e - (1 - t) * (y - mu0) / (1 - e)
         elif self.method == "s_learner":
-            mu1, mu0 = self._predict_counterfactuals_sl(x, data, feature_cols)
+            mu1, mu0 = self._predict_counterfactuals_single_model(x, data, feature_cols)
             scores = mu1 - mu0
         elif self.method == "t_learner":
             mu1, mu0 = self._predict_counterfactuals_tl(x)
@@ -342,16 +337,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         """Return propensity scores P(T=1|X)."""
         return self._propensity_fitted.predict_proba(x)[:, 1]
 
-    def _predict_counterfactuals_dr(self, x, data, feature_cols):
-        """Compute mu1 and mu0 for doubly robust method."""
-        x_aug1 = np.column_stack([x, np.ones(x.shape[0])])
-        x_aug0 = np.column_stack([x, np.zeros(x.shape[0])])
-        mu1 = self._outcome_model_fitted.predict(x_aug1)
-        mu0 = self._outcome_model_fitted.predict(x_aug0)
-        return mu1, mu0
-
-    def _predict_counterfactuals_sl(self, x, data, feature_cols):
-        """Compute mu1 and mu0 for S-learner."""
+    def _predict_counterfactuals_single_model(self, x, data, feature_cols):
+        """Compute mu1 and mu0 for DR or S-learner (single outcome model)."""
         x_aug1 = np.column_stack([x, np.ones(x.shape[0])])
         x_aug0 = np.column_stack([x, np.zeros(x.shape[0])])
         mu1 = self._outcome_model_fitted.predict(x_aug1)

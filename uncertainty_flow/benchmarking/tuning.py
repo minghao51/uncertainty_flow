@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import numpy as np
 import polars as pl
@@ -200,6 +200,43 @@ def tune_conformal_forecaster(
     return cov, sharp, wink, train_time
 
 
+def _evaluate_over_splits(
+    evaluation_splits: list[tuple[pl.DataFrame, pl.DataFrame]],
+    model_name: str,
+    tune_fn: Callable[[pl.DataFrame, pl.DataFrame], tuple[float, float, float, float]],
+    target_coverage: float,
+) -> tuple[float, float, float, float, float]:
+    """Run *tune_fn* over all evaluation splits, return averaged metrics and score."""
+    split_cov: list[float] = []
+    split_sharp: list[float] = []
+    split_wink: list[float] = []
+    split_train_time: list[float] = []
+    split_scores: list[float] = []
+
+    for split_idx, (split_train_df, split_val_df) in enumerate(evaluation_splits, start=1):
+        logger.debug(
+            "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
+            model_name,
+            split_idx,
+            len(split_train_df),
+            len(split_val_df),
+        )
+        cov, sharp, wink, train_time = tune_fn(split_train_df, split_val_df)
+        split_cov.append(cov)
+        split_sharp.append(sharp)
+        split_wink.append(wink)
+        split_train_time.append(train_time)
+        split_scores.append(_score_result(cov, sharp, wink, target_coverage))
+
+    return (
+        float(np.mean(split_cov)),
+        float(np.mean(split_sharp)),
+        float(np.mean(split_wink)),
+        float(np.mean(split_train_time)),
+        float(np.mean(split_scores)),
+    )
+
+
 def auto_tune_model(
     model_name: str,
     df: pl.DataFrame,
@@ -265,34 +302,12 @@ def auto_tune_model(
         for n_est in search_space.get("n_estimators", [30]):
             for h in search_space.get("horizon", [3]):
                 trials += 1
-                split_scores: list[float] = []
-                split_cov: list[float] = []
-                split_sharp: list[float] = []
-                split_wink: list[float] = []
-                split_train_time: list[float] = []
-                for split_idx, (split_train_df, split_val_df) in enumerate(
-                    evaluation_splits, start=1
-                ):
-                    logger.debug(
-                        "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
-                        model_name,
-                        split_idx,
-                        len(split_train_df),
-                        len(split_val_df),
-                    )
-                    cov, sharp, wink, train_time = tune_quantile_forest(
-                        split_train_df, split_val_df, target, h, n_est
-                    )
-                    split_cov.append(cov)
-                    split_sharp.append(sharp)
-                    split_wink.append(wink)
-                    split_train_time.append(train_time)
-                    split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
-                cov = float(np.mean(split_cov))
-                sharp = float(np.mean(split_sharp))
-                wink = float(np.mean(split_wink))
-                train_time = float(np.mean(split_train_time))
-                score = float(np.mean(split_scores))
+                cov, sharp, wink, train_time, score = _evaluate_over_splits(
+                    evaluation_splits,
+                    model_name,
+                    lambda tr, vl: tune_quantile_forest(tr, vl, target, h, n_est),
+                    config.target_coverage,
+                )
                 if score < best_score:
                     best_score = score
                     best_params = {"n_estimators": n_est, "horizon": h}
@@ -313,34 +328,12 @@ def auto_tune_model(
             )
             for calib in calib_candidates:
                 trials += 1
-                split_scores = []
-                split_cov = []
-                split_sharp = []
-                split_wink = []
-                split_train_time = []
-                for split_idx, (split_train_df, split_val_df) in enumerate(
-                    evaluation_splits, start=1
-                ):
-                    logger.debug(
-                        "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
-                        model_name,
-                        split_idx,
-                        len(split_train_df),
-                        len(split_val_df),
-                    )
-                    cov, sharp, wink, train_time = tune_conformal_regressor(
-                        split_train_df, split_val_df, target, n_est, calib
-                    )
-                    split_cov.append(cov)
-                    split_sharp.append(sharp)
-                    split_wink.append(wink)
-                    split_train_time.append(train_time)
-                    split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
-                cov = float(np.mean(split_cov))
-                sharp = float(np.mean(split_sharp))
-                wink = float(np.mean(split_wink))
-                train_time = float(np.mean(split_train_time))
-                score = float(np.mean(split_scores))
+                cov, sharp, wink, train_time, score = _evaluate_over_splits(
+                    evaluation_splits,
+                    model_name,
+                    lambda tr, vl: tune_conformal_regressor(tr, vl, target, n_est, calib),
+                    config.target_coverage,
+                )
                 if score < best_score:
                     best_score = score
                     best_params = {
@@ -365,34 +358,14 @@ def auto_tune_model(
             for calib in calib_candidates:
                 for lags in search_space.get("lags", [2]):
                     trials += 1
-                    split_scores = []
-                    split_cov = []
-                    split_sharp = []
-                    split_wink = []
-                    split_train_time = []
-                    for split_idx, (split_train_df, split_val_df) in enumerate(
-                        evaluation_splits, start=1
-                    ):
-                        logger.debug(
-                            "tuning_candidate_split model=%s split=%d train_rows=%d val_rows=%d",
-                            model_name,
-                            split_idx,
-                            len(split_train_df),
-                            len(split_val_df),
-                        )
-                        cov, sharp, wink, train_time = tune_conformal_forecaster(
-                            split_train_df, split_val_df, target, horizon, n_est, calib, lags
-                        )
-                        split_cov.append(cov)
-                        split_sharp.append(sharp)
-                        split_wink.append(wink)
-                        split_train_time.append(train_time)
-                        split_scores.append(_score_result(cov, sharp, wink, config.target_coverage))
-                    cov = float(np.mean(split_cov))
-                    sharp = float(np.mean(split_sharp))
-                    wink = float(np.mean(split_wink))
-                    train_time = float(np.mean(split_train_time))
-                    score = float(np.mean(split_scores))
+                    cov, sharp, wink, train_time, score = _evaluate_over_splits(
+                        evaluation_splits,
+                        model_name,
+                        lambda tr, vl: tune_conformal_forecaster(
+                            tr, vl, target, horizon, n_est, calib, lags
+                        ),
+                        config.target_coverage,
+                    )
                     if score < best_score:
                         best_score = score
                         best_params = {

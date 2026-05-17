@@ -643,13 +643,9 @@ class GradientSearch:
     ) -> np.ndarray:
         """Compute finite-difference gradient (autograd is not used)."""
         try:
-            import torch
+            import torch  # noqa: F401
         except ImportError:
             raise ImportError("PyTorch is required for gradient-based search")
-
-        # Kept for compatibility with Torch model environments; optimization
-        # still relies on finite differences for objective gradients.
-        torch.tensor(cf_features, dtype=torch.float32, requires_grad=True)
 
         return self._finite_difference_gradient(
             cf_features, data, target_width, original_width, fixed_features

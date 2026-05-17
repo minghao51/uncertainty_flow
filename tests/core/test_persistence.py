@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import types
 import zipfile
 
 import numpy as np
@@ -10,7 +11,14 @@ import polars as pl
 import pytest
 from sklearn.ensemble import GradientBoostingRegressor
 
-from uncertainty_flow.core._persistence import compute_archive_sha256
+from uncertainty_flow.core._persistence import (
+    _library_version,
+    _quantile_levels,
+    _safe_version,
+    _target_names,
+    _warn_version_mismatches,
+    compute_archive_sha256,
+)
 from uncertainty_flow.core.base import BaseUncertaintyModel
 from uncertainty_flow.models import DeepQuantileNet, QuantileForestForecaster
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
@@ -304,3 +312,73 @@ class TestPersistenceFailures:
 
         with pytest.raises(ValueError, match="Model archive too large"):
             BaseUncertaintyModel.load(archive)
+
+
+class TestPersistenceHelpers:
+    """Direct tests for internal persistence helpers."""
+
+    def test_safe_version_known_package(self):
+        v = _safe_version("numpy")
+        assert v is not None
+        assert len(v) > 0
+
+    def test_safe_version_unknown_package(self):
+        assert _safe_version("non-existent-package-xyz") is None
+
+    def test_library_version_returns_string(self):
+        v = _library_version()
+        assert isinstance(v, str)
+        assert len(v) > 0
+
+    def test_compute_archive_sha256(self, tmp_path):
+        p = tmp_path / "test.bin"
+        p.write_bytes(b"hello")
+        h = compute_archive_sha256(p)
+        assert len(h) == 64
+        assert isinstance(h, str)
+
+    def test_target_names_from_targets_list(self):
+        model = types.SimpleNamespace(targets=["a", "b"])
+        assert _target_names(model) == ["a", "b"]
+
+    def test_target_names_from_target_col(self):
+        model = types.SimpleNamespace(targets=None, _target_col_="price")
+        assert _target_names(model) == ["price"]
+
+    def test_target_names_from_target(self):
+        model = types.SimpleNamespace(targets=None, target="sales")
+        assert _target_names(model) == ["sales"]
+
+    def test_target_names_returns_none(self):
+        model = types.SimpleNamespace()
+        assert _target_names(model) is None
+
+    def test_quantile_levels_from_attribute(self):
+        model = types.SimpleNamespace(quantile_levels=[0.1, 0.5, 0.9])
+        assert _quantile_levels(model) == [0.1, 0.5, 0.9]
+
+    def test_quantile_levels_default_quantiles(self):
+        model = types.SimpleNamespace(_quantiles_=True)
+        levels = _quantile_levels(model)
+        assert levels is not None
+        assert all(0 < q < 1 for q in levels)
+
+    def test_quantile_levels_returns_none(self):
+        model = types.SimpleNamespace()
+        assert _quantile_levels(model) is None
+
+    def test_warn_version_mismatches_no_warning(self, recwarn):
+        _warn_version_mismatches({"dependencies": {"numpy": _safe_version("numpy")}})
+        assert len(recwarn) == 0
+
+    def test_warn_version_mismatches_with_warning(self, recwarn):
+        _warn_version_mismatches({"dependencies": {"numpy": "0.0.1"}})
+        assert len(recwarn) >= 1
+
+    def test_warn_version_mismatches_unknown_dep_skipped(self, recwarn):
+        _warn_version_mismatches({"dependencies": {"unknown_lib": "1.0.0"}})
+        assert len(recwarn) == 0
+
+    def test_warn_version_mismatches_non_dict_deps_skipped(self, recwarn):
+        _warn_version_mismatches({"dependencies": None})
+        assert len(recwarn) == 0

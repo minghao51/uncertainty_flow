@@ -166,6 +166,27 @@ class DistributionPrediction:
 
         return pl.DataFrame(data, schema=columns, orient="row")
 
+    def interval_bounds(
+        self,
+        confidence: float,
+        target: str | None = None,
+    ) -> tuple[pl.Series, pl.Series]:
+        """Return (lower, upper) series for a prediction interval.
+
+        Args:
+            confidence: Confidence level (e.g., 0.9 for 90% interval).
+            target: Target column name (required for multivariate; defaults
+                to first target if *None*).
+
+        Returns:
+            Tuple of (lower, upper) Polars Series.
+        """
+        interval_df = self.interval(confidence)
+        if "lower" in interval_df.columns:
+            return interval_df["lower"], interval_df["upper"]
+        t = target or self._targets[0]
+        return interval_df[f"{t}_lower"], interval_df[f"{t}_upper"]
+
     def median(self) -> pl.Series | pl.DataFrame:
         """Return the 0.5 quantile as a point estimate."""
         median_idx = self._find_nearest_quantile_index(0.5)
@@ -460,14 +481,9 @@ class DistributionPrediction:
         rng = np.random.default_rng(random_state)
 
         if self._copula is not None and len(self._targets) > 1:
-            if n <= MAX_SAMPLE_CHUNK_SIZE:
-                return self._sample_joint_chunk(n, rng)
-            return self._sample_joint_chunked(n, rng)
+            return self._sample_in_chunks(n, rng, self._sample_joint_chunk)
 
-        if n <= MAX_SAMPLE_CHUNK_SIZE:
-            return self._sample_chunk(n, rng)
-
-        return self._sample_chunked(n, rng)
+        return self._sample_in_chunks(n, rng, self._sample_chunk)
 
     def _marginal_quantiles(self) -> np.ndarray:
         """Reshape the flat quantile matrix into [row, target, quantile]."""
@@ -496,17 +512,20 @@ class DistributionPrediction:
         result.insert_column(0, pl.Series("sample_id", sample_ids))
         return result
 
-    def _sample_joint_chunked(
+    def _sample_in_chunks(
         self,
         n: int,
         rng: np.random.Generator,
+        chunk_fn,
     ) -> pl.DataFrame:
-        """Sample jointly in chunks — delegates to _sample_joint_chunk."""
+        """Generic chunked sampling — delegates to *chunk_fn* per chunk."""
+        if n <= MAX_SAMPLE_CHUNK_SIZE:
+            return chunk_fn(n, rng)
         chunks = []
         remaining = n
         while remaining > 0:
             chunk_size = min(remaining, MAX_SAMPLE_CHUNK_SIZE)
-            chunks.append(self._sample_joint_chunk(chunk_size, rng))
+            chunks.append(chunk_fn(chunk_size, rng))
             remaining -= chunk_size
         return pl.concat(chunks)
 
@@ -532,20 +551,6 @@ class DistributionPrediction:
         result = pl.DataFrame(sample_matrix, schema=self._targets, orient="row")
         result.insert_column(0, pl.Series("sample_id", sample_ids))
         return result
-
-    def _sample_chunked(
-        self,
-        n: int,
-        rng: np.random.Generator,
-    ) -> pl.DataFrame:
-        """Sample with chunking for large n values — delegates to _sample_chunk."""
-        chunks = []
-        remaining = n
-        while remaining > 0:
-            chunk_size = min(remaining, MAX_SAMPLE_CHUNK_SIZE)
-            chunks.append(self._sample_chunk(chunk_size, rng))
-            remaining -= chunk_size
-        return pl.concat(chunks)
 
     @staticmethod
     def _vectorized_inverse_cdf(

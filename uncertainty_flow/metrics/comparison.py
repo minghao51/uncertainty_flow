@@ -42,18 +42,13 @@ def _extract_errors(
             return float(y_by_target[i, 0])
         return float(y_by_target[i, t_idx])
 
-    if metric == "mae":
+    if metric in ("mae", "rmse"):
         median = pred.median()
         y_pred = median.to_numpy() if hasattr(median, "to_numpy") else np.asarray(median)
         if y_pred.ndim == 1:
             y_pred = y_pred[:, None]
-        return np.mean(np.abs(y_by_target - y_pred), axis=1)
-
-    if metric == "rmse":
-        median = pred.median()
-        y_pred = median.to_numpy() if hasattr(median, "to_numpy") else np.asarray(median)
-        if y_pred.ndim == 1:
-            y_pred = y_pred[:, None]
+        if metric == "mae":
+            return np.mean(np.abs(y_by_target - y_pred), axis=1)
         return np.mean((y_by_target - y_pred) ** 2, axis=1)
 
     if metric == "crps":
@@ -178,26 +173,13 @@ def diebold_mariano_test(
             f"error arrays must have same length, got {len(errors_a)} vs {len(errors_b)}"
         )
 
-    n = len(errors_a)
-    d = errors_a - errors_b
-    mean_d = float(np.mean(d))
-    var_d = float(np.var(d, ddof=1))
-
-    if var_d <= 0 or n < 2:
-        dm_stat = 0.0
-        p_value = 1.0
-    else:
-        dm_stat = mean_d / np.sqrt(var_d / n)
-        if one_sided:
-            p_value = 1.0 - float(norm.cdf(dm_stat))
-        else:
-            p_value = 2.0 * (1.0 - float(norm.cdf(abs(dm_stat))))
+    dm_stat, p_value = _dm_statistic(errors_a, errors_b, one_sided=one_sided)
 
     alpha = 0.05
     reject = p_value < alpha
 
     if reject:
-        better = "A" if mean_d < 0 else "B"
+        better = "A" if float(np.mean(errors_a - errors_b)) < 0 else "B"
     else:
         better = "tie"
 
@@ -211,6 +193,29 @@ def diebold_mariano_test(
             }
         ]
     )
+
+
+def _dm_statistic(
+    errors_a: np.ndarray,
+    errors_b: np.ndarray,
+    one_sided: bool = True,
+) -> tuple[float, float]:
+    """Compute DM test statistic and p-value."""
+    d = np.asarray(errors_a, dtype=float).ravel() - np.asarray(errors_b, dtype=float).ravel()
+    n = len(d)
+    mean_d = float(np.mean(d))
+    var_d = float(np.var(d, ddof=1))
+
+    if var_d <= 0 or n < 2:
+        return 0.0, 1.0
+
+    dm_stat = mean_d / np.sqrt(var_d / n)
+    if one_sided:
+        p_value = 1.0 - float(norm.cdf(dm_stat))
+    else:
+        p_value = 2.0 * (1.0 - float(norm.cdf(abs(dm_stat))))
+
+    return dm_stat, p_value
 
 
 def model_confidence_set(
@@ -271,21 +276,11 @@ def model_confidence_set(
         for i in range(len(surv_list)):
             for j in range(i + 1, len(surv_list)):
                 a, b = surv_list[i], surv_list[j]
-                err_a = errors[a]
-                err_b = errors[b]
 
-                d = err_a - err_b
-                n = len(d)
-                mean_d = float(np.mean(d))
-                var_d = float(np.var(d, ddof=1))
-
-                if var_d <= 0 or n < 2:
-                    continue
-
-                dm_stat = mean_d / np.sqrt(var_d / n)
-                p_value = 2.0 * (1.0 - float(norm.cdf(abs(dm_stat))))
+                _, p_value = _dm_statistic(errors[a], errors[b], one_sided=False)
 
                 if p_value < corrected_alpha:
+                    mean_d = float(np.mean(errors[a] - errors[b]))
                     if mean_d > 0:
                         eliminations.add(a)
                     else:

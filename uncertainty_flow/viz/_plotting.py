@@ -116,7 +116,7 @@ def _plot_quantile_fan(
         elif isinstance(actuals, pl.Series):
             actuals_series = actuals
         else:
-            actuals_series = actuals
+            actuals_series = pl.Series(actuals)
         ax.plot(
             to_numpy_series(actuals_series)[plot_indices],
             label="Actuals",

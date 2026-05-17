@@ -95,3 +95,9 @@ def as_numpy(*arrays: pl.Series | np.ndarray) -> tuple[np.ndarray, ...]:
         to_numpy_series(a) if isinstance(a, pl.Series) else np.asarray(a, dtype=np.float64)
         for a in arrays
     )
+
+
+def validate_bounds(lower: np.ndarray, upper: np.ndarray) -> None:
+    """Raise InvalidDataError if any lower bound exceeds its upper bound."""
+    if np.any(lower > upper):
+        raise InvalidDataError("lower bound must be <= upper bound")

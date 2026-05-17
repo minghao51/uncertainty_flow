@@ -7,6 +7,23 @@ import warnings
 import numpy as np
 
 
+def _coerce_inputs(
+    y_true: np.ndarray,
+    quantile_matrix: np.ndarray,
+    quantile_levels: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    return (
+        np.asarray(y_true, dtype=np.float64),
+        np.asarray(quantile_matrix, dtype=np.float64),
+        np.asarray(quantile_levels, dtype=np.float64),
+    )
+
+
+def _mean_finite_log(log_densities: np.ndarray) -> float:
+    finite_mask = np.isfinite(log_densities)
+    return float(np.mean(log_densities[finite_mask])) if np.any(finite_mask) else -np.inf
+
+
 def log_score(
     y_true: np.ndarray,
     quantile_matrix: np.ndarray,
@@ -33,9 +50,9 @@ def log_score(
     Returns:
         Mean log-score (float). Higher is better.
     """
-    y_true = np.asarray(y_true, dtype=np.float64)
-    quantile_matrix = np.asarray(quantile_matrix, dtype=np.float64)
-    quantile_levels = np.asarray(quantile_levels, dtype=np.float64)
+    y_true, quantile_matrix, quantile_levels = _coerce_inputs(
+        y_true, quantile_matrix, quantile_levels
+    )
 
     from ..core.parametric import fit_parametric
 
@@ -61,7 +78,7 @@ def log_score(
             stacklevel=2,
         )
 
-    return float(np.mean(log_densities[finite_mask])) if np.any(finite_mask) else -np.inf
+    return _mean_finite_log(log_densities)
 
 
 def log_score_pooled(
@@ -75,9 +92,9 @@ def log_score_pooled(
 
     This helper keeps the previous behavior for backward comparisons.
     """
-    y_true = np.asarray(y_true, dtype=np.float64)
-    quantile_matrix = np.asarray(quantile_matrix, dtype=np.float64)
-    quantile_levels = np.asarray(quantile_levels, dtype=np.float64)
+    y_true, quantile_matrix, quantile_levels = _coerce_inputs(
+        y_true, quantile_matrix, quantile_levels
+    )
 
     from ..core.parametric import fit_parametric
 
@@ -85,8 +102,7 @@ def log_score_pooled(
     dist = fit_parametric(mean_qv, quantile_levels, family=family)
     log_densities = dist.logpdf(y_true)
 
-    finite_mask = np.isfinite(log_densities)
-    return float(np.mean(log_densities[finite_mask])) if np.any(finite_mask) else -np.inf
+    return _mean_finite_log(log_densities)
 
 
 def log_score_kde(
@@ -114,9 +130,9 @@ def log_score_kde(
     """
     from scipy.stats import gaussian_kde
 
-    y_true = np.asarray(y_true, dtype=np.float64)
-    quantile_matrix = np.asarray(quantile_matrix, dtype=np.float64)
-    quantile_levels = np.asarray(quantile_levels, dtype=np.float64)
+    y_true, quantile_matrix, quantile_levels = _coerce_inputs(
+        y_true, quantile_matrix, quantile_levels
+    )
 
     rng = np.random.default_rng(random_state)
     n = len(y_true)
@@ -134,5 +150,4 @@ def log_score_kde(
         except (np.linalg.LinAlgError, ValueError):
             log_densities[i] = -np.inf
 
-    finite_mask = np.isfinite(log_densities)
-    return float(np.mean(log_densities[finite_mask])) if np.any(finite_mask) else -np.inf
+    return _mean_finite_log(log_densities)

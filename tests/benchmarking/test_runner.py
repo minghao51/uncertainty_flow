@@ -129,6 +129,8 @@ class TestBenchmarkRunner:
             data = json.load(handle)
         assert "metadata" in data
         assert "results" in data
+        assert "models" in data
+        assert data["models"] == data["results"]
         assert "test_split_type" in data["results"][0]
         assert "validation_split_type" in data["results"][0]
 

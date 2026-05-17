@@ -7,8 +7,6 @@ then remap predictions at inference time.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import numpy as np
 import polars as pl
 from sklearn.isotonic import IsotonicRegression
@@ -18,9 +16,6 @@ from ..core.distribution import DistributionPrediction
 from ..core.types import PolarsInput, TargetSpec
 from ..utils.exceptions import ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy_series
-
-if TYPE_CHECKING:
-    pass
 
 
 class RecalibratedModel(BaseUncertaintyModel):

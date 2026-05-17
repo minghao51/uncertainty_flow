@@ -402,6 +402,34 @@ class TestAdaptiveConformalForecaster:
         aci.update(np.array([5.0]))
         assert aci.current_alpha > 0
 
+    def test_propagate_alpha_returns_constant(self):
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+        )
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        result = aci._propagate_alpha(5)
+        assert result == [0.1, 0.1, 0.1, 0.1, 0.1]
+
+    def test_current_alpha_property(self):
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+        )
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.15, gamma=0.01)
+        assert aci.current_alpha == 0.15
+
+    def test_update_without_predict_multivariate_raises(self):
+        base = ConformalRegressor(
+            base_model=LinearRegression(),
+            auto_tune=False,
+        )
+        base.fit(self._make_data(n=100), target="y")
+        aci = AdaptiveConformalForecaster(model=base, alpha=0.1, gamma=0.01)
+        aci.fit(self._make_data(n=100, rng_seed=99), target="y")
+        with pytest.raises(RuntimeError, match="predict\\(\\) first"):
+            aci.update(5.0)
+
     def test_update_batch_with_polars_series(self):
         df = self._make_data(n=100)
         train = df[:70]
