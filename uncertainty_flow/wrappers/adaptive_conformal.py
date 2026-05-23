@@ -28,11 +28,12 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
 
     The adaptive rule (Gibbs & Candes 2021):
 
-        alpha_{t+1} = alpha_t + gamma * (alpha_t - 1(|y_t - yhat_t| > q_{1-alpha_t}))
+        alpha_{t+1} = alpha_t + gamma * (alpha - 1(|y_t - yhat_t| > q_{1-alpha_t}))
 
-    If recent coverage is too low (errors exceed intervals), alpha grows,
-    widening intervals. If coverage is too high, alpha shrinks, narrowing
-    intervals.
+    where ``alpha`` is the *fixed* target miscoverage level. If recent
+    coverage is too low (errors exceed intervals), alpha_t decreases,
+    widening intervals. If coverage is too high, alpha_t increases,
+    narrowing intervals.
 
     Examples:
         >>> from sklearn.ensemble import GradientBoostingRegressor
@@ -261,10 +262,13 @@ class AdaptiveConformalForecaster(BaseUncertaintyModel):
         q_value = self._last_q_value if self._last_q_value is not None else 0.0
         exceeded = 1.0 if new_score > q_value else 0.0
 
-        self._alpha_t = self._alpha_t + self.gamma * (self._alpha_t - exceeded)
+        self._alpha_t = self._alpha_t + self.gamma * (self._initial_alpha - exceeded)
         self._alpha_t = max(1e-6, min(self._alpha_t, 1.0 - 1e-6))
 
         self._scores.append(new_score)
+        max_scores = 1000
+        if len(self._scores) > max_scores:
+            self._scores = self._scores[-max_scores:]
 
     def update_batch(self, y_true: pl.Series | np.ndarray) -> None:
         """

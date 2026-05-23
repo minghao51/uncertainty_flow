@@ -11,6 +11,8 @@ sequential score updates after each observation (similar to ACI).
 
 from __future__ import annotations
 
+import logging
+
 import numpy as np
 from sklearn.base import BaseEstimator, clone
 
@@ -19,6 +21,8 @@ from ..core.distribution import DistributionPrediction
 from ..core.types import DEFAULT_QUANTILES, PolarsInput, TargetSpec
 from ..utils.exceptions import ConfigurationError, ModelNotFittedError
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
+
+_logger = logging.getLogger(__name__)
 
 
 class EnsembleBootstrapPI(BaseUncertaintyModel):
@@ -112,6 +116,7 @@ class EnsembleBootstrapPI(BaseUncertaintyModel):
 
         rng = np.random.default_rng(self.random_state)
         self._models = []
+        bootstrap_indices: list[np.ndarray] = []
 
         for i in range(self.n_estimators):
             boot_idx = rng.integers(0, n, size=subsample_size)
@@ -124,10 +129,37 @@ class EnsembleBootstrapPI(BaseUncertaintyModel):
                 model.set_params(random_state=seed)
             model.fit(x_boot, y_boot)
             self._models.append(model)
+            bootstrap_indices.append(boot_idx)
 
-        calib_preds = np.mean([m.predict(x_all) for m in self._models], axis=0)
-        residuals = np.abs(y_all - calib_preds)
-        self._scores = residuals.tolist()
+        oob_preds = np.full(n, np.nan)
+        oob_counts = np.zeros(n)
+        for i, model in enumerate(self._models):
+            in_bag = np.unique(bootstrap_indices[i])
+            oob_mask = np.ones(n, dtype=bool)
+            oob_mask[in_bag] = False
+            if not oob_mask.any():
+                continue
+            preds = model.predict(x_all[oob_mask])
+            oob_preds[oob_mask] = np.where(
+                np.isnan(oob_preds[oob_mask]), preds, oob_preds[oob_mask] + preds
+            )
+            oob_counts[oob_mask] += 1
+
+        valid = oob_counts > 0
+        if valid.any():
+            oob_avg = oob_preds.copy()
+            oob_avg[valid] = oob_preds[valid] / oob_counts[valid]
+            residuals = np.abs(y_all[valid] - oob_avg[valid])
+            self._scores = residuals.tolist()
+        else:
+            _logger.warning(
+                "No out-of-bag samples available for ENBPI calibration. "
+                "Falling back to in-bag residuals. Consider increasing "
+                "n_estimators or decreasing subsample_size for better OOB coverage."
+            )
+            calib_preds = np.mean([m.predict(x_all) for m in self._models], axis=0)
+            residuals = np.abs(y_all - calib_preds)
+            self._scores = residuals.tolist()
         self._quantile_levels_ = np.asarray(list(DEFAULT_QUANTILES), dtype=float)
 
         self._fitted = True
@@ -200,3 +232,7 @@ class EnsembleBootstrapPI(BaseUncertaintyModel):
         for i in range(len(y_arr)):
             residual = abs(float(y_arr[i]) - float(self._last_preds[i]))
             self._scores.append(residual)
+
+        max_scores = 1000
+        if len(self._scores) > max_scores:
+            self._scores = self._scores[-max_scores:]
