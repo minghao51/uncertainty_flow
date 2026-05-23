@@ -197,10 +197,6 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         intercepts = np.array([self._head_intercepts_[q] for q in self.quantile_levels])
         return coef_matrix, intercepts
 
-    def _predict_backend_raw(self, trunk_features: np.ndarray) -> np.ndarray:
-        coef_matrix, intercepts = self._build_coef_matrix()
-        return trunk_features @ coef_matrix + intercepts
-
     def _predict_backend(self, x: np.ndarray) -> np.ndarray:
         trunk_features = self._extract_trunk_features(x)
         coef_matrix, intercepts = self._build_coef_matrix()

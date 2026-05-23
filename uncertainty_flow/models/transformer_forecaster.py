@@ -232,22 +232,20 @@ class TransformerForecaster(BaseUncertaintyModel):
         )
 
         n_quantiles = len(DEFAULT_QUANTILES)
-        quantile_matrix = np.zeros((1, n_quantiles))
+        quantile_matrix = np.zeros((steps, n_quantiles))
 
         for i, q in enumerate(DEFAULT_QUANTILES):
             col_name = str(q) if q in quantile_levels else None
             if col_name and col_name in forecast_df.columns:
-                values = forecast_df[col_name].to_numpy()
-                quantile_matrix[0, i] = np.median(values) if len(values) > 1 else values[0]
+                quantile_matrix[:, i] = forecast_df[col_name].to_numpy()[:steps]
             else:
                 nearest = min(quantile_levels, key=lambda x: abs(x - q))
-                values = forecast_df[str(nearest)].to_numpy()
-                quantile_matrix[0, i] = np.median(values) if len(values) > 1 else values[0]
+                quantile_matrix[:, i] = forecast_df[str(nearest)].to_numpy()[:steps]
 
         if self._quantiles_ is None:
             raise ModelNotFittedError("TransformerForecaster")
-        for i, q in enumerate(self._quantiles_):
-            quantile_matrix[0, i] = quantile_matrix[0, i] + q
+        for i in range(n_quantiles):
+            quantile_matrix[:, i] += self._quantiles_[i]
 
         return DistributionPrediction(
             quantile_matrix=quantile_matrix,

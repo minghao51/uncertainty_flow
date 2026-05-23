@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import numpy as np
@@ -12,6 +13,8 @@ from torch.utils.data import DataLoader, TensorDataset
 from ..core.types import PolarsInput
 from ..utils.polars_bridge import materialize_lazyframe, to_numpy
 from .base_quantile import BaseQuantileNeuralNet
+
+_logger = logging.getLogger(__name__)
 
 
 class QuantileNetTorch(nn.Module):
@@ -258,11 +261,14 @@ class DeepQuantileNetTorch(BaseQuantileNeuralNet):
                 train_losses.append(avg_loss)
 
                 if self.verbose and (epoch + 1) % 10 == 0:
-                    msg = (
-                        f"  Estimator {estimator_idx + 1}/{self.n_estimators}, "
-                        f"Epoch {epoch + 1}/{self.epochs}, Loss: {avg_loss:.4f}"
+                    _logger.info(
+                        "  Estimator %d/%d, Epoch %d/%d, Loss: %.4f",
+                        estimator_idx + 1,
+                        self.n_estimators,
+                        epoch + 1,
+                        self.epochs,
+                        avg_loss,
                     )
-                    print(msg)
 
             self._models.append(model)
             self._train_losses_.append(train_losses)
