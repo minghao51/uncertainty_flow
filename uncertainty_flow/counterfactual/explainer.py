@@ -258,7 +258,7 @@ class UncertaintyExplainer:
         """
         results = []
         for i in range(data.height):
-            row = data[i]
+            row = data.slice(i, 1)
             result = self._searcher.search(
                 row,
                 target_reduction=target_reduction,

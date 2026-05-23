@@ -156,7 +156,6 @@ class EvolutionarySearch:
         self.elitism_count = elitism_count
         self.random_state = random_state
         self._rng = np.random.default_rng(random_state)
-        self._max_effective_generations = 25
 
     def search(
         self,
@@ -216,8 +215,7 @@ class EvolutionarySearch:
         best_fitness = float("inf")
         best_width = original_width
 
-        n_generations = min(self.n_generations, self._max_effective_generations)
-        for generation in range(n_generations):
+        for generation in range(self.n_generations):
             # Evaluate fitness
             fitness_values, widths = self._evaluate_population(
                 population, data, target_width, original_width
@@ -490,7 +488,6 @@ class GradientSearch:
         self.tolerance = tolerance
         self.random_state = random_state
         self._rng = np.random.default_rng(random_state)
-        self._max_effective_iterations = 100
 
     def search(
         self,
@@ -551,8 +548,7 @@ class GradientSearch:
         # Gradient descent
         original_numpy = data.to_numpy().flatten()
 
-        n_iterations = min(self.n_iterations, self._max_effective_iterations)
-        for iteration in range(n_iterations):
+        for iteration in range(self.n_iterations):
             # Compute finite-difference gradient
             gradient = self._compute_gradient(
                 cf_features, data, target_width, original_width, fixed_features
@@ -566,14 +562,13 @@ class GradientSearch:
                 if col in fixed_features:
                     change[i] = 0
                 else:
-                    # Proximal operator for L1
-                    if abs(change[i]) < self.l1_penalty:
-                        change[i] = 0
-                    else:
-                        change[i] -= self.l1_penalty * np.sign(change[i])
+                    # Proximal operator for L1 (soft-thresholding)
+                    change[i] = np.sign(change[i]) * max(
+                        abs(change[i]) - self.learning_rate * self.l1_penalty, 0.0
+                    )
 
-                    # L2 shrinkage
-                    change[i] *= 1 - self.l2_penalty
+                    # L2 shrinkage (proximal)
+                    change[i] /= 1 + self.learning_rate * self.l2_penalty
 
             # Update features
             cf_features_new = cf_features + change
@@ -727,8 +722,7 @@ class GradientSearch:
             cf_features, data, target_width, original_width, fixed_features
         )
 
-        n_iterations = min(self.n_iterations, self._max_effective_iterations)
-        for iteration in range(n_iterations):
+        for iteration in range(self.n_iterations):
             improved = False
 
             for i, col in enumerate(data.columns):
