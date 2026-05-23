@@ -382,3 +382,107 @@ class TestPersistenceHelpers:
     def test_warn_version_mismatches_non_dict_deps_skipped(self, recwarn):
         _warn_version_mismatches({"dependencies": None})
         assert len(recwarn) == 0
+
+
+class TestHMACSigning:
+    """Tests for HMAC-SHA256 signing and verification."""
+
+    def test_hmac_not_stored_by_default(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "default.uf"
+        model.save(archive)
+
+        loaded = BaseUncertaintyModel.load(archive)
+        assert "model_payload_hmac" not in loaded.metadata
+        assert "model_payload_sha256" in loaded.metadata
+
+    def test_hmac_stored_when_enabled_with_key(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "signed.uf"
+        key = b"test-secret-key-32-bytes-long!!!!!"
+
+        from uncertainty_flow.core._persistence import save_model_archive
+
+        meta = save_model_archive(model, archive, hmac_sign=True, signing_key=key)
+        assert "model_payload_hmac" in meta
+
+    def test_hmac_requires_explicit_key(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "no_key.uf"
+
+        from uncertainty_flow.core._persistence import save_model_archive
+
+        with pytest.raises(ValueError, match="hmac_sign=True requires an explicit signing_key"):
+            save_model_archive(model, archive, hmac_sign=True, signing_key=None)
+
+    def test_tampered_payload_rejected_with_hmac_key(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "tampered_hmac.uf"
+        key = b"test-secret-key-32-bytes-long!!!!!"
+
+        from uncertainty_flow.core._persistence import load_model_archive, save_model_archive
+
+        save_model_archive(model, archive, hmac_sign=True, signing_key=key)
+
+        with zipfile.ZipFile(archive) as zf:
+            meta = json.loads(zf.read("metadata.json"))
+        meta.pop("model_payload_sha256", None)
+
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("model.pkl", b"tampered-payload")
+            zf.writestr("metadata.json", json.dumps(meta))
+
+        with pytest.raises(ValueError, match="HMAC signature verification failed"):
+            load_model_archive(archive, signing_key=key)
+
+    def test_load_warns_when_key_provided_but_no_hmac(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "no_hmac.uf"
+        model.save(archive)
+
+        from uncertainty_flow.core._persistence import load_model_archive
+
+        with pytest.warns(UserWarning, match="no HMAC signature"):
+            load_model_archive(archive, signing_key=b"some-key")
+
+    def test_valid_hmac_loads_successfully(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "valid_hmac.uf"
+        key = b"test-secret-key-32-bytes-long!!!!!"
+
+        from uncertainty_flow.core._persistence import load_model_archive, save_model_archive
+
+        save_model_archive(model, archive, hmac_sign=True, signing_key=key)
+        loaded, meta = load_model_archive(archive, signing_key=key)
+        assert "model_payload_hmac" in meta
+        assert loaded.metadata is not None or hasattr(loaded, "_metadata")

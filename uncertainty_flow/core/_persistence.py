@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import io
 import json
-import pickle
+import os
+import pickle  # nosec B403
 import platform
+import tempfile
 import warnings
 import zipfile
 from datetime import datetime, timezone
@@ -142,8 +145,22 @@ def save_model_archive(
     model: Any,
     path: str | Path,
     include_metadata: bool = True,
+    hmac_sign: bool = False,
+    signing_key: bytes | None = None,
 ) -> dict[str, Any]:
-    """Persist a model and metadata into a .uf archive."""
+    """Persist a model and metadata into a .uf archive.
+
+    Args:
+        model: Fitted model to persist.
+        path: Destination path for the .uf archive.
+        include_metadata: Whether to include extended metadata.
+        hmac_sign: If True, compute HMAC-SHA256 over model payload.
+            Requires an explicit ``signing_key``; raises ValueError if missing.
+        signing_key: Secret key for HMAC signing. Required when ``hmac_sign=True``.
+
+    Returns:
+        Metadata dict written to the archive.
+    """
     archive_path = Path(path)
     archive_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -152,9 +169,27 @@ def save_model_archive(
     if include_metadata:
         metadata_dict["model_payload_sha256"] = _sha256_hex(model_bytes)
 
-    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(MODEL_PAYLOAD_NAME, model_bytes)
-        archive.writestr(METADATA_PAYLOAD_NAME, json.dumps(metadata_dict, indent=2, sort_keys=True))
+    if hmac_sign and include_metadata:
+        if signing_key is None:
+            raise ValueError("hmac_sign=True requires an explicit signing_key")
+        sig = hmac.new(signing_key, model_bytes, hashlib.sha256).hexdigest()
+        metadata_dict["model_payload_hmac"] = sig
+
+    metadata_json = json.dumps(metadata_dict, indent=2, sort_keys=True)
+
+    fd, tmp_path = tempfile.mkstemp(suffix=".uf", dir=archive_path.parent)
+    try:
+        with os.fdopen(fd, "wb") as tmp_file:
+            with zipfile.ZipFile(tmp_file, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+                archive.writestr(MODEL_PAYLOAD_NAME, model_bytes)
+                archive.writestr(METADATA_PAYLOAD_NAME, metadata_json)
+        os.replace(tmp_path, archive_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     return metadata_dict
 
@@ -183,6 +218,8 @@ def load_model_archive(
     path: str | Path,
     *,
     expected_archive_sha256: str | None = None,
+    signing_key: bytes | None = None,
+    verify_hmac: bool = True,
 ) -> tuple[Any, dict[str, Any]]:
     """Load a model and metadata from a .uf archive."""
     archive_path = Path(path)
@@ -246,8 +283,24 @@ def load_model_archive(
                 "The archive may be corrupted or tampered with."
             )
 
+    stored_hmac = metadata_dict.get("model_payload_hmac")
+    if stored_hmac is not None and signing_key is not None:
+        expected_hmac = hmac.new(signing_key, model_payload, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected_hmac, str(stored_hmac)):
+            raise ValueError(
+                "Invalid model archive: HMAC signature verification failed. "
+                "The archive may have been tampered with."
+            )
+    elif stored_hmac is None and signing_key is not None:
+        warnings.warn(
+            "Archive has no HMAC signature but a signing_key was provided. "
+            "The archive may have been created without HMAC signing.",
+            UserWarning,
+            stacklevel=2,
+        )
+
     try:
-        model = pickle.load(io.BytesIO(model_payload))
+        model = pickle.load(io.BytesIO(model_payload))  # nosec B301
     except (pickle.PickleError, AttributeError, ImportError, EOFError) as exc:
         raise ValueError("Invalid model archive: failed to deserialize model payload.") from exc
 
