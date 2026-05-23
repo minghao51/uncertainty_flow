@@ -194,6 +194,24 @@ class TestDieboldMarianoEdgeCases:
         assert result["result"][0] == "reject"
         assert result["better_model"][0] == "A"
 
+    def test_one_sided_p_value_rejects_when_a_better(self, predictions):
+        pred_a, _, y_arr = predictions
+        err_a = np.abs(y_arr - pred_a.median().to_numpy().ravel())
+        rng = np.random.default_rng(42)
+        err_b = err_a + rng.uniform(5, 15, size=len(err_a))
+        result = diebold_mariano_test(err_a, err_b, one_sided=True)
+        assert result["p_value"][0] < 0.05
+        assert result["result"][0] == "reject"
+        assert result["better_model"][0] == "A"
+
+    def test_one_sided_p_value_large_when_a_worse(self, predictions):
+        pred_a, _, y_arr = predictions
+        err_a = np.abs(y_arr - pred_a.median().to_numpy().ravel())
+        rng = np.random.default_rng(42)
+        err_b = np.maximum(err_a - rng.uniform(0.01, 1.0, size=len(err_a)), 0.0)
+        result = diebold_mariano_test(err_a, err_b, one_sided=True)
+        assert result["p_value"][0] > 0.5
+
 
 class TestModelConfidenceSetEdgeCases:
     def test_three_models_with_elimination(self, predictions):

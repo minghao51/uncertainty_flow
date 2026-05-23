@@ -7,7 +7,7 @@ import warnings
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import as_numpy
+from ..utils.polars_bridge import as_numpy, validate_bounds
 
 
 def crps_quantile(
@@ -99,6 +99,8 @@ def crps_score(
     from scipy.stats import norm
 
     y_true, lower, upper = as_numpy(y_true, lower, upper)
+
+    validate_bounds(lower, upper)
 
     alpha = 1 - confidence
     z = float(norm.ppf(1 - alpha / 2))

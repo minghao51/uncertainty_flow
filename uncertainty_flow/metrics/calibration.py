@@ -3,7 +3,7 @@
 import numpy as np
 import polars as pl
 
-from ..utils.polars_bridge import as_numpy
+from ..utils.polars_bridge import as_numpy, validate_bounds
 
 
 def calibration_error(
@@ -25,6 +25,8 @@ def calibration_error(
         Absolute calibration error (float). Lower is better. 0 = perfectly calibrated.
     """
     y_true, lower, upper = as_numpy(y_true, lower, upper)
+
+    validate_bounds(lower, upper)
 
     empirical_coverage = np.mean((y_true >= lower) & (y_true <= upper))
 

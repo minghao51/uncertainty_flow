@@ -211,7 +211,7 @@ def _dm_statistic(
 
     dm_stat = mean_d / np.sqrt(var_d / n)
     if one_sided:
-        p_value = 1.0 - float(norm.cdf(dm_stat))
+        p_value = float(norm.cdf(dm_stat))
     else:
         p_value = 2.0 * (1.0 - float(norm.cdf(abs(dm_stat))))
 
