@@ -105,7 +105,7 @@ class DistributionPrediction:
         Returns:
             Polars DataFrame with columns like "q_0.05" or "price_q_0.05" for multivariate
         """
-        if isinstance(q, (int, float)):
+        if isinstance(q, (int, float, np.integer, np.floating)):
             q = [q]
 
         indices = [self._find_nearest_quantile_index(level) for level in q]
@@ -247,7 +247,7 @@ class DistributionPrediction:
         y: np.ndarray,
     ) -> np.ndarray:
         """
-        Evaluate the piecewise-linear CDF at observed values.
+        Evaluate the piecewise-linear CDF at observed values (vectorized).
 
         Args:
             quantile_values: (n_samples, n_quantiles) predicted quantile values.
@@ -261,31 +261,42 @@ class DistributionPrediction:
         if k == 1:
             return np.where(y <= quantile_values[:, 0], levels[0], 1.0)
 
-        pit = np.empty(n)
-        for i in range(n):
-            qi = quantile_values[i]
-            yi = y[i]
-            if yi <= qi[0]:
-                if qi[0] == qi[1]:
-                    pit[i] = levels[0] * 0.5
-                else:
-                    frac = (yi - qi[0]) / (qi[1] - qi[0])
-                    pit[i] = max(levels[0] + frac * levels[0], 0.0)
-            elif yi >= qi[-1]:
-                if qi[-1] == qi[-2]:
-                    pit[i] = 1.0 - (1.0 - levels[-1]) * 0.5
-                else:
-                    frac = (yi - qi[-1]) / (qi[-1] - qi[-2])
-                    pit[i] = min(levels[-1] + frac * (1.0 - levels[-1]), 1.0)
-            else:
-                j = int(np.searchsorted(qi, yi, side="right")) - 1
-                j = max(0, min(j, k - 2))
-                denom = qi[j + 1] - qi[j]
-                if denom == 0:
-                    pit[i] = (levels[j] + levels[j + 1]) / 2.0
-                else:
-                    frac = (yi - qi[j]) / denom
-                    pit[i] = levels[j] + frac * (levels[j + 1] - levels[j])
+        j = np.array(
+            [np.searchsorted(quantile_values[i], y[i], side="right") - 1 for i in range(n)]
+        )
+        j = np.clip(j, 0, k - 2)
+
+        row_idx = np.arange(n)
+        q_j = quantile_values[row_idx, j]
+        q_j1 = quantile_values[row_idx, j + 1]
+        denom = q_j1 - q_j
+        zero_denom = denom == 0
+        denom[zero_denom] = 1.0
+        frac = (y - q_j) / denom
+        pit = levels[j] + frac * (levels[j + 1] - levels[j])
+        pit[zero_denom] = (levels[j[zero_denom]] + levels[j[zero_denom] + 1]) / 2.0
+
+        below = y <= quantile_values[:, 0]
+        q0_eq_q1 = quantile_values[:, 0] == quantile_values[:, 1]
+        below_denom = np.where(q0_eq_q1, 1.0, quantile_values[:, 1] - quantile_values[:, 0])
+        below_frac = np.where(
+            q0_eq_q1,
+            levels[0] * 0.5,
+            levels[0] + ((y - quantile_values[:, 0]) / below_denom) * levels[0],
+        )
+        pit[below] = below_frac[below]
+
+        above = y >= quantile_values[:, -1]
+        above = above & ~below
+        qn_eq_qn1 = quantile_values[:, -1] == quantile_values[:, -2]
+        above_denom = np.where(qn_eq_qn1, 1.0, quantile_values[:, -1] - quantile_values[:, -2])
+        above_frac = np.where(
+            qn_eq_qn1,
+            1.0 - (1.0 - levels[-1]) * 0.5,
+            levels[-1] + ((y - quantile_values[:, -1]) / above_denom) * (1.0 - levels[-1]),
+        )
+        pit[above] = above_frac[above]
+
         return np.clip(pit, 0.0, 1.0)
 
     def _pit_values(
@@ -468,7 +479,7 @@ class DistributionPrediction:
         Raises:
             InvalidDataError: If n is invalid or would exceed memory limits.
         """
-        if not isinstance(n, int) or n < 1:
+        if not isinstance(n, (int, np.integer)) or n < 1:
             raise InvalidDataError(f"n must be a positive integer, got {n}")
 
         total_samples = self._n_samples * n
