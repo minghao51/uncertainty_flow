@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 
-from uncertainty_flow.utils.exceptions import ConfigurationError, DataError
+from uncertainty_flow.utils.exceptions import RECOVERABLE_EXCEPTIONS, ConfigurationError, DataError
 
 DATASETS_DIR = Path(__file__).parent.parent.parent / "data"
 
@@ -623,7 +623,9 @@ def load_dataset(
 
         return df, ds_info
 
-    except Exception as e:
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except RECOVERABLE_EXCEPTIONS as e:
         raise DataError(
             f"Failed to load dataset '{name}': {e}. "
             "Make sure the dataset exists on HuggingFace and you have internet access."

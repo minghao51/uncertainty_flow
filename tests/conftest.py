@@ -29,6 +29,7 @@ _INTEGRATION_DIRS = {
 _INTEGRATION_ROOT_FILES = {
     "test_package_integration.py",
     "test_base_quantile.py",
+    "test_full_workflow.py",
 }
 
 _INTEGRATION_CORE_FILES = {
