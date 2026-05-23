@@ -219,6 +219,13 @@ class FeatureLeverageAnalyzer:
             raise InvalidDataError("Cannot analyze leverage on empty DataFrame")
 
         baseline_pred = self.model.predict(data)
+
+        if len(baseline_pred._targets) > 1:
+            raise InvalidDataError(
+                "Multi-target model detected. "
+                "Use analyze_multivariate() for per-target and joint leverage scores."
+            )
+
         baseline_width_matrix = _interval_width_matrix(baseline_pred, self.confidence)
         baseline_width = baseline_width_matrix[:, 0]
         n_repeats = self._effective_perturbation_count(data.height)

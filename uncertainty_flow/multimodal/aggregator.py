@@ -12,7 +12,6 @@ from ..utils.polars_bridge import materialize_lazyframe
 
 AGGREGATION_CAPABILITIES = {
     "product": "supported",
-    "copula": "reserved",
     "independent": "supported",
 }
 VALID_AGGREGATIONS = tuple(AGGREGATION_CAPABILITIES)
@@ -26,8 +25,7 @@ class CrossModalAggregator(BaseUncertaintyModel):
 
     Args:
         feature_groups: Mapping of group name to list of feature column names.
-        aggregation: Aggregation strategy - one of "product", "copula",
-            "independent".
+        aggregation: Aggregation strategy - one of "product", "independent".
         random_state: Random seed (forwarded to cloned models where supported).
 
     Examples:
@@ -158,13 +156,9 @@ class CrossModalAggregator(BaseUncertaintyModel):
         """Dispatch to the chosen aggregation strategy."""
         if self.aggregation == "product":
             return self._aggregate_product(group_preds)
-        elif self.aggregation == "copula":
-            raise NotImplementedError(
-                "aggregation='copula' is not implemented yet for CrossModalAggregator. "
-                "Use aggregation='product' or 'independent'."
-            )
-        else:  # independent
+        if self.aggregation == "independent":
             return self._aggregate_independent(group_preds)
+        raise ConfigurationError(f"Unknown aggregation: {self.aggregation}")
 
     @staticmethod
     def _aggregate_product(group_preds: dict[str, DistributionPrediction]) -> np.ndarray:

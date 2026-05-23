@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING, Callable
 
 import numpy as np
@@ -14,6 +15,8 @@ if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
     from ..core.distribution import DistributionPrediction
     from ..core.types import PolarsInput, TargetSpec
+
+logger = logging.getLogger(__name__)
 
 
 def _point_prediction_matrix(prediction: "DistributionPrediction") -> np.ndarray:
@@ -115,7 +118,10 @@ class EnsembleDecomposition:
                 try:
                     setattr(model, "random_state", bootstrap_seed)
                 except (AttributeError, TypeError):
-                    pass
+                    logger.debug(
+                        "Could not set random_state on model '%s' during bootstrap refit.",
+                        type(model).__name__,
+                    )
 
             if self.target is None:
                 model.fit(bootstrap_data)
