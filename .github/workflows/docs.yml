@@ -45,6 +45,15 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: uv run python scripts/generate_notebook_docs.py
 
+      - name: Render Quarto notebooks
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          if command -v quarto &>/dev/null; then
+            quarto render notebooks/
+          else
+            echo "Quarto not installed, skipping render"
+          fi
+
       - name: Build MkDocs
         if: steps.cache.outputs.cache-hit != 'true'
         run: uv run mkdocs build

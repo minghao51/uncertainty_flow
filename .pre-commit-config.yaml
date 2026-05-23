@@ -7,11 +7,14 @@ repos:
       - id: end-of-file-fixer
         exclude: ^(docs/notebooks/html/|notebooks/_freeze/)
       - id: check-yaml
-        exclude: mkdocs.yml
+      - id: check-toml
+      - id: check-json
+        exclude: ^docs/notebooks/html/
       - id: check-added-large-files
         args: ['--maxkb=1024']
         exclude: ^docs/notebooks/html/
       - id: check-merge-conflict
+      - id: detect-private-key
 
   - repo: https://github.com/astral-sh/uv-pre-commit
     rev: 0.6.14
