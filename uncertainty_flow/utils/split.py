@@ -436,8 +436,8 @@ def select_validation_plan(
         reason = "tabular task defaults to random holdout"
         if n_samples <= small_data_threshold:
             inner_splits = _build_kfold_splits(
-                data,
-                n_splits=min(cv_splits, max(2, n_samples // 20)),
+                outer_train,
+                n_splits=min(cv_splits, max(2, len(outer_train) // 20)),
                 random_state=random_state,
             )
             n_splits = len(inner_splits)

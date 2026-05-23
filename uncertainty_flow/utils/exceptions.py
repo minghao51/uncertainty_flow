@@ -66,3 +66,14 @@ class QuantileError(ConfigurationError):
 
 class UncertaintyFlowWarning(UserWarning):
     """Base warning class for uncertainty_flow."""
+
+
+RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+    UncertaintyFlowError,
+    OSError,
+    RuntimeError,
+    ValueError,
+    TypeError,
+    KeyError,
+    ImportError,
+)
