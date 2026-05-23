@@ -16,8 +16,29 @@ This notebook is a **model selection guide** backed by benchmark data.
 
 1. **Model Reference** — every model, its method, coverage guarantee, and use case
 2. **Key Findings** — data-driven insights from real benchmarks
-3. **Running Benchmarks** — Python API and CLI
-4. **Visual Comparison** — coverage vs sharpness across datasets
+3. **Benchmark Architecture** — Module / Interface / Seam layout
+4. **Running Benchmarks** — Python API and CLI
+5. **Visual Comparison** — coverage vs sharpness across datasets
+
+## Benchmark Architecture (Module / Interface / Seam)
+
+The benchmarking package uses explicit module seams:
+
+- **Orchestration Module**: `BenchmarkFlow` in `uncertainty_flow/benchmarking/flow.py`
+- **Model Provider Interface Seam**: `BenchmarkModelProvider` in `providers.py`
+- **Dataset Adapter Seam**: `load_dataset` in `datasets.py`
+- **Tuning Adapter Seam**: `auto_tune_model` in `tuning.py`
+- **Evaluation Adapter Seam**: metric evaluation to `ModelResult` in `flow.py` + `results.py`
+- **Result Sink Adapter Seam**: serialization/output policy in `ResultSink` (`sinks.py`)
+
+Benchmark lifecycle per run:
+
+1. `load`
+2. `split`
+3. `tune-per-run-context`
+4. `fit/predict`
+5. `evaluate`
+6. `sink`
 
 ## Model Reference
 
@@ -163,25 +184,28 @@ plt.show()
 ```{python}
 #| label: python-api
 #| eval: false
-from uncertainty_flow.benchmarking import BenchmarkRunner, BenchmarkConfig
-from uncertainty_flow import ConformalRegressor, QuantileForestForecaster
-from sklearn.ensemble import GradientBoostingRegressor
+from uncertainty_flow.benchmarking import BenchmarkConfig, BenchmarkRunner
 
 config = BenchmarkConfig(
-    models={
-        "conformal-gb": lambda: ConformalRegressor(
-            base_model=GradientBoostingRegressor(random_state=42),
-        ),
-        "qrf": lambda: QuantileForestForecaster(random_state=42),
-    },
-    datasets=["weather", "electricity"],
-    n_obs=1000,
+    dataset_name="weather",
+    n_samples=1000,
     horizon=3,
+    auto_tune=True,
 )
 
 runner = BenchmarkRunner(config)
-results = runner.run()
-results.save("my_benchmark.json")
+result = runner.run_all(
+    model_names=[
+        "quantile-forest",
+        "conformal-regressor",
+        "conformal-forecaster",
+    ]
+)
+
+as_dict = runner.to_dict()
+print(as_dict.keys())  # dataset, metadata, errors, results
+runner.save_json("my_benchmark.json")
+runner.save_csv("my_benchmark.csv")
 ```
 
 ### CLI
@@ -197,6 +221,23 @@ uf list-datasets
 
 uf auto-tune --model quantile-forest --dataset weather
 ```
+
+### Output Schema (`ResultSink.to_dict()`)
+
+```json
+{
+  "dataset": "weather",
+  "metadata": {},
+  "errors": [],
+  "results": []
+}
+```
+
+### Extending Benchmarks
+
+- Stable built-in benchmark names remain: `quantile-forest`, `conformal-regressor`, `conformal-forecaster`
+- Prefer the provider seam (`providers.py`) when adding benchmark models
+- Use legacy class registry path (`runner.py`) only for compatibility with older extensions
 
 ## Recommendations
 
@@ -214,5 +255,5 @@ uf auto-tune --model quantile-forest --dataset weather
 
 - **Start with `ConformalRegressor`** — guaranteed coverage with any sklearn model
 - **Benchmark on your own data** — results vary by dataset; no single best model
-- **Use `BenchmarkRunner`** for systematic comparison across models and datasets
+- **Use `BenchmarkFlow` lifecycle vocabulary** when extending orchestration and adapters
 - **Coverage ≠ quality** — also look at Winkler score (sharpness) and CRPS

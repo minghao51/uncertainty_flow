@@ -15,6 +15,7 @@ uv run python benchmarks/run_benchmarks.py -d weather -n 500 --iterations 5
 
 # Generate a report from saved results
 uv run python benchmarks/generate_report.py --output results/report.md
+```
 
 ---
 
@@ -58,6 +59,17 @@ uv run python -m uncertainty_flow.cli list-datasets --domain Climate
 ---
 
 ## CLI Commands
+
+Benchmark orchestration is implemented by the `BenchmarkFlow` module and exposed publicly through `BenchmarkRunner` and the CLI.
+
+Flow lifecycle per run:
+
+1. `load` dataset
+2. `split` into tune/train/test (or rolling-origin splits)
+3. `tune-per-run-context` (optional)
+4. `fit/predict`
+5. `evaluate`
+6. `sink` through `ResultSink`
 
 ### `benchmark` — Run Benchmark
 
@@ -171,6 +183,7 @@ uv run python -m uncertainty_flow.cli benchmark --dataset weather --no-auto-tune
 
 ```json
 {
+  "dataset": "weather",
   "metadata": {
     "run_id": "3d115493",
     "timestamp": "2026-03-31T13:30:22Z",
@@ -178,9 +191,11 @@ uv run python -m uncertainty_flow.cli benchmark --dataset weather --no-auto-tune
     "domain": "Climate",
     "n_samples": 1000,
     "horizon": 3,
+    "test_size": 0.2,
     "auto_tune": true,
     "target_coverage": 0.9
   },
+  "errors": [],
   "results": [
     {
       "model": "conformal-forecaster",
@@ -194,11 +209,23 @@ uv run python -m uncertainty_flow.cli benchmark --dataset weather --no-auto-tune
       "train_time_sec": 0.091,
       "n_samples": 997,
       "tuned_params": {"n_estimators": 50, "calibration_size": 0.25, "lags": 1},
-      "was_tuned": true
+      "was_tuned": true,
+      "validation_coverage_90": 0.9123,
+      "validation_sharpness_90": 0.0311,
+      "validation_winkler_90": 0.0364,
+      "validation_split_type": "temporal_holdout",
+      "validation_strategy": "temporal_holdout",
+      "validation_n_splits": 1,
+      "test_split_type": "out_of_time"
     }
   ]
 }
 ```
+
+Serialized benchmark output is owned by `ResultSink` (`sinks.py`) and uses:
+
+- top-level: `dataset`, `metadata`, `errors`, `results`
+- no top-level `models` field
 
 ### Metrics Explained
 
@@ -245,6 +272,25 @@ for model_result in result.models:
 runner.save_json("results.json")
 runner.save_csv("results.csv")
 ```
+
+## Extending Benchmark Models
+
+Use the provider seam for new benchmark model adapters.
+
+- Stable built-in names remain: `quantile-forest`, `conformal-regressor`, `conformal-forecaster`
+- Provider contract lives in `providers.py` (`BenchmarkModelProvider`)
+- Legacy class registry path in `runner.py` remains for compatibility, but provider-based extension is the primary path
+- Prefer provider seam when adding new benchmark integrations or custom adapter logic
+
+## Maintainer Migration Note
+
+Benchmark architecture moved from an all-in-`runner.py` mental model to split modules:
+
+- orchestration: `flow.py`
+- model seams: `providers.py`
+- output seams: `sinks.py`
+- configs/results contracts: `configs.py`, `results.py`
+- public adapter: `runner.py`
 
 ### Auto-Tuning Only
 

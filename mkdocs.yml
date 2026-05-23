@@ -49,6 +49,7 @@ nav:
       - Design Principles: guides/design.md
   - Architecture: architecture/overview.md
   - API Reference:
+      - Benchmarking: api/benchmarking.md
       - Core: api/core.md
       - Metrics: api/metrics.md
       - Models: api/models.md
@@ -85,7 +86,6 @@ extra_javascript:
 
 markdown_extensions:
   - admonition
-  - codehilite
   - toc:
       permalink: true
   - pymdownx.superfences

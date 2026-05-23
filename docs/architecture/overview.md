@@ -8,7 +8,7 @@ This document is the source of truth for how the package is organized and how pr
 uncertainty_flow/
 ├── analysis/                  # Feature leverage analysis for uncertainty attribution
 ├── bayesian/                  # Bayesian quantile regression (NumPyro, optional)
-├── benchmarking/              # Benchmark datasets, runner, auto-tuning
+├── benchmarking/              # BenchmarkFlow orchestration, providers, sinks, datasets, tuning
 ├── calibration/               # Calibration reports, residual analysis, SHAP helpers
 ├── causal/                    # Treatment effect estimation with conformal uncertainty
 ├── core/                      # Base classes, config, DistributionPrediction, persistence, shared types
@@ -123,12 +123,27 @@ That separation keeps marginal prediction logic independent from joint dependenc
 
 The `benchmarking/` package and CLI support:
 
-- loading benchmark datasets
-- running comparable model evaluations
-- optional parameter tuning
-- exporting structured benchmark results
+- loading benchmark datasets (`datasets.py`, adapter seam)
+- orchestrating lifecycle in `BenchmarkFlow` (`flow.py`, module seam)
+- model construction through provider contracts (`providers.py`, interface seam)
+- optional tuning through tuning adapters (`tuning.py`, adapter seam)
+- evaluation with consistent benchmark metrics (`flow.py` + `results.py`)
+- serialization/output through `ResultSink` (`sinks.py`, adapter seam)
 
 Those tools are intentionally separate from the model APIs so the library can stay usable both as a package and as an evaluation harness.
+
+### BenchmarkFlow Lifecycle
+
+The benchmark orchestration lifecycle is:
+
+1. `load` dataset and resolve target column
+2. `split` into tune/train/test (or rolling-origin splits)
+3. `tune-per-run-context` (optional, cached per model in a run)
+4. `fit/predict` via provider-built benchmark adapters
+5. `evaluate` into `ModelResult` metrics
+6. `sink` output policy through `ResultSink`
+
+This replaces the older all-in-`runner.py` mental model: `runner.py` is now a public adapter over the deeper flow/providers/sinks/configs/results modules.
 
 ## Analysis, Decomposition, and Risk Layer
 
