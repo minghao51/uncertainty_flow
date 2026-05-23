@@ -19,8 +19,10 @@ from uncertainty_flow.benchmarking import (
     auto_tune,
 )
 from uncertainty_flow.benchmarking.datasets import download_dataset
+from uncertainty_flow.utils.exceptions import RECOVERABLE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
+RECOVERABLE_CLI_EXCEPTIONS = RECOVERABLE_EXCEPTIONS + (click.ClickException,)
 
 
 @click.group()
@@ -117,7 +119,7 @@ def list_datasets_cmd(domain: str | None) -> None:
 @click.option(
     "--target-coverage",
     "-c",
-    type=float,
+    type=click.FloatRange(0.0, 1.0, min_open=True, max_open=True),
     default=0.9,
     help="Target coverage level for tuning (default: 0.9)",
 )
@@ -153,7 +155,7 @@ def list_datasets_cmd(domain: str | None) -> None:
 )
 @click.option(
     "--test-size",
-    type=float,
+    type=click.FloatRange(0.0, 1.0, min_open=True, max_open=True),
     default=0.2,
     help="Fraction of data to hold out for testing (default: 0.2)",
 )
@@ -311,7 +313,9 @@ def benchmark(
                 runner.save_csv(default_csv)
                 click.echo(f"CSV results saved to: {default_csv}")
 
-    except Exception as e:
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except RECOVERABLE_CLI_EXCEPTIONS as e:
         logger.exception("Benchmark command failed: %s", e)
         click.echo(f"\nError: {e}", err=True)
         sys.exit(1)
@@ -345,7 +349,7 @@ def benchmark(
 @click.option(
     "--target-coverage",
     "-c",
-    type=float,
+    type=click.FloatRange(0.0, 1.0, min_open=True, max_open=True),
     default=0.9,
     help="Target coverage level (default: 0.9)",
 )
@@ -428,7 +432,9 @@ def tune(
             click.echo(f"  Winkler @ 90%: {result.winkler_90:.4f}")
             click.echo(f"  Trials: {result.trials}")
             click.echo()
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except RECOVERABLE_CLI_EXCEPTIONS as e:
             logger.exception("Tune command model '%s' failed: %s", model_name, e)
             click.echo(f"  ERROR: {e}", err=True)
             click.echo()
@@ -508,7 +514,9 @@ def download_dataset_cmd(
 
         df = pl.read_parquet(path)
         click.echo(f"Dataset size: {len(df):,} rows, {len(df.columns)} columns")
-    except Exception as e:
+    except (KeyboardInterrupt, SystemExit):
+        raise
+    except RECOVERABLE_CLI_EXCEPTIONS as e:
         logger.exception("download-dataset command failed for '%s': %s", dataset, e)
         click.echo(f"Error downloading dataset: {e}", err=True)
         sys.exit(1)
@@ -552,7 +560,9 @@ def download_all(domain: str | None, output: str | None) -> None:
             click.echo(f"[{i}/{len(datasets)}] Downloading {ds.name}...")
             path = download_dataset(ds.name)
             click.echo(f"  -> {path}")
-        except Exception as e:
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except RECOVERABLE_CLI_EXCEPTIONS as e:
             logger.exception("download-all failed for dataset '%s': %s", ds.name, e)
             click.echo(f"  ERROR: {e}", err=True)
 

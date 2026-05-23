@@ -1,6 +1,11 @@
 """uncertainty_flow: Probabilistic forecasting and uncertainty quantification."""
 
-__version__ = "0.5.0"
+from importlib import metadata as _metadata
+
+try:
+    __version__ = _metadata.version("uncertainty-flow")
+except _metadata.PackageNotFoundError:
+    __version__ = "0.5.0"
 
 from .core import (
     DEFAULT_QUANTILES,
