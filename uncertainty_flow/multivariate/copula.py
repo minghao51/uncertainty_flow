@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import warnings
 from abc import abstractmethod
 from enum import Enum
@@ -11,6 +12,24 @@ import numpy as np
 from scipy import stats
 
 from ..utils.exceptions import InvalidDataError, ModelNotFittedError, UncertaintyFlowWarning
+
+_THIS_MODULE = __name__
+
+
+def _warn(message: str, category: type = UncertaintyFlowWarning) -> None:
+    """Emit a warning attributed to the caller outside this module."""
+    frame = inspect.currentframe()
+    try:
+        level = 2
+        caller_frame = frame.f_back if frame else None
+        while caller_frame is not None and caller_frame.f_globals.get("__name__", "").startswith(
+            _THIS_MODULE.rsplit(".", 1)[0]
+        ):
+            level += 1
+            caller_frame = caller_frame.f_back
+        warnings.warn(message, category, stacklevel=level)
+    finally:
+        del frame
 
 
 class CopulaFamily(str, Enum):
@@ -135,11 +154,20 @@ def _inverse_from_marginals(
 ) -> np.ndarray:
     """Map copula uniforms to marginal samples for one or more input rows."""
     n_rows, _, n_quantiles = marginals.shape
-    levels = (
-        np.asarray(quantile_levels, dtype=float)
-        if quantile_levels is not None
-        else np.linspace(0, 1, n_quantiles)
-    )
+    if quantile_levels is not None:
+        levels = np.asarray(quantile_levels, dtype=float)
+        if len(levels) != n_quantiles:
+            raise ValueError(
+                f"quantile_levels length ({len(levels)}) must match "
+                f"marginals n_quantiles ({n_quantiles})"
+            )
+    else:
+        _warn(
+            "quantile_levels not provided to _inverse_from_marginals. "
+            "Using evenly spaced levels which may not match actual prediction "
+            "quantile levels. Pass quantile_levels explicitly. [UF-W008]"
+        )
+        levels = np.linspace(0, 1, n_quantiles)
     clipped = np.clip(uniform_samples, levels[0], levels[-1])
 
     lower_idx = np.searchsorted(levels, clipped, side="right") - 1
@@ -387,12 +415,13 @@ class ClaytonCopula(BaseCopula):
             if theta <= 0:
                 return 1e10
             try:
-                h = (u ** (-theta) + v ** (-theta) - 1) ** (-1 / theta)
-                ll = (
-                    -1 / theta * np.log(u ** (-theta) + v ** (-theta) - 1)
-                    + (-theta - 1) * (np.log(u) + np.log(v))
-                    - np.log(h)
-                )
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    s = u ** (-theta) + v ** (-theta) - 1
+                    ll = (
+                        np.log(1 + theta)
+                        + (-theta - 1) * (np.log(u) + np.log(v))
+                        + (-1 / theta - 2) * np.log(s)
+                    )
                 if not np.isfinite(ll).all():
                     return 1e10
                 return float(-np.sum(ll))
@@ -417,12 +446,13 @@ class ClaytonCopula(BaseCopula):
         assert theta is not None
 
         try:
-            h = (u ** (-theta) + v ** (-theta) - 1) ** (-1 / theta)
-            ll = (
-                -1 / theta * np.log(u ** (-theta) + v ** (-theta) - 1)
-                + (-theta - 1) * (np.log(u) + np.log(v))
-                - np.log(h)
-            )
+            with np.errstate(divide="ignore", invalid="ignore"):
+                s = u ** (-theta) + v ** (-theta) - 1
+                ll = (
+                    np.log(1 + theta)
+                    + (-theta - 1) * (np.log(u) + np.log(v))
+                    + (-1 / theta - 2) * np.log(s)
+                )
             return float(np.sum(ll))
         except (ValueError, OverflowError, ZeroDivisionError):
             return -np.inf
@@ -523,10 +553,17 @@ class GumbelCopula(BaseCopula):
             if theta < 1:
                 return 1e10
             try:
-                t = (-np.log(u)) ** theta + (-np.log(v)) ** theta
-                h = np.exp(-(t ** (1 / theta)))
-                psi = -np.log(-np.log(u)) - np.log(-np.log(v))
-                ll = t ** (1 / theta) + psi - np.log(h)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    a = (-np.log(u)) ** theta + (-np.log(v)) ** theta
+                    a_pow = a ** (1 / theta)
+                    ll = (
+                        -a_pow
+                        + (1 / theta - 2) * np.log(a)
+                        + (theta - 1) * (np.log(-np.log(u)) + np.log(-np.log(v)))
+                        - np.log(u)
+                        - np.log(v)
+                        + np.log(a_pow + theta - 1)
+                    )
                 if not np.isfinite(ll).all():
                     return 1e10
                 return float(-np.sum(ll))
@@ -551,10 +588,17 @@ class GumbelCopula(BaseCopula):
         assert theta is not None
 
         try:
-            t = (-np.log(u)) ** theta + (-np.log(v)) ** theta
-            h = np.exp(-(t ** (1 / theta)))
-            psi = -np.log(-np.log(u)) - np.log(-np.log(v))
-            ll = t ** (1 / theta) + psi - np.log(h)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                a = (-np.log(u)) ** theta + (-np.log(v)) ** theta
+                a_pow = a ** (1 / theta)
+                ll = (
+                    -a_pow
+                    + (1 / theta - 2) * np.log(a)
+                    + (theta - 1) * (np.log(-np.log(u)) + np.log(-np.log(v)))
+                    - np.log(u)
+                    - np.log(v)
+                    + np.log(a_pow + theta - 1)
+                )
             return float(np.sum(ll))
         except (ValueError, OverflowError, ZeroDivisionError):
             return -np.inf
@@ -946,13 +990,12 @@ def auto_select_copula(
     n_targets = residuals.shape[1]
     best_bic = np.inf
     best_family = "gaussian"
+    any_fitted = False
 
     if n_targets > 2:
-        warnings.warn(
+        _warn(
             f"Auto-selecting copula for {n_targets}D data. "
-            f"Only Gaussian copula supports dimensions > 2. [UF-W006]",
-            UncertaintyFlowWarning,
-            stacklevel=3,
+            f"Only Gaussian copula supports dimensions > 2. [UF-W006]"
         )
 
     for family_name in families:
@@ -977,8 +1020,15 @@ def auto_select_copula(
             if bic < best_bic:
                 best_bic = bic
                 best_family = family_name
+                any_fitted = True
 
         except (ValueError, OverflowError, np.linalg.LinAlgError):
             continue
+
+    if not any_fitted:
+        _warn(
+            "All copula families failed to fit. Defaulting to 'gaussian'. "
+            "Results may be unreliable. [UF-W007]"
+        )
 
     return best_family

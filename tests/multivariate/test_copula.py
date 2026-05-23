@@ -478,3 +478,118 @@ class TestPairwiseChainCopula:
         copula.fit(residuals)
         assert copula.fitted_
         assert len(copula._pair_copulas) == 1
+
+
+class TestClaytonLogLikelihoodValidation:
+    """Validate Clayton copula log-likelihood against analytical formula."""
+
+    def test_ll_matches_analytical_formula(self):
+        theta = 2.0
+        rng = np.random.default_rng(42)
+        s1 = rng.uniform(0.01, 0.99, size=200)
+        s2 = rng.uniform(0.01, 0.99, size=200)
+        u = s1
+        v = (s1 ** (-theta) * (s2 ** (-theta / (theta + 1)) - 1) + 1) ** (-1 / theta)
+
+        residuals = np.column_stack([u, v])
+        copula = ClaytonCopula()
+        copula.fit(residuals)
+
+        theta_hat = copula.theta_
+        ll = copula.log_likelihood(residuals)
+        assert np.isfinite(ll)
+
+        uniform = copula._to_copula_space(residuals)
+        u_hat, v_hat = uniform[:, 0], uniform[:, 1]
+        s_val = u_hat ** (-theta_hat) + v_hat ** (-theta_hat) - 1
+        expected_ll = np.sum(
+            np.log(1 + theta_hat)
+            + (-theta_hat - 1) * (np.log(u_hat) + np.log(v_hat))
+            + (-1.0 / theta_hat - 2) * np.log(s_val)
+        )
+        assert ll == pytest.approx(expected_ll, rel=1e-6)
+
+    def test_ll_decreases_with_wrong_theta(self):
+        rng = np.random.default_rng(42)
+        true_theta = 3.0
+        s1 = rng.uniform(0.01, 0.99, size=500)
+        s2 = rng.uniform(0.01, 0.99, size=500)
+        u = s1
+        v = (s1 ** (-true_theta) * (s2 ** (-true_theta / (true_theta + 1)) - 1) + 1) ** (
+            -1 / true_theta
+        )
+
+        residuals = np.column_stack([u, v])
+        copula = ClaytonCopula()
+        copula.fit(residuals)
+
+        ll_correct = copula.log_likelihood(residuals)
+
+        copula_wrong = ClaytonCopula()
+        copula_wrong.fit(residuals)
+        copula_wrong.theta_ = 0.5
+        ll_wrong = copula_wrong.log_likelihood(residuals)
+
+        assert ll_correct > ll_wrong
+
+
+class TestGumbelLogLikelihoodValidation:
+    """Validate Gumbel copula log-likelihood."""
+
+    def test_ll_finite_for_correlated_data(self):
+        rng = np.random.default_rng(42)
+        z = rng.standard_normal((500, 2))
+        z[:, 1] = 0.7 * z[:, 0] + 0.3 * z[:, 1]
+        residuals = z * 2 + 1
+
+        copula = GumbelCopula()
+        copula.fit(residuals)
+        ll = copula.log_likelihood(residuals)
+        assert np.isfinite(ll)
+
+    def test_ll_matches_analytical_formula(self):
+        rng = np.random.default_rng(42)
+        u = rng.uniform(0.05, 0.95, size=300)
+        v = rng.uniform(0.05, 0.95, size=300)
+        residuals = np.column_stack([u, v])
+
+        copula = GumbelCopula()
+        copula.fit(residuals)
+
+        theta_hat = copula.theta_
+        ll = copula.log_likelihood(residuals)
+        assert np.isfinite(ll)
+
+        uniform = copula._to_copula_space(residuals)
+        u_hat, v_hat = uniform[:, 0], uniform[:, 1]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            a = (-np.log(u_hat)) ** theta_hat + (-np.log(v_hat)) ** theta_hat
+            a_pow = a ** (1 / theta_hat)
+            expected_ll = float(
+                np.sum(
+                    -a_pow
+                    + (1 / theta_hat - 2) * np.log(a)
+                    + (theta_hat - 1) * (np.log(-np.log(u_hat)) + np.log(-np.log(v_hat)))
+                    - np.log(u_hat)
+                    - np.log(v_hat)
+                    + np.log(a_pow + theta_hat - 1)
+                )
+            )
+        assert ll == pytest.approx(expected_ll, rel=1e-6)
+
+    def test_ll_decreases_with_wrong_theta(self):
+        rng = np.random.default_rng(42)
+        z = rng.standard_normal((500, 2))
+        z[:, 1] = 0.7 * z[:, 0] + 0.3 * z[:, 1]
+        residuals = z * 2 + 1
+
+        copula = GumbelCopula()
+        copula.fit(residuals)
+        ll_correct = copula.log_likelihood(residuals)
+
+        copula_wrong = GumbelCopula()
+        copula_wrong.fit(residuals)
+        copula_wrong.theta_ = 1.1
+        ll_wrong = copula_wrong.log_likelihood(residuals)
+
+        assert ll_correct > ll_wrong
