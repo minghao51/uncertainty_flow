@@ -1,6 +1,6 @@
 # uncertainty-flow — Current State
 
-Last updated: 2026-05-16
+Last updated: 2026-05-20
 
 ## What's Implemented
 
@@ -46,7 +46,6 @@ Last updated: 2026-05-16
 
 All files below raise `NotImplementedError` or return `501`:
 
-- `uncertainty_flow/multimodal/aggregator.py:157` — `aggregation='copula'` is declared as a valid option in `VALID_AGGREGATIONS` but raises `NotImplementedError` ("not implemented yet for CrossModalAggregator")
 - `uncertainty_flow/models/base_quantile.py:258` — abstract method `_fit_backend` raises `NotImplementedError` (template method pattern; must be overridden by `DeepQuantileNet` and `DeepQuantileNetTorch`)
 - `uncertainty_flow/models/base_quantile.py:274` — abstract method `_predict_backend` raises `NotImplementedError` (same pattern)
 
@@ -54,20 +53,16 @@ All files below raise `NotImplementedError` or return `501`:
 
 | Severity | Issue | Location |
 |----------|-------|----------|
-| High | `except Exception: pass` silently swallows all errors when setting `random_state` on bootstrap ensemble models — masks legitimate failures (e.g., read-only attrs, type errors) | `uncertainty_flow/decomposition/ensemble.py:118` |
 | Medium | 4 mypy `valid-type` errors: `callable` used as type annotation instead of `typing.Callable` in `_FamilySpec` dataclass fields | `uncertainty_flow/core/parametric.py:83-87` |
 | Medium | mypy `index` error: indexing Polars `Series` with a `str` key — invalid index type | `uncertainty_flow/wrappers/adaptive_conformal.py:126` |
 | Medium | mypy `arg-type` error: `RollingOriginSplit.splits()` receives `DataFrame | None` due to `self.df` being nullable | `uncertainty_flow/benchmarking/runner.py:457` |
 | Medium | mypy `assignment` error: numpy array assigned where Polars `Series` expected | `uncertainty_flow/viz/_plotting.py:119` |
-| Medium | `BenchmarkRunner.to_dict()` serializes model results twice — once under `"models"` key (backward-compat alias) and identically under `"results"` key, producing ~2x JSON output | `uncertainty_flow/benchmarking/runner.py:591-650` |
-| Low | ruff E501 line-length violation (105 > 100 chars) | `scripts/ci_policy_checks.py:34` |
-| Low | Unused import `sys` | `scripts/ci_policy_checks.py:8` |
 
 ## Security Concerns
 
 | Severity | Issue | Location |
 |----------|-------|----------|
-| High | `pickle.load()` used for model deserialization — arbitrary code execution risk when loading untrusted `.uf` files. SHA-256 integrity check is optional and verifies corruption, not authenticity (no signature verification) | `uncertainty_flow/core/_persistence.py:250` |
+| Medium | `pickle.load()` used for model deserialization — arbitrary code execution risk when loading untrusted `.uf` files. Marked with `# nosec B301/B403`. SHA-256 integrity check is optional and verifies corruption, not authenticity (no signature verification) | `uncertainty_flow/core/_persistence.py:250` |
 | Low | `UNCERTAINTY_FLOW_HF_REVISION` env var accepted without validation — could reference untrusted/malicious HuggingFace dataset revisions | `uncertainty_flow/benchmarking/datasets.py:570` |
 
 ## Performance Issues
@@ -90,10 +85,10 @@ All files below raise `NotImplementedError` or return `501`:
 | Low coverage floor (40%) | `pyproject.toml:102` — `fail_under = 40` means 60% of source can be untested without CI failure |
 | 7 mypy errors in 4 files | `core/parametric.py` (4 errors), `viz/_plotting.py` (1 error), `wrappers/adaptive_conformal.py` (1 error), `benchmarking/runner.py` (1 error) — type safety gaps |
 | `callable` used instead of `typing.Callable` | `uncertainty_flow/core/parametric.py:83-87` — `builtins.callable` is not valid as a type annotation per mypy |
-| Duplicate JSON output in benchmark serialization | `BenchmarkRunner.to_dict()` at `uncertainty_flow/benchmarking/runner.py:591-650` emits identical model data under both `"models"` and `"results"` keys — doubles JSON payload size |
+| Duplicate JSON output in benchmark serialization | **RESOLVED** — `"models"` alias removed from `to_dict()`, only `"results"` key emitted |
 | Missing shared model registry | `MODEL_REGISTRY` in `uncertainty_flow/benchmarking/runner.py:136` is a plain dict with decorator registration — adding new benchmark models requires editing this file; no plugin/discovery mechanism |
 | Hardcoded constants scattered across modules | `viz/dashboard.py:380` limits to 6 features; `viz/_plotting.py:16` hardcodes 500 max samples; `analysis/leverage.py:203` hardcodes 800-row prediction budget |
 | Persistence format has no forward-compat path | `uncertainty_flow/core/_persistence.py:22` — `SUPPORTED_FORMAT_VERSIONS = {1}` only; no migration tooling |
 | `DEFAULT_QUANTILES` is a dynamic proxy | `uncertainty_flow/core/types.py:25-48` — `_ConfigQuantiles` reads from global config on each access; callers that cache the value (e.g., in a list comprehension) may get stale config silently |
 | No CI coverage for optional deps beyond torch | CI workflow only tests `ml` extras — `numpyro`, `streamlit`, `shap` optional paths untested in CI |
-| Broad `except Exception` in CLI error handlers | `uncertainty_flow/cli.py:317,434,514,558` — catches all exceptions including `KeyboardInterrupt`, `SystemExit` in command handlers |
+| Narrowed CLI exception handlers | **RESOLVED** — `cli.py` now catches `RECOVERABLE_CLI_EXCEPTIONS` (centralized tuple + `click.ClickException`), re-raises `KeyboardInterrupt`/`SystemExit` |
