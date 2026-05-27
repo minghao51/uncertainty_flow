@@ -9,6 +9,8 @@ from __future__ import annotations
 import numpy as np
 import polars as pl
 
+from ..utils.exceptions import InvalidDataError
+
 
 class PredictionSet:
     """Prediction set for conformal classification.
@@ -33,6 +35,20 @@ class PredictionSet:
         coverage_target: float,
         threshold: float,
     ):
+        if not class_sets or not class_names:
+            raise InvalidDataError("class_sets and class_names must be non-empty")
+        if len(class_sets) != probabilities.shape[0]:
+            raise InvalidDataError(
+                f"class_sets length ({len(class_sets)}) "
+                f"!= probabilities rows ({probabilities.shape[0]})"
+            )
+        if np.any(np.isnan(probabilities)) or np.any(np.isinf(probabilities)):
+            raise InvalidDataError("probabilities must not contain NaN or Inf")
+        if not (0 < coverage_target < 1):
+            raise InvalidDataError("coverage_target must be in (0, 1)")
+        if threshold < 0:
+            raise InvalidDataError("threshold must be non-negative")
+
         self._class_sets = class_sets
         self._class_names = class_names
         self._probabilities = probabilities

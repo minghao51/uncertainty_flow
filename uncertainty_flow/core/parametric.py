@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Callable
 
@@ -244,7 +245,11 @@ def _refine_params_impl(
         )
         return spec.params_from_x(result.x)
     except (ValueError, OverflowError, RuntimeError):
-        pass
+        warnings.warn(
+            f"Parametric optimization failed for family '{family}'. "
+            "Falling back to initial parameters.",
+            stacklevel=2,
+        )
 
     return initial_params
 

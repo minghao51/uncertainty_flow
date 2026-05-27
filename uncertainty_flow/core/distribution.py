@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
@@ -10,15 +11,25 @@ import polars as pl
 
 from ..utils.exceptions import InvalidDataError, QuantileError
 from ..utils.polars_bridge import to_numpy_series
+from .distribution_bayesian import BayesianMixin
+from .distribution_causal import CausalMixin
+from .distribution_groups import GroupMixin
 
 if TYPE_CHECKING:
     from ..multivariate.copula import BaseCopula
     from .parametric import ParametricDistribution
 
-# Constants
 MAX_SAMPLE_CHUNK_SIZE = 100_000
 MAX_TOTAL_SAMPLES = 10_000_000
 _QUANTILE_DISTANCE_THRESHOLD = 0.05
+
+
+@dataclass
+class _ScoringData:
+    quantile_values: np.ndarray
+    quantile_levels: list[float]
+    targets: list[str] | None
+    n_samples: int
 
 
 def _warn_if_far(levels: np.ndarray, requested: dict[float, int]) -> None:
@@ -28,7 +39,7 @@ def _warn_if_far(levels: np.ndarray, requested: dict[float, int]) -> None:
     for target_level, idx in requested.items():
         actual = levels[idx]
         if abs(actual - target_level) > _QUANTILE_DISTANCE_THRESHOLD:
-            far.append(f"{target_level:.2f}→{actual:.2f}")
+            far.append(f"{target_level:.2f}\u2192{actual:.2f}")
     if far:
         warnings.warn(
             f"Nearest quantile levels differ significantly from requested: "
@@ -39,7 +50,7 @@ def _warn_if_far(levels: np.ndarray, requested: dict[float, int]) -> None:
         )
 
 
-class DistributionPrediction:
+class DistributionPrediction(BayesianMixin, CausalMixin, GroupMixin):
     """
     Holds predicted distributions for N samples.
 
@@ -87,7 +98,6 @@ class DistributionPrediction:
         self._n_samples = quantile_matrix.shape[0]
         self._n_quantiles = len(quantile_levels)
 
-        # Optional extensions for Bayesian, Multi-Modal, Causal modules
         self._posterior = posterior
         self._posterior_chains = posterior_chains
         self._posterior_predictive = posterior_predictive
@@ -96,14 +106,13 @@ class DistributionPrediction:
         self._copula = copula
 
     def quantile(self, q: float | list[float]) -> pl.DataFrame:
-        """
-        Extract specific quantile levels.
+        """Compute quantiles of the predicted distribution.
 
         Args:
-            q: Single quantile level or list of levels
+            q: Quantile level(s) in [0, 1].
 
         Returns:
-            Polars DataFrame with columns like "q_0.05" or "price_q_0.05" for multivariate
+            DataFrame with one column per requested quantile.
         """
         if isinstance(q, (int, float, np.integer, np.floating)):
             q = [q]
@@ -126,17 +135,13 @@ class DistributionPrediction:
         return pl.DataFrame(data, schema=columns, orient="row")
 
     def interval(self, confidence: float = 0.9) -> pl.DataFrame:
-        """
-        Return prediction interval.
-
-        For 0.9 confidence: uses 0.05 and 0.95 quantiles.
-        Returns columns: lower, upper (or price_lower, price_upper for multivariate)
+        """Compute prediction intervals at the given confidence level.
 
         Args:
-            confidence: Confidence level (e.g., 0.9 for 90% interval)
+            confidence: Coverage probability in (0, 1).
 
         Returns:
-            Polars DataFrame with lower/upper bounds
+            DataFrame with ``lower`` and ``upper`` columns.
         """
         if not (0 < confidence < 1):
             raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
@@ -171,16 +176,6 @@ class DistributionPrediction:
         confidence: float,
         target: str | None = None,
     ) -> tuple[pl.Series, pl.Series]:
-        """Return (lower, upper) series for a prediction interval.
-
-        Args:
-            confidence: Confidence level (e.g., 0.9 for 90% interval).
-            target: Target column name (required for multivariate; defaults
-                to first target if *None*).
-
-        Returns:
-            Tuple of (lower, upper) Polars Series.
-        """
         interval_df = self.interval(confidence)
         if "lower" in interval_df.columns:
             return interval_df["lower"], interval_df["upper"]
@@ -188,7 +183,11 @@ class DistributionPrediction:
         return interval_df[f"{t}_lower"], interval_df[f"{t}_upper"]
 
     def median(self) -> pl.Series | pl.DataFrame:
-        """Return the 0.5 quantile as a point estimate."""
+        """Compute the median of the predicted distribution.
+
+        Returns:
+            Series (single target) or DataFrame (multi-target) of median values.
+        """
         median_idx = self._find_nearest_quantile_index(0.5)
 
         if len(self._targets) == 1:
@@ -199,46 +198,62 @@ class DistributionPrediction:
             )
             return pl.DataFrame(data, schema=self._targets, orient="row")
 
+    def mean(self) -> pl.Series | pl.DataFrame:
+        """Compute the mean of the predicted distribution via numerical integration.
+
+        Returns:
+            Series (single target) or DataFrame (multi-target) of mean values.
+        """
+        weights = np.diff(self._levels, prepend=0.0)
+        if len(self._targets) == 1:
+            values = self._quantiles[:, : self._n_quantiles] @ weights
+            return pl.Series("mean", values)
+        data = np.column_stack(
+            [self._quantile_slice(t_idx) @ weights for t_idx in range(len(self._targets))]
+        )
+        return pl.DataFrame(data, schema=self._targets, orient="row")
+
+    def std(self) -> pl.Series | pl.DataFrame:
+        """Compute the standard deviation of the predicted distribution.
+
+        Returns:
+            Series (single target) or DataFrame (multi-target) of std values.
+        """
+        mean_vals = self.mean()
+        if isinstance(mean_vals, pl.Series):
+            mean_arr = mean_vals.to_numpy()
+        else:
+            mean_arr = mean_vals.to_numpy()
+
+        if len(self._targets) == 1:
+            q = self._quantiles[:, : self._n_quantiles]
+            variance = (q**2) @ np.diff(self._levels, prepend=0.0) - mean_arr**2
+            return pl.Series("std", np.sqrt(np.maximum(variance, 0.0)))
+
+        var_cols = []
+        for t_idx in range(len(self._targets)):
+            q = self._quantile_slice(t_idx)
+            m = mean_arr[:, t_idx]
+            var = (q**2) @ np.diff(self._levels, prepend=0.0) - m**2
+            var_cols.append(np.sqrt(np.maximum(var, 0.0)))
+        data = np.column_stack(var_cols)
+        return pl.DataFrame(data, schema=self._targets, orient="row")
+
     def crps(
         self,
         y_true: pl.Series | pl.DataFrame | np.ndarray,
     ) -> float | dict[str, float]:
-        """
-        Compute the exact CRPS from quantile predictions.
-
-        Uses the quantile-score decomposition (Laio & Tamea 2007) — no
-        Gaussian approximation.  Requires at least 2 quantile levels.
+        """Compute the Continuous Ranked Probability Score.
 
         Args:
-            y_true: True values.  Polars Series (univariate), DataFrame
-                (multivariate — one column per target), or numpy array.
+            y_true: Observed values.
 
         Returns:
-            Float CRPS for univariate predictions, or ``{target: crps}`` dict
-            for multivariate.
+            CRPS value (single target) or dict keyed by target name.
         """
-        from ..metrics.crps import crps_quantile
+        from .distribution_scoring import crps_score
 
-        if self._n_quantiles < 2:
-            raise InvalidDataError(
-                "CRPS requires at least 2 quantile levels, "
-                f"but DistributionPrediction has {self._n_quantiles}"
-            )
-
-        y_arr = self._coerce_y_true(y_true)
-
-        if len(self._targets) == 1:
-            return crps_quantile(y_arr, self._quantiles, self._levels)
-
-        result = {}
-        for t_idx, target in enumerate(self._targets):
-            q_slice = self._quantile_slice(t_idx)
-            result[target] = crps_quantile(
-                self._target_truth(y_arr, t_idx),
-                q_slice,
-                self._levels,
-            )
-        return result
+        return crps_score(self, y_true)
 
     @staticmethod
     def _forward_cdf(
@@ -246,24 +261,11 @@ class DistributionPrediction:
         levels: np.ndarray,
         y: np.ndarray,
     ) -> np.ndarray:
-        """
-        Evaluate the piecewise-linear CDF at observed values (vectorized).
-
-        Args:
-            quantile_values: (n_samples, n_quantiles) predicted quantile values.
-            levels: (n_quantiles,) quantile levels.
-            y: (n_samples,) true values.
-
-        Returns:
-            (n_samples,) PIT values in [0, 1].
-        """
         n, k = quantile_values.shape
         if k == 1:
             return np.where(y <= quantile_values[:, 0], levels[0], 1.0)
 
-        j = np.array(
-            [np.searchsorted(quantile_values[i], y[i], side="right") - 1 for i in range(n)]
-        )
+        j = np.sum(quantile_values <= y[:, None], axis=1) - 1
         j = np.clip(j, 0, k - 2)
 
         row_idx = np.arange(n)
@@ -303,15 +305,6 @@ class DistributionPrediction:
         self,
         y_true: pl.Series | pl.DataFrame | np.ndarray,
     ) -> np.ndarray | dict[str, np.ndarray]:
-        """
-        Compute PIT values F_i(y_i) for each observation.
-
-        Args:
-            y_true: True values.
-
-        Returns:
-            (n,) array for univariate, or {target: array} for multivariate.
-        """
         if self._n_quantiles < 2:
             raise InvalidDataError(
                 "PIT requires at least 2 quantile levels, "
@@ -337,22 +330,16 @@ class DistributionPrediction:
         n_bins: int = 10,
         chi2_test: bool = False,
     ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-        """
-        Compute PIT histogram for calibration assessment.
-
-        If forecasts are perfectly calibrated, PIT values ~ Uniform(0, 1),
-        so each bin should contain roughly n / n_bins observations.
+        """Probability Integral Transform histogram for calibration assessment.
 
         Args:
-            y_true: True values.
-            n_bins: Number of histogram bins (default 10).
-            chi2_test: If True, include a chi-squared uniformity test p-value
-                as a ``chi2_pvalue`` column (default False).
+            y_true: Observed values.
+            n_bins: Number of histogram bins.
+            chi2_test: If True, add a chi-squared uniformity p-value column.
 
         Returns:
-            DataFrame with columns: bin_center, count, expected.
-            If ``chi2_test=True``, also includes ``chi2_pvalue``.
-            For multivariate, returns {target: DataFrame}.
+            DataFrame with bin counts and expected counts (single target),
+            or dict keyed by target name (multi-target).
         """
         pit = self._pit_values(y_true)
 
@@ -382,8 +369,6 @@ class DistributionPrediction:
         }
 
         if chi2_test:
-            # Chi-squared test for uniformity
-            # Avoid division by zero — expected is constant and > 0 when n > 0
             if n > 0 and np.all(expected > 0):
                 from scipy.stats import chisquare
 
@@ -399,19 +384,15 @@ class DistributionPrediction:
         y_true: pl.Series | pl.DataFrame | np.ndarray,
         n_bins: int = 20,
     ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-        """
-        Compute reliability diagram data (calibration curve).
-
-        Bins PIT values and compares expected (nominal) coverage to observed
-        (empirical) coverage at increasing probability thresholds.
+        """Compute calibration curve (observed vs expected coverage).
 
         Args:
-            y_true: True values.
-            n_bins: Number of bins (default 20).
+            y_true: Observed values.
+            n_bins: Number of cumulative bins.
 
         Returns:
-            DataFrame with columns: expected_coverage, observed_coverage.
-            For multivariate, returns {target: DataFrame}.
+            DataFrame with ``expected_coverage``, ``observed_coverage``, and
+            ``bin_center`` columns.
         """
         pit = self._pit_values(y_true)
 
@@ -440,18 +421,11 @@ class DistributionPrediction:
         y_true: pl.Series | pl.DataFrame | np.ndarray,
         n_bins: int = 10,
     ) -> None:
-        """Plot PIT histogram with uniform reference line. Requires matplotlib.
-
-        Args:
-            y_true: True values.
-            n_bins: Number of histogram bins (default 10).
-        """
         from ..viz._plotting import plot_pit as _plot_pit
 
         _plot_pit(self, y_true, n_bins=n_bins)
 
     def _coerce_y_true(self, y_true: pl.Series | pl.DataFrame | np.ndarray) -> np.ndarray:
-        """Convert y_true input to a numpy array shaped for this prediction."""
         if isinstance(y_true, pl.DataFrame):
             cols = [y_true[t].to_numpy() for t in self._targets]
             return np.column_stack(cols)
@@ -460,24 +434,14 @@ class DistributionPrediction:
         return np.asarray(y_true, dtype=np.float64)
 
     def sample(self, n: int, random_state: int | None = None) -> pl.DataFrame:
-        """
-        Draw n samples per input row via piecewise-linear inverse CDF.
-
-        For each row and each target, builds a CDF from the predicted quantile
-        matrix (quantile values -> cumulative probability) and draws samples
-        by inverting the CDF.
+        """Draw random samples from the predicted distribution via inverse CDF.
 
         Args:
-            n: Number of samples to draw per input row.
-            random_state: Optional random seed for reproducibility.
+            n: Number of samples per input row.
+            random_state: Optional RNG seed for reproducibility.
 
         Returns:
-            Polars DataFrame with (n * n_samples) rows and columns:
-            - sample_id: index of the original input row (0 to n_samples-1, repeated n times)
-            - One column per target with sampled values
-
-        Raises:
-            InvalidDataError: If n is invalid or would exceed memory limits.
+            DataFrame with a ``sample_id`` column plus one column per target.
         """
         if not isinstance(n, (int, np.integer)) or n < 1:
             raise InvalidDataError(f"n must be a positive integer, got {n}")
@@ -497,7 +461,6 @@ class DistributionPrediction:
         return self._sample_in_chunks(n, rng, self._sample_chunk)
 
     def _marginal_quantiles(self) -> np.ndarray:
-        """Reshape the flat quantile matrix into [row, target, quantile]."""
         return self._quantiles.reshape(self._n_samples, len(self._targets), self._n_quantiles)
 
     def _sample_joint_chunk(
@@ -505,7 +468,6 @@ class DistributionPrediction:
         n: int,
         rng: np.random.Generator,
     ) -> pl.DataFrame:
-        """Sample jointly using a fitted copula."""
         joint_samples = self._copula.sample(
             self._marginal_quantiles(),
             n_samples=n,
@@ -529,7 +491,6 @@ class DistributionPrediction:
         rng: np.random.Generator,
         chunk_fn,
     ) -> pl.DataFrame:
-        """Generic chunked sampling — delegates to *chunk_fn* per chunk."""
         if n <= MAX_SAMPLE_CHUNK_SIZE:
             return chunk_fn(n, rng)
         chunks = []
@@ -545,7 +506,6 @@ class DistributionPrediction:
         n: int,
         rng: np.random.Generator,
     ) -> pl.DataFrame:
-        """Sample with a single chunk (n <= MAX_SAMPLE_CHUNK_SIZE)."""
         uniform_samples = rng.uniform(0, 1, size=(self._n_samples, n))
         uniform_clipped = np.clip(uniform_samples, self._levels[0], self._levels[-1])
 
@@ -569,17 +529,6 @@ class DistributionPrediction:
         uniform_clipped: np.ndarray,
         levels: np.ndarray,
     ) -> np.ndarray:
-        """
-        Vectorized inverse CDF sampling via piecewise-linear interpolation.
-
-        Args:
-            quantile_values: (n_samples, n_quantiles) array of quantile values
-            uniform_clipped: (n_samples, n) array of uniform samples
-            levels: (n_quantiles,) array of quantile levels
-
-        Returns:
-            (n_samples, n) array of sampled values
-        """
         lower_idx = np.searchsorted(levels, uniform_clipped, side="right") - 1
         lower_idx = np.clip(lower_idx, 0, len(levels) - 2)
         upper_idx = lower_idx + 1
@@ -603,15 +552,6 @@ class DistributionPrediction:
         targets: str | list[str] = "all",
         max_targets: int = 6,
     ) -> None:
-        """Fan chart of quantile bands. Requires matplotlib.
-
-        Args:
-            actuals: Optional actual values for comparison.
-            confidence_bands: Confidence levels (default: [0.5, 0.8, 0.9, 0.95]).
-            title: Optional plot title.
-            targets: Target(s) to plot. ``"all"`` plots every target.
-            max_targets: Maximum subplot panels (default 6).
-        """
         from ..viz._plotting import plot as _plot
 
         _plot(
@@ -625,28 +565,32 @@ class DistributionPrediction:
 
     @lru_cache(maxsize=128)
     def _find_nearest_quantile_index(self, q: float) -> int:
-        """Find index of nearest quantile level. Cached for repeated lookups."""
         distances = np.abs(self._levels - q)
         return int(np.argmin(distances))
 
     def _quantile_slice(self, target_idx: int) -> np.ndarray:
-        """Return (n_samples, n_quantiles) slice for a given target index."""
         q_start = target_idx * self._n_quantiles
         return self._quantiles[:, q_start : q_start + self._n_quantiles]
 
     def _interval_columns(self, target: str) -> tuple[str, str]:
-        """Return (lower_col, upper_col) column name pair for a target."""
         if len(self._targets) == 1:
             return "lower", "upper"
         return f"{target}_lower", f"{target}_upper"
 
     def _target_truth(self, y_arr: np.ndarray, t_idx: int, i: int | None = None) -> np.ndarray:
-        """Extract truth values for a single target from a full y array."""
         if y_arr.ndim == 1:
             return y_arr
         if i is not None:
             return np.array([y_arr[i, t_idx]])
         return y_arr[:, t_idx]
+
+    def _scoring_data(self) -> _ScoringData:
+        return _ScoringData(
+            quantile_values=self._quantiles,
+            quantile_levels=self._levels.tolist(),
+            targets=self._targets,
+            n_samples=self._n_samples,
+        )
 
     def __repr__(self) -> str:
         parts = [
@@ -660,232 +604,10 @@ class DistributionPrediction:
         parts.append(")")
         return "".join(parts)
 
-    # --- Bayesian posterior methods ---
-
-    def posterior_samples(self) -> np.ndarray:
-        """Return raw posterior parameter draws as a 2D matrix."""
-        if self._posterior is None:
-            raise InvalidDataError(
-                "posterior_samples() requires posterior data. "
-                "Use a BayesianQuantileRegressor to generate predictions with posteriors."
-            )
-        if isinstance(self._posterior, np.ndarray):
-            return self._posterior
-
-        # Concatenate named posterior tensors into [draw, feature] for summaries.
-        matrices = []
-        for arr in self._posterior.values():
-            arr_np = np.asarray(arr)
-            if arr_np.ndim == 1:
-                matrices.append(arr_np[:, np.newaxis])
-            else:
-                matrices.append(arr_np.reshape(arr_np.shape[0], -1))
-        if not matrices:
-            raise InvalidDataError("posterior data is empty")
-        return np.column_stack(matrices)
-
-    def posterior_parameter_interval(self, confidence: float = 0.9) -> pl.DataFrame:
-        """Compute parameter credible intervals from posterior draws."""
-        if not (0 < confidence < 1):
-            raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
-        samples = self.posterior_samples()
-        alpha = (1 - confidence) / 2
-        lower = np.quantile(samples, alpha, axis=0)
-        upper = np.quantile(samples, 1 - alpha, axis=0)
-        return pl.DataFrame({"lower": lower, "upper": upper}, orient="row")
-
-    def credible_interval(self, confidence: float = 0.9) -> pl.DataFrame:
-        """Compute predictive credible intervals for each prediction row."""
-        import warnings
-
-        if not (0 < confidence < 1):
-            raise QuantileError(f"confidence must be in (0, 1), got {confidence}")
-
-        if self._posterior_predictive is None:
-            warnings.warn(
-                "credible_interval() currently falls back to parameter intervals when "
-                "posterior predictive draws are unavailable. Use "
-                "posterior_parameter_interval() for explicit parameter intervals.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            return self.posterior_parameter_interval(confidence)
-
-        alpha = (1 - confidence) / 2
-        lower = np.quantile(self._posterior_predictive, alpha, axis=1)
-        upper = np.quantile(self._posterior_predictive, 1 - alpha, axis=1)
-        return pl.DataFrame({"lower": lower, "upper": upper}, orient="row")
-
-    def rhat(self) -> np.ndarray:
-        """Compute Gelman-Rubin R-hat convergence diagnostic from true chains."""
-        if self._posterior_chains is None:
-            raise InvalidDataError(
-                "rhat() requires posterior chain data. "
-                "Fit BayesianQuantileRegressor with num_chains > 1."
-            )
-
-        all_rhat = []
-        for name, arr in self._posterior_chains.items():
-            chains = np.asarray(arr)
-            if chains.ndim < 2:
-                raise InvalidDataError(f"posterior chain array for '{name}' must be at least 2D")
-            n_chains = chains.shape[0]
-            chain_len = chains.shape[1]
-            if n_chains < 2:
-                raise InvalidDataError(
-                    f"rhat() requires at least 2 chains for '{name}', got {n_chains}."
-                )
-            if chain_len < 2:
-                raise InvalidDataError(
-                    f"rhat() requires at least 2 draws per chain for '{name}', got {chain_len}."
-                )
-            reshaped = chains.reshape(n_chains, chain_len, -1)
-            chain_means = reshaped.mean(axis=1)
-            b = chain_len * np.var(chain_means, axis=0, ddof=1)
-            w = np.mean(np.var(reshaped, axis=1, ddof=1), axis=0)
-            if np.any(w < 1e-10):
-                raise InvalidDataError(
-                    f"Within-chain variance too close to zero for R-hat calculation for '{name}'."
-                )
-            var_hat = (1 - 1 / chain_len) * w + (1 / chain_len) * b
-            all_rhat.append(np.sqrt(var_hat / w))
-
-        if not all_rhat:
-            raise InvalidDataError(
-                "rhat() requires at least one posterior chain parameter to evaluate."
-            )
-        return np.concatenate(all_rhat)
-
-    def posterior_summary(self) -> pl.DataFrame:
-        """Return summary statistics of posterior samples."""
-        if self._posterior is None:
-            raise InvalidDataError(
-                "posterior_summary() requires posterior data. "
-                "Use a BayesianQuantileRegressor to generate predictions with posteriors."
-            )
-        samples = self.posterior_samples()
-        return pl.DataFrame(
-            {
-                "mean": np.mean(samples, axis=0),
-                "std": np.std(samples, axis=0),
-                "q025": np.quantile(samples, 0.025, axis=0),
-                "q50": np.quantile(samples, 0.5, axis=0),
-                "q975": np.quantile(samples, 0.975, axis=0),
-            }
-        )
-
-    # --- Multi-modal group methods ---
-
-    def group_uncertainty(self) -> dict[str, float]:
-        """Return per-group uncertainty contribution (interval width)."""
-        if self._group_predictions is None:
-            raise InvalidDataError(
-                "group_uncertainty() requires group predictions. "
-                "Use a CrossModalAggregator to generate predictions with groups."
-            )
-        result = {}
-        for name, pred in self._group_predictions.items():
-            interval = pred.interval(0.9)
-            lower = interval["lower"].to_numpy()
-            upper = interval["upper"].to_numpy()
-            result[name] = float(np.mean(upper - lower))
-        return result
-
-    def group_intervals(self, confidence: float = 0.9) -> dict[str, pl.DataFrame]:
-        """Return per-group prediction intervals."""
-        if self._group_predictions is None:
-            raise InvalidDataError(
-                "group_intervals() requires group predictions. "
-                "Use a CrossModalAggregator to generate predictions with groups."
-            )
-        return {name: pred.interval(confidence) for name, pred in self._group_predictions.items()}
-
-    def cross_group_correlation(self) -> np.ndarray:
-        """Return cross-group correlation matrix based on group median predictions."""
-        if self._group_predictions is None:
-            raise InvalidDataError(
-                "cross_group_correlation() requires group predictions. "
-                "Use a CrossModalAggregator to generate predictions with groups."
-            )
-        medians = np.column_stack(
-            [
-                pred._quantiles[:, pred._find_nearest_quantile_index(0.5)]
-                for pred in self._group_predictions.values()
-            ]
-        )
-        return np.corrcoef(medians.T)  # type: ignore
-
-    # --- Causal treatment methods ---
-
-    def treatment_effect(self) -> np.ndarray:
-        """Return CATE point estimates."""
-        if self._treatment_info is None:
-            raise InvalidDataError(
-                "treatment_effect() requires treatment info. "
-                "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
-            )
-        return self._treatment_info["cate"]  # type: ignore
-
-    def average_treatment_effect(self) -> dict:
-        """Return ATE with confidence interval."""
-        if self._treatment_info is None:
-            raise InvalidDataError(
-                "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
-            )
-        if "ate" not in self._treatment_info or "ate_ci" not in self._treatment_info:
-            raise InvalidDataError(
-                "average_treatment_effect() requires evaluated treatment metrics. "
-                "Call CausalUncertaintyEstimator.evaluate(...) on labeled data first."
-            )
-        return {
-            "ate": self._treatment_info["ate"],
-            "ci": self._treatment_info["ate_ci"],
-        }
-
-    def heterogeneity_score(self) -> float:
-        """Return CATE variance as heterogeneity measure."""
-        if self._treatment_info is None:
-            raise InvalidDataError(
-                "heterogeneity_score() requires treatment info. "
-                "Use a CausalUncertaintyEstimator to generate predictions with treatment data."
-            )
-        return float(np.var(self._treatment_info["cate"]))
-
     def uncertainty_decomposition(
         self,
         confidence: float = 0.9,
     ) -> dict[str, float]:
-        """
-        Return a lightweight heuristic uncertainty decomposition.
-        Aleatoric uncertainty (data noise): Irreducible uncertainty inherent in the data.
-        Epistemic uncertainty (model uncertainty): Reducible uncertainty due to limited
-            data/knowledge.
-
-        This method does not refit or evaluate an ensemble of models. It is a cheap
-        summary derived from this single `DistributionPrediction` object:
-        - Aleatoric: Average width of prediction intervals (data uncertainty)
-        - Epistemic: Variance of interval widths across samples (model uncertainty)
-
-        For model-based decomposition with bootstrap refits, use
-        `uncertainty_flow.decomposition.EnsembleDecomposition`.
-
-        Args:
-            confidence: Confidence level for interval width calculation (default: 0.9)
-
-        Returns:
-            Dictionary with:
-                - aleatoric: Irreducible uncertainty (average interval width)
-                - epistemic: Heuristic uncertainty summary (variance of interval widths)
-                - total: Combined uncertainty
-
-        Examples
-        --------
-        >>> pred = model.predict(X_test)
-        >>> decomposition = pred.uncertainty_decomposition()
-        >>> print(f"Total: {decomposition['total']:.2f}")
-        >>> print(f"  Aleatoric: {decomposition['aleatoric']:.2f}")
-        >>> print(f"  Epistemic: {decomposition['epistemic']:.2f}")
-        """
         return self._decomposition_for_target(0, confidence)
 
     def _decomposition_for_target(
@@ -909,20 +631,14 @@ class DistributionPrediction:
         }
 
     def summary(self, confidence: float = 0.9) -> pl.DataFrame:
-        """
-        One-row-per-target overview of the prediction distribution.
-
-        Columns: target, median, mean_width_90, mean_width_50,
-        aleatoric, epistemic, total_uncertainty.
-
-        ``mean_width_90`` is the mean width at the ``confidence`` level.
-        ``mean_width_50`` is the mean inter-quartile range (25th–75th percentile).
+        """Generate a summary of the prediction including median, interval widths, and
+        uncertainty decomposition.
 
         Args:
-            confidence: Confidence level for the primary interval width (default 0.9).
+            confidence: Confidence level for interval widths.
 
         Returns:
-            Polars DataFrame with one row per target.
+            DataFrame with one row per target.
         """
         median_idx = self._find_nearest_quantile_index(0.5)
         alpha = (1 - confidence) / 2
@@ -972,23 +688,17 @@ class DistributionPrediction:
         family: str = "auto",
         row_index: int | None = None,
     ) -> ParametricDistribution | list[ParametricDistribution]:
-        """
-        Fit a parametric distribution to the quantile predictions.
-
-        For univariate predictions, fits a single distribution. For
-        multivariate, fits one distribution per target.
+        """Fit a parametric distribution to the quantile predictions.
 
         Args:
-            family: One of ``"normal"``, ``"student_t"``, ``"lognormal"``,
-                ``"gamma"``, or ``"auto"`` (best fit by KS distance).
-            row_index: If given, fit only for that row.  Otherwise fit for
-                the *mean* quantile vector across all rows.
+            family: Distribution family (``"auto"``, ``"normal"``, ``"t"``,
+                ``"laplace"``, ``"skew_normal"``).
+            row_index: Specific row to fit.  If *None*, fits to the
+                average quantile curve across all rows.
 
         Returns:
-            A single ``ParametricDistribution`` for univariate, or a list
-            of ``ParametricDistribution`` (one per target) for multivariate.
-            When ``row_index`` is given, always returns a single distribution
-            for univariate or a list for multivariate.
+            A single ``ParametricDistribution`` (single target) or a list
+            of ``ParametricDistribution`` (multi-target).
         """
         from .parametric import fit_parametric
 
@@ -1014,39 +724,18 @@ class DistributionPrediction:
         y_true: pl.Series | pl.DataFrame | np.ndarray,
         family: str = "auto",
     ) -> float | dict[str, float]:
-        """
-        Compute the mean negative log-likelihood (log-score).
-
-        Fits a parametric distribution from the predicted quantiles, then
-        evaluates the log-density at the true values.  Higher is better
-        (less negative).
+        """Compute the logarithmic (log) score.
 
         Args:
-            y_true: True values.
-            family: Distribution family for fitting, or ``"auto"``.
+            y_true: Observed values.
+            family: Parametric family for density estimation.
 
         Returns:
-            Mean log-score (float) for univariate, or ``{target: score}`` dict
-            for multivariate.
+            Log score value (single target) or dict keyed by target name.
         """
-        from ..metrics.log_score import log_score as _log_score
+        from .distribution_scoring import log_score as _log_score
 
-        y_arr = self._coerce_y_true(y_true)
-
-        if len(self._targets) == 1:
-            return _log_score(
-                y_arr, self._quantiles[:, : self._n_quantiles], self._levels, family=family
-            )
-
-        result = {}
-        for t_idx, target in enumerate(self._targets):
-            result[target] = _log_score(
-                self._target_truth(y_arr, t_idx),
-                self._quantile_slice(t_idx),
-                self._levels,
-                family=family,
-            )
-        return result
+        return _log_score(self, y_true, family=family)
 
     def energy_score(
         self,
@@ -1054,21 +743,17 @@ class DistributionPrediction:
         n_samples: int = 1000,
         random_state: int | None = None,
     ) -> float:
-        """
-        Compute the energy score for multivariate predictions.
-
-        A proper scoring rule that generalises CRPS to the multivariate
-        case.  Requires at least 2 targets.
+        """Compute the energy score for multivariate predictions.
 
         Args:
-            y_true: True values (array with columns matching targets).
-            n_samples: Monte Carlo samples per observation.
-            random_state: Random seed.
+            y_true: Observed values (2-D for multi-target).
+            n_samples: Monte-Carlo samples per observation.
+            random_state: Optional RNG seed.
 
         Returns:
-            Mean energy score (float).
+            Energy score value.
         """
-        from ..metrics.multivariate import energy_score as _energy_score
+        from .distribution_scoring import energy_score as _energy_score
 
         return _energy_score(self, y_true, n_samples=n_samples, random_state=random_state)
 
@@ -1079,21 +764,17 @@ class DistributionPrediction:
         p: float = 0.5,
         random_state: int | None = None,
     ) -> float:
-        """
-        Compute the variogram score for multivariate predictions.
-
-        A proper scoring rule sensitive to the correlation structure.
-        Requires at least 2 targets.
+        """Compute the variogram score for multivariate predictions.
 
         Args:
-            y_true: True values (array with columns matching targets).
-            n_samples: Monte Carlo samples per observation.
-            p: Power parameter (default 0.5).
-            random_state: Random seed.
+            y_true: Observed values (2-D for multi-target).
+            n_samples: Monte-Carlo samples per observation.
+            p: Variogram order parameter.
+            random_state: Optional RNG seed.
 
         Returns:
-            Mean variogram score (float).
+            Variogram score value.
         """
-        from ..metrics.multivariate import variogram_score as _variogram_score
+        from .distribution_scoring import variogram_score as _variogram_score
 
         return _variogram_score(self, y_true, n_samples=n_samples, p=p, random_state=random_state)
