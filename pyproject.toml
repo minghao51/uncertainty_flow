@@ -64,7 +64,7 @@ ignore = []
 testpaths = ["tests"]
 # Coverage ratchet policy: ratchet up in future releases
 # after adding tests for currently uncovered modules.
-addopts = ["--strict-markers", "-ra", "--durations=10", "--import-mode=importlib", "--cov=uncertainty_flow", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=55"]
+addopts = ["--strict-markers", "-ra", "--durations=10", "--import-mode=importlib", "--cov=uncertainty_flow", "--cov-report=term-missing", "--cov-report=html", "--cov-fail-under=65"]
 markers = [
     "unit: fast, focused tests for a single module or behavior",
     "integration: tests covering multi-module workflows or heavier model interactions",
@@ -72,6 +72,8 @@ markers = [
     "optional: tests that rely on optional dependency stacks or non-core integrations",
     "network: tests requiring internet access",
     "smoke: critical path tests for CI gating",
+    "property: hypothesis-based property tests",
+    "metamorphic: metamorphic relation tests",
 ]
 filterwarnings = [
     "ignore:Stochastic Optimizer",
@@ -135,4 +137,7 @@ skips = ["B101", "B110", "B403"]
 dev = [
     "uncertainty-flow[dev,docs]",
     "pre-commit>=4.6.0",
+    "pip-audit>=2.10.0",
+    "bandit>=1.9.4",
+    "hypothesis>=6.153.0",
 ]
