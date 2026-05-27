@@ -1,6 +1,7 @@
 """Multivariate uncertainty modeling."""
 
 from .copula import (
+    ArchimedeanCopulaBase,
     BaseCopula,
     ClaytonCopula,
     FrankCopula,
@@ -11,6 +12,7 @@ from .copula import (
 )
 
 __all__ = [
+    "ArchimedeanCopulaBase",
     "BaseCopula",
     "ClaytonCopula",
     "FrankCopula",

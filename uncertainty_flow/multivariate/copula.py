@@ -42,7 +42,6 @@ class CopulaFamily(str, Enum):
     AUTO = "auto"
 
 
-# Backward compatibility
 CopulaFamilyLiteral = Literal["gaussian", "clayton", "gumbel", "frank", "auto"]
 CopulaFamilyUnion = str | type["BaseCopula"]
 
@@ -59,12 +58,6 @@ class BaseCopula:
         self.fitted_ = False
 
     def _validate_fitted(self) -> None:
-        """
-        Ensure model is fitted before accessing parameters.
-
-        Raises:
-            ModelNotFittedError: If the model has not been fitted yet.
-        """
         if not self.fitted_ or self.theta_ is None:
             raise ModelNotFittedError(self.__class__.__name__)
 
@@ -221,21 +214,11 @@ class GaussianCopula(BaseCopula):
         self.correlation_matrix_: np.ndarray | None = None
 
     def fit(self, residuals: np.ndarray) -> "GaussianCopula":
-        """
-        Fit copula on residual matrix.
-
-        Args:
-            residuals: Residual matrix shape (n_samples, n_targets)
-
-        Returns:
-            self (for method chaining)
-        """
         if residuals.ndim != 2:
             raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
 
         n_samples, n_targets = residuals.shape
 
-        # Check for constant (zero-variance) columns before computing correlation
         constant_cols = []
         for t in range(n_targets):
             if np.all(residuals[:, t] == residuals[0, t]):
@@ -249,7 +232,6 @@ class GaussianCopula(BaseCopula):
 
         self.correlation_matrix_ = np.corrcoef(residuals.T)
 
-        # Condition correlation matrix for numerical stability
         min_eigval = 1e-6
         try:
             eigenvals = np.linalg.eigvals(self.correlation_matrix_)
@@ -291,7 +273,6 @@ class GaussianCopula(BaseCopula):
         return self
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
-        """Compute log-likelihood for BIC calculation."""
         self._validate_fitted()
 
         uniform = self._to_copula_space(residuals)
@@ -314,17 +295,6 @@ class GaussianCopula(BaseCopula):
         quantile_levels: np.ndarray | None = None,
         random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
-        """
-        Generate joint samples from copula.
-
-        Args:
-            marginals: Quantile predictions for each target
-                      shape (n_samples_input, n_targets, n_quantiles)
-            n_samples: Number of Monte Carlo samples to generate
-
-        Returns:
-            Joint samples shape (n_samples, n_targets)
-        """
         self._validate_fitted()
 
         n_samples_input, n_targets, _ = marginals.shape
@@ -341,11 +311,9 @@ class GaussianCopula(BaseCopula):
                 random_state=rng,
             )
         except (np.linalg.LinAlgError, ValueError):
-            # Fallback for singular correlation matrices
             cov = self.correlation_matrix_
             if cov is None:
                 raise ModelNotFittedError("GaussianCopula")
-            assert cov is not None
             normal_samples = rng.multivariate_normal(
                 mean=np.zeros(n_targets),
                 cov=cov,
@@ -357,14 +325,125 @@ class GaussianCopula(BaseCopula):
         return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
 
     def __repr__(self) -> str:
-        if self.fitted_:
-            assert self.correlation_matrix_ is not None
-            n_targets = self.correlation_matrix_.shape[0]
-            return f"GaussianCopula(n_targets={n_targets}, fitted=True)"
-        return "GaussianCopula(fitted=False)"
+        cls = self.__class__.__name__
+        try:
+            if not getattr(self, "fitted_", False):
+                return f"{cls}(fitted=False)"
+            return f"{cls}(fitted=True, n_variables={self.correlation_matrix_.shape[0]})"
+        except Exception:
+            return f"<{cls} at {hex(id(self))}>"
 
 
-class ClaytonCopula(BaseCopula):
+class ArchimedeanCopulaBase(BaseCopula):
+    """Base class for bivariate Archimedean copulas with shared fitting logic."""
+
+    _theta_lower: ClassVar[float] = 0.01
+    _theta_upper: ClassVar[float] = 10.0
+
+    def _validate_bivariate(self, residuals: np.ndarray) -> None:
+        if residuals.ndim != 2:
+            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
+        if residuals.shape[1] != 2:
+            raise InvalidDataError(
+                f"{self.__class__.__name__} supports bivariate only, "
+                f"got {residuals.shape[1]} dimensions"
+            )
+
+    def fit(self, residuals: np.ndarray) -> "ArchimedeanCopulaBase":
+        self._validate_bivariate(residuals)
+
+        uniform = self._to_copula_space(residuals)
+        u, v = uniform[:, 0], uniform[:, 1]
+
+        def neg_log_likelihood(theta: float) -> float:
+            if not self._theta_valid(theta):
+                return 1e10
+            try:
+                ll = self._log_likelihood_arrays(u, v, theta)
+                if not np.isfinite(ll).all():
+                    return 1e10
+                return float(-np.sum(ll))
+            except (ValueError, OverflowError, ZeroDivisionError):
+                return 1e10
+
+        from scipy.optimize import minimize_scalar
+
+        result = minimize_scalar(
+            neg_log_likelihood,
+            bounds=(self._theta_lower, self._theta_upper),
+            method="bounded",
+        )
+        self.theta_ = float(result.x)
+        self.fitted_ = True
+
+        return self
+
+    def log_likelihood(self, residuals: np.ndarray) -> float:
+        self._validate_fitted()
+
+        uniform = self._to_copula_space(residuals)
+        u, v = uniform[:, 0], uniform[:, 1]
+        theta = self.theta_
+        if theta is None:
+            raise ModelNotFittedError(self.__class__.__name__)
+
+        try:
+            return float(np.sum(self._log_likelihood_arrays(u, v, theta)))
+        except (ValueError, OverflowError, ZeroDivisionError):
+            return -np.inf
+
+    def _validate_bivariate_marginals(self, marginals: np.ndarray) -> None:
+        if marginals.shape[1] != 2:
+            raise InvalidDataError(
+                f"{self.__class__.__name__} supports bivariate only, "
+                f"got {marginals.shape[1]} dimensions"
+            )
+
+    def __repr__(self) -> str:
+        cls = self.__class__.__name__
+        try:
+            if not getattr(self, "fitted_", False):
+                return f"{cls}(fitted=False)"
+            return f"{cls}(fitted=True, theta={self.theta_:.4f})"
+        except Exception:
+            return f"<{cls} at {hex(id(self))}>"
+
+    @abstractmethod
+    def _theta_valid(self, theta: float) -> bool: ...
+
+    @abstractmethod
+    def _log_likelihood_arrays(self, u: np.ndarray, v: np.ndarray, theta: float) -> np.ndarray: ...
+
+    @abstractmethod
+    def _sample_v(self, u: np.ndarray, s2: np.ndarray, theta: float) -> np.ndarray: ...
+
+    def sample(
+        self,
+        marginals: np.ndarray,
+        n_samples: int = 1000,
+        quantile_levels: np.ndarray | None = None,
+        random_state: int | np.random.Generator | None = None,
+    ) -> np.ndarray:
+        self._validate_fitted()
+        self._validate_bivariate_marginals(marginals)
+
+        n_samples_input, n_targets, _ = marginals.shape
+        theta = self.theta_
+        if theta is None:
+            raise ModelNotFittedError(self.__class__.__name__)
+        rng = _resolve_rng(random_state)
+
+        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
+        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
+
+        u = s1
+        v = self._sample_v(u, s2, theta)
+
+        uniform_samples = np.stack([u, v], axis=-1)
+        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
+
+
+class ClaytonCopula(ArchimedeanCopulaBase):
     """
     Clayton copula for modeling lower tail dependence.
 
@@ -390,119 +469,26 @@ class ClaytonCopula(BaseCopula):
     has_lower_tail = True
     has_upper_tail = False
 
-    def fit(self, residuals: np.ndarray) -> "ClaytonCopula":
-        """
-        Fit Clayton copula via maximum likelihood.
+    _theta_lower = 0.01
+    _theta_upper = 10.0
 
-        Args:
-            residuals: Residual matrix shape (n_samples, 2) — bivariate only
+    def _theta_valid(self, theta: float) -> bool:
+        return theta > 0
 
-        Returns:
-            self (for method chaining)
-        """
-        if residuals.ndim != 2:
-            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
-
-        if residuals.shape[1] != 2:
-            raise InvalidDataError(
-                f"ClaytonCopula supports bivariate only, got {residuals.shape[1]} dimensions"
+    def _log_likelihood_arrays(self, u: np.ndarray, v: np.ndarray, theta: float) -> np.ndarray:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            s = u ** (-theta) + v ** (-theta) - 1
+            return (
+                np.log(1 + theta)
+                + (-theta - 1) * (np.log(u) + np.log(v))
+                + (-1 / theta - 2) * np.log(s)
             )
 
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-
-        def neg_log_likelihood(theta: float) -> float:
-            if theta <= 0:
-                return 1e10
-            try:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    s = u ** (-theta) + v ** (-theta) - 1
-                    ll = (
-                        np.log(1 + theta)
-                        + (-theta - 1) * (np.log(u) + np.log(v))
-                        + (-1 / theta - 2) * np.log(s)
-                    )
-                if not np.isfinite(ll).all():
-                    return 1e10
-                return float(-np.sum(ll))
-            except (ValueError, OverflowError, ZeroDivisionError):
-                return 1e10
-
-        from scipy.optimize import minimize_scalar
-
-        result = minimize_scalar(neg_log_likelihood, bounds=(0.01, 10), method="bounded")
-        self.theta_ = float(result.x)
-        self.fitted_ = True
-
-        return self
-
-    def log_likelihood(self, residuals: np.ndarray) -> float:
-        """Compute log-likelihood for BIC calculation."""
-        self._validate_fitted()
-
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-        theta = self.theta_
-        assert theta is not None
-
-        try:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                s = u ** (-theta) + v ** (-theta) - 1
-                ll = (
-                    np.log(1 + theta)
-                    + (-theta - 1) * (np.log(u) + np.log(v))
-                    + (-1 / theta - 2) * np.log(s)
-                )
-            return float(np.sum(ll))
-        except (ValueError, OverflowError, ZeroDivisionError):
-            return -np.inf
-
-    def sample(
-        self,
-        marginals: np.ndarray,
-        n_samples: int = 1000,
-        quantile_levels: np.ndarray | None = None,
-        random_state: int | np.random.Generator | None = None,
-    ) -> np.ndarray:
-        """
-        Generate joint samples from Clayton copula.
-
-        Args:
-            marginals: Quantile predictions for each target
-                      shape (n_samples_input, n_targets, n_quantiles)
-            n_samples: Number of Monte Carlo samples to generate
-
-        Returns:
-            Joint samples shape (n_samples, n_targets)
-        """
-        self._validate_fitted()
-
-        if marginals.shape[1] != 2:
-            raise InvalidDataError(
-                f"ClaytonCopula supports bivariate only, got {marginals.shape[1]} dimensions"
-            )
-
-        n_samples_input, n_targets, _ = marginals.shape
-        theta = self.theta_
-        assert theta is not None
-        rng = _resolve_rng(random_state)
-
-        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-
-        u = s1
-        v = (s1 ** (-theta) * (s2 ** (-theta / (theta + 1)) - 1) + 1) ** (-1 / theta)
-
-        uniform_samples = np.stack([u, v], axis=-1)
-        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
-
-    def __repr__(self) -> str:
-        if self.fitted_:
-            return f"ClaytonCopula(theta={self.theta_:.3f}, fitted=True)"
-        return "ClaytonCopula(fitted=False)"
+    def _sample_v(self, u: np.ndarray, s2: np.ndarray, theta: float) -> np.ndarray:
+        return (u ** (-theta) * (s2 ** (-theta / (theta + 1)) - 1) + 1) ** (-1 / theta)
 
 
-class GumbelCopula(BaseCopula):
+class GumbelCopula(ArchimedeanCopulaBase):
     """
     Gumbel copula for modeling upper tail dependence.
 
@@ -528,127 +514,30 @@ class GumbelCopula(BaseCopula):
     has_lower_tail = False
     has_upper_tail = True
 
-    def fit(self, residuals: np.ndarray) -> "GumbelCopula":
-        """
-        Fit Gumbel copula via maximum likelihood.
+    _theta_lower = 1.0
+    _theta_upper = 10.0
 
-        Args:
-            residuals: Residual matrix shape (n_samples, 2) — bivariate only
+    def _theta_valid(self, theta: float) -> bool:
+        return theta >= 1
 
-        Returns:
-            self (for method chaining)
-        """
-        if residuals.ndim != 2:
-            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
-
-        if residuals.shape[1] != 2:
-            raise InvalidDataError(
-                f"GumbelCopula supports bivariate only, got {residuals.shape[1]} dimensions"
+    def _log_likelihood_arrays(self, u: np.ndarray, v: np.ndarray, theta: float) -> np.ndarray:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            a = (-np.log(u)) ** theta + (-np.log(v)) ** theta
+            a_pow = a ** (1 / theta)
+            return (
+                -a_pow
+                + (1 / theta - 2) * np.log(a)
+                + (theta - 1) * (np.log(-np.log(u)) + np.log(-np.log(v)))
+                - np.log(u)
+                - np.log(v)
+                + np.log(a_pow + theta - 1)
             )
 
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-
-        def neg_log_likelihood(theta: float) -> float:
-            if theta < 1:
-                return 1e10
-            try:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    a = (-np.log(u)) ** theta + (-np.log(v)) ** theta
-                    a_pow = a ** (1 / theta)
-                    ll = (
-                        -a_pow
-                        + (1 / theta - 2) * np.log(a)
-                        + (theta - 1) * (np.log(-np.log(u)) + np.log(-np.log(v)))
-                        - np.log(u)
-                        - np.log(v)
-                        + np.log(a_pow + theta - 1)
-                    )
-                if not np.isfinite(ll).all():
-                    return 1e10
-                return float(-np.sum(ll))
-            except (ValueError, OverflowError, ZeroDivisionError):
-                return 1e10
-
-        from scipy.optimize import minimize_scalar
-
-        result = minimize_scalar(neg_log_likelihood, bounds=(1.0, 10), method="bounded")
-        self.theta_ = float(result.x)
-        self.fitted_ = True
-
-        return self
-
-    def log_likelihood(self, residuals: np.ndarray) -> float:
-        """Compute log-likelihood for BIC calculation."""
-        self._validate_fitted()
-
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-        theta = self.theta_
-        assert theta is not None
-
-        try:
-            with np.errstate(divide="ignore", invalid="ignore"):
-                a = (-np.log(u)) ** theta + (-np.log(v)) ** theta
-                a_pow = a ** (1 / theta)
-                ll = (
-                    -a_pow
-                    + (1 / theta - 2) * np.log(a)
-                    + (theta - 1) * (np.log(-np.log(u)) + np.log(-np.log(v)))
-                    - np.log(u)
-                    - np.log(v)
-                    + np.log(a_pow + theta - 1)
-                )
-            return float(np.sum(ll))
-        except (ValueError, OverflowError, ZeroDivisionError):
-            return -np.inf
-
-    def sample(
-        self,
-        marginals: np.ndarray,
-        n_samples: int = 1000,
-        quantile_levels: np.ndarray | None = None,
-        random_state: int | np.random.Generator | None = None,
-    ) -> np.ndarray:
-        """
-        Generate joint samples from Gumbel copula.
-
-        Args:
-            marginals: Quantile predictions for each target
-                      shape (n_samples_input, n_targets, n_quantiles)
-            n_samples: Number of Monte Carlo samples to generate
-
-        Returns:
-            Joint samples shape (n_samples, n_targets)
-        """
-        self._validate_fitted()
-
-        if marginals.shape[1] != 2:
-            raise InvalidDataError(
-                f"GumbelCopula supports bivariate only, got {marginals.shape[1]} dimensions"
-            )
-
-        n_samples_input, n_targets, _ = marginals.shape
-        theta = self.theta_
-        assert theta is not None
-        rng = _resolve_rng(random_state)
-
-        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-
-        u = s1
-        v = _solve_gumbel_conditional(s1, s2, theta)
-
-        uniform_samples = np.stack([u, v], axis=-1)
-        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
-
-    def __repr__(self) -> str:
-        if self.fitted_:
-            return f"GumbelCopula(theta={self.theta_:.3f}, fitted=True)"
-        return "GumbelCopula(fitted=False)"
+    def _sample_v(self, u: np.ndarray, s2: np.ndarray, theta: float) -> np.ndarray:
+        return _solve_gumbel_conditional(u, s2, theta)
 
 
-class FrankCopula(BaseCopula):
+class FrankCopula(ArchimedeanCopulaBase):
     """
     Frank copula for symmetric dependence.
 
@@ -674,129 +563,30 @@ class FrankCopula(BaseCopula):
     has_lower_tail = False
     has_upper_tail = False
 
-    def fit(self, residuals: np.ndarray) -> "FrankCopula":
-        """
-        Fit Frank copula via maximum likelihood.
+    _theta_lower = -30.0
+    _theta_upper = 30.0
 
-        Args:
-            residuals: Residual matrix shape (n_samples, 2) — bivariate only
+    def _theta_valid(self, theta: float) -> bool:
+        return theta != 0
 
-        Returns:
-            self (for method chaining)
-        """
-        if residuals.ndim != 2:
-            raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
-
-        if residuals.shape[1] != 2:
-            raise InvalidDataError(
-                f"FrankCopula supports bivariate only, got {residuals.shape[1]} dimensions"
-            )
-
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-
-        def neg_log_likelihood(theta: float) -> float:
-            if theta == 0:
-                return 1e10
-            try:
-                with np.errstate(divide="ignore", invalid="ignore"):
-                    exp_neg_theta_u = np.exp(-theta * u)
-                    exp_neg_theta_v = np.exp(-theta * v)
-                    exp_neg_theta = np.exp(-theta)
-                    numerator = (exp_neg_theta_u - 1) * (exp_neg_theta_v - 1)
-                    h = -np.log(numerator / (exp_neg_theta - 1) + 1) / theta
-                    ll = (
-                        theta * (u + v - 1)
-                        - np.log(exp_neg_theta_u - 1)
-                        - np.log(exp_neg_theta_v - 1)
-                        - np.log(exp_neg_theta - 1)
-                        + theta * h
-                    )
-                    if not np.isfinite(ll).all():
-                        return 1e10
-                    return float(-np.sum(ll))
-            except (ValueError, OverflowError, ZeroDivisionError):
-                return 1e10
-
-        from scipy.optimize import minimize_scalar
-
-        result = minimize_scalar(neg_log_likelihood, bounds=(-30, 30), method="bounded")
-        self.theta_ = float(result.x)
-        self.fitted_ = True
-
-        return self
-
-    def log_likelihood(self, residuals: np.ndarray) -> float:
-        """Compute log-likelihood for BIC calculation."""
-        self._validate_fitted()
-
-        uniform = self._to_copula_space(residuals)
-        u, v = uniform[:, 0], uniform[:, 1]
-        theta = self.theta_
-        assert theta is not None
-
-        try:
-            h = (
-                -np.log(
-                    (np.exp(-theta * u) - 1) * (np.exp(-theta * v) - 1) / (np.exp(-theta) - 1) + 1
-                )
-                / theta
-            )
-            ll = (
+    def _log_likelihood_arrays(self, u: np.ndarray, v: np.ndarray, theta: float) -> np.ndarray:
+        with np.errstate(divide="ignore", invalid="ignore"):
+            exp_neg_theta_u = np.exp(-theta * u)
+            exp_neg_theta_v = np.exp(-theta * v)
+            exp_neg_theta = np.exp(-theta)
+            numerator = (exp_neg_theta_u - 1) * (exp_neg_theta_v - 1)
+            h = -np.log(numerator / (exp_neg_theta - 1) + 1) / theta
+            return (
                 theta * (u + v - 1)
-                - np.log(np.exp(-theta * u) - 1)
-                - np.log(np.exp(-theta * v) - 1)
-                - np.log(np.exp(-theta) - 1)
+                - np.log(exp_neg_theta_u - 1)
+                - np.log(exp_neg_theta_v - 1)
+                - np.log(exp_neg_theta - 1)
                 + theta * h
             )
-            return float(np.sum(ll))
-        except (ValueError, OverflowError, ZeroDivisionError):
-            return -np.inf
 
-    def sample(
-        self,
-        marginals: np.ndarray,
-        n_samples: int = 1000,
-        quantile_levels: np.ndarray | None = None,
-        random_state: int | np.random.Generator | None = None,
-    ) -> np.ndarray:
-        """
-        Generate joint samples from Frank copula.
-
-        Args:
-            marginals: Quantile predictions for each target
-                      shape (n_samples_input, n_targets, n_quantiles)
-            n_samples: Number of Monte Carlo samples to generate
-
-        Returns:
-            Joint samples shape (n_samples, n_targets)
-        """
-        self._validate_fitted()
-
-        if marginals.shape[1] != 2:
-            raise InvalidDataError(
-                f"FrankCopula supports bivariate only, got {marginals.shape[1]} dimensions"
-            )
-
-        n_samples_input, n_targets, _ = marginals.shape
-        theta = self.theta_
-        assert theta is not None
-        rng = _resolve_rng(random_state)
-
-        s1 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-        s2 = rng.uniform(0, 1, size=(n_samples_input, n_samples))
-
-        u = s1
+    def _sample_v(self, u: np.ndarray, s2: np.ndarray, theta: float) -> np.ndarray:
         denom = np.exp(-theta * u) * (1 - s2) + s2
-        v = -np.log(1 + s2 * (np.exp(-theta) - 1) / denom) / theta
-
-        uniform_samples = np.stack([u, v], axis=-1)
-        return _inverse_from_marginals(marginals, uniform_samples, quantile_levels)
-
-    def __repr__(self) -> str:
-        if self.fitted_:
-            return f"FrankCopula(theta={self.theta_:.3f}, fitted=True)"
-        return "FrankCopula(fitted=False)"
+        return -np.log(1 + s2 * (np.exp(-theta) - 1) / denom) / theta
 
 
 class PairwiseChainCopula(BaseCopula):
@@ -830,15 +620,6 @@ class PairwiseChainCopula(BaseCopula):
         self._n_targets: int = 0
 
     def fit(self, residuals: np.ndarray) -> PairwiseChainCopula:
-        """
-        Fit the chain by learning a bivariate copula for each consecutive pair.
-
-        Args:
-            residuals: (n_samples, d) residual matrix with d >= 2.
-
-        Returns:
-            self
-        """
         if residuals.ndim != 2:
             raise InvalidDataError(f"residuals must be 2D, got shape {residuals.shape}")
         if residuals.shape[1] < 2:
@@ -866,7 +647,6 @@ class PairwiseChainCopula(BaseCopula):
         return self
 
     def log_likelihood(self, residuals: np.ndarray) -> float:
-        """Sum of log-likelihoods across all pairs."""
         self._validate_fitted()
         total = 0.0
         for i, pc in enumerate(self._pair_copulas):
@@ -881,21 +661,6 @@ class PairwiseChainCopula(BaseCopula):
         quantile_levels: np.ndarray | None = None,
         random_state: int | np.random.Generator | None = None,
     ) -> np.ndarray:
-        """
-        Sequential conditional sampling through the chain.
-
-        Draws u_1 ~ Uniform, then for each subsequent target draws
-        u_{i+1} conditional on u_i using the i-th pair copula.
-
-        Args:
-            marginals: (n_input_rows, d, n_quantiles) quantile predictions.
-            n_samples: Monte Carlo samples per input row.
-            quantile_levels: Quantile levels.
-            random_state: Random seed.
-
-        Returns:
-            Mapped samples via _inverse_from_marginals.
-        """
         self._validate_fitted()
 
         n_rows, d, n_q = marginals.shape
