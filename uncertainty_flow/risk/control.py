@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Callable
 import numpy as np
 import polars as pl
 
-from ..utils.exceptions import InvalidDataError
+from ..utils.exceptions import InvalidDataError, ModelNotFittedError
 
 if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
@@ -145,12 +145,21 @@ class ConformalRiskControl:
         risk_curve = np.empty_like(unique_proxy, dtype=float)
         threshold = float(unique_proxy[0])
 
-        for i, start_idx in enumerate(unique_idx):
-            accepted_risks = sorted_risks[: start_idx + 1]
-            metric_value = float(metric_fn(accepted_risks))
-            risk_curve[i] = metric_value
-            if metric_value <= self.target_risk:
-                threshold = float(unique_proxy[i])
+        if self.calibration_method == "mean":
+            cumsum = np.cumsum(sorted_risks)
+            counts = np.arange(1, len(sorted_risks) + 1, dtype=float)
+            running_means = cumsum / counts
+            risk_curve = running_means[unique_idx]
+            below_mask = risk_curve <= self.target_risk
+            if np.any(below_mask):
+                threshold = float(unique_proxy[np.max(np.where(below_mask))])
+        else:
+            for i, start_idx in enumerate(unique_idx):
+                accepted_risks = sorted_risks[: start_idx + 1]
+                metric_value = float(metric_fn(accepted_risks))
+                risk_curve[i] = metric_value
+                if metric_value <= self.target_risk:
+                    threshold = float(unique_proxy[i])
 
         self._calibration_risks = risks
         self._calibration_proxy = proxy
@@ -216,19 +225,13 @@ class ConformalRiskControl:
     def _estimate_risk(self, proxy: np.ndarray) -> np.ndarray:
         """Estimate realized risk from the calibration proxy curve."""
         if self._proxy_grid is None or self._risk_curve is None:
-            raise InvalidDataError(
-                "ConformalRiskControl must be fitted before prediction. Call fit() first."
-            )
-
-        risk_curve = self._risk_curve
-        proxy_grid = self._proxy_grid
-        assert risk_curve is not None and proxy_grid is not None
+            raise ModelNotFittedError("ConformalRiskControl must be fitted before risk estimation")
         return np.interp(
             proxy,
-            proxy_grid,
-            risk_curve,
-            left=float(risk_curve[0]),
-            right=float(risk_curve[-1]),
+            self._proxy_grid,
+            self._risk_curve,
+            left=float(self._risk_curve[0]),
+            right=float(self._risk_curve[-1]),
         )
 
     def risk_threshold(self) -> float:

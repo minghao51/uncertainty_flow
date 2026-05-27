@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import polars as pl
 
+from ..utils.exceptions import InvalidDataError, UncertaintyFlowError
+
 if TYPE_CHECKING:
     from ..core.base import BaseUncertaintyModel
 
@@ -180,8 +182,6 @@ class EvolutionarySearch:
         SearchResult
             Counterfactual explanation with minimal changes
         """
-        from ..utils.exceptions import InvalidDataError
-
         if data.height != 1:
             raise InvalidDataError("data must have exactly one row for counterfactual search")
 
@@ -238,7 +238,8 @@ class EvolutionarySearch:
             )
 
         # Extract counterfactual from best individual
-        assert best_individual is not None
+        if best_individual is None:
+            raise UncertaintyFlowError("Optimization produced no valid individual")
         counterfactual_dict = {}
         best_ind_arr = best_individual
         for i, col in enumerate(data.columns):
@@ -262,7 +263,7 @@ class EvolutionarySearch:
         cf_pred = self.model.predict(counterfactual)
         cf_width = _interval_width(cf_pred, self.confidence)
 
-        reduction = (original_width - cf_width) / original_width
+        reduction = (original_width - cf_width) / max(original_width, 1e-10)
 
         return SearchResult(
             counterfactual=counterfactual,
@@ -300,31 +301,61 @@ class EvolutionarySearch:
         target_width: float,
         original_width: float,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Evaluate fitness for each individual."""
-        fitness_values = np.zeros(len(population))
-        widths = np.zeros(len(population))
+        """Evaluate fitness for each individual using batch prediction."""
+        n = len(population)
+        fitness_values = np.full(n, 1e6)
+        widths = np.full(n, original_width)
 
-        for i, individual in enumerate(population):
-            # Create DataFrame for this individual
-            row_dict = {col: individual[j] for j, col in enumerate(data.columns)}
-            cf_row = pl.DataFrame(row_dict, schema=data.schema)
+        try:
+            columns = data.columns
+            batch_dict = {col: population[:, j] for j, col in enumerate(columns)}
+            batch_df = pl.DataFrame(batch_dict, schema=data.schema)
+            pred = self.model.predict(batch_df)
 
-            try:
-                pred = self.model.predict(cf_row)
-                width = _interval_width(pred, self.confidence)
-                widths[i] = width
+            interval = pred.interval(self.confidence)
+            if len(pred._targets) == 1:
+                lower = interval["lower"].to_numpy()
+                upper = interval["upper"].to_numpy()
+            else:
+                first_target = pred._targets[0]
+                lower = interval[f"{first_target}_lower"].to_numpy()
+                upper = interval[f"{first_target}_upper"].to_numpy()
 
-                # Fitness: reward reducing width + penalize large changes
-                width_penalty = max(0, width - target_width) / original_width
-                change_penalty = np.mean(np.abs(individual - data.to_numpy().flatten())) / (
-                    original_width + 1
-                )
-                fitness_values[i] = width_penalty + 0.1 * change_penalty
+            widths = upper - lower
 
-            except (ValueError, TypeError, RuntimeError):
-                # Invalid individual, assign high fitness
-                fitness_values[i] = 1e6
-                widths[i] = original_width
+            width_penalty = np.maximum(0, widths - target_width) / max(original_width, 1e-10)
+            change_penalty = np.mean(np.abs(population - data.to_numpy().flatten()), axis=1) / (
+                original_width + 1
+            )
+            fitness_values = width_penalty + 0.1 * change_penalty
+
+        except (InvalidDataError, ValueError, TypeError, RuntimeError, KeyError):
+            for i in range(n):
+                try:
+                    row_dict = {col: population[i, j] for j, col in enumerate(columns)}
+                    row_df = pl.DataFrame(row_dict, schema=data.schema)
+                    pred = self.model.predict(row_df)
+
+                    interval = pred.interval(self.confidence)
+                    if len(pred._targets) == 1:
+                        lower_val = interval["lower"].to_numpy()[0]
+                        upper_val = interval["upper"].to_numpy()[0]
+                    else:
+                        first_target = pred._targets[0]
+                        lower_val = interval[f"{first_target}_lower"].to_numpy()[0]
+                        upper_val = interval[f"{first_target}_upper"].to_numpy()[0]
+
+                    w = float(upper_val - lower_val)
+                    widths[i] = w
+
+                    width_penalty = max(0, w - target_width) / max(original_width, 1e-10)
+                    change_penalty = float(
+                        np.mean(np.abs(population[i] - data.to_numpy().flatten()))
+                    ) / (original_width + 1)
+                    fitness_values[i] = width_penalty + 0.1 * change_penalty
+                except (InvalidDataError, ValueError, TypeError, RuntimeError, KeyError):
+                    fitness_values[i] = float("inf")
+                    widths[i] = original_width
 
         return fitness_values, widths
 
@@ -510,8 +541,6 @@ class GradientSearch:
         SearchResult
             Counterfactual explanation with minimal changes
         """
-        from ..utils.exceptions import InvalidDataError
-
         if data.height != 1:
             raise InvalidDataError("data must have exactly one row for counterfactual search")
 
@@ -604,7 +633,7 @@ class GradientSearch:
         cf_pred = self.model.predict(counterfactual)
         cf_width = _interval_width(cf_pred, self.confidence)
 
-        reduction = (original_width - cf_width) / original_width
+        reduction = (original_width - cf_width) / max(original_width, 1e-10)
 
         return SearchResult(
             counterfactual=counterfactual,
@@ -774,7 +803,7 @@ class GradientSearch:
         cf_pred = self.model.predict(counterfactual)
         cf_width = _interval_width(cf_pred, self.confidence)
 
-        reduction = (original_width - cf_width) / original_width
+        reduction = (original_width - cf_width) / max(original_width, 1e-10)
 
         return SearchResult(
             counterfactual=counterfactual,
