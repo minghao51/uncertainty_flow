@@ -291,6 +291,40 @@ class TestUncertaintyExplainerBatch:
         assert len(results) == 3
         assert all(isinstance(r, SearchResult) for r in results)
 
+    def test_explain_batch_result_count_matches_input(
+        self, sample_forecaster, sample_features_small
+    ):
+        explainer = UncertaintyExplainer(sample_forecaster, random_state=42)
+        n = 4
+        results = explainer.explain_batch(
+            sample_features_small.head(n),
+            target_reduction=0.1,
+            feature_bounds={"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)},
+        )
+        assert len(results) == n
+
+    def test_explain_batch_each_result_has_width(self, sample_forecaster, sample_features_small):
+        explainer = UncertaintyExplainer(sample_forecaster, random_state=42)
+        results = explainer.explain_batch(
+            sample_features_small.head(3),
+            target_reduction=0.2,
+            feature_bounds={"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)},
+        )
+        for r in results:
+            assert hasattr(r, "original_width")
+            assert hasattr(r, "new_width")
+            assert r.original_width >= 0
+
+    def test_explain_batch_fallback_single_row(self, sample_forecaster, sample_single_row):
+        explainer = UncertaintyExplainer(sample_forecaster, random_state=42)
+        results = explainer.explain_batch(
+            sample_single_row,
+            target_reduction=0.2,
+            feature_bounds={"x1": (-5, 5), "x2": (-5, 5), "x3": (-5, 5)},
+        )
+        assert len(results) == 1
+        assert isinstance(results[0], SearchResult)
+
 
 class TestUncertaintyExplainerCompareFeatures:
     """Test compare_features method."""

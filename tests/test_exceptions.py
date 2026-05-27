@@ -19,8 +19,8 @@ from uncertainty_flow.utils.exceptions import (
 
 
 class TestExceptionHierarchy:
-    def test_base_error_inherits_from_value_error(self):
-        assert issubclass(UncertaintyFlowError, ValueError)
+    def test_base_error_inherits_from_exception(self):
+        assert issubclass(UncertaintyFlowError, Exception)
 
     def test_model_error_hierarchy(self):
         assert issubclass(ModelError, UncertaintyFlowError)
@@ -95,16 +95,16 @@ class TestErrorRaising:
 
 
 class TestBackwardCompatibility:
-    def test_model_not_fitted_is_value_error(self):
-        with pytest.raises(ValueError):
+    def test_model_not_fitted_is_uncertainty_flow_error(self):
+        with pytest.raises(UncertaintyFlowError):
             raise ModelNotFittedError("TestModel")
 
-    def test_invalid_data_is_value_error(self):
-        with pytest.raises(ValueError):
+    def test_invalid_data_is_uncertainty_flow_error(self):
+        with pytest.raises(UncertaintyFlowError):
             raise InvalidDataError("test reason")
 
-    def test_calibration_size_is_value_error(self):
-        with pytest.raises(ValueError):
+    def test_calibration_size_is_uncertainty_flow_error(self):
+        with pytest.raises(UncertaintyFlowError):
             raise CalibrationSizeError(10)
 
 

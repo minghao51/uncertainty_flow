@@ -579,6 +579,7 @@ def run_benchmark(
     )
 
     results: list[dict] = []
+    errors: list[dict[str, str]] = []
 
     for model_name in available:
         print(f"\n  [{model_name}]")
@@ -597,8 +598,22 @@ def run_benchmark(
             results.append(model_result)
         except ImportError as e:
             print(f"    SKIP (missing dep): {e}")
+            errors.append(
+                {
+                    "model": model_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+            )
         except Exception as e:
             print(f"    ERROR: {e}")
+            errors.append(
+                {
+                    "model": model_name,
+                    "error_type": type(e).__name__,
+                    "error_message": str(e),
+                }
+            )
 
     payload = {
         "metadata": {
@@ -611,6 +626,7 @@ def run_benchmark(
             "auto_tune": auto_tune,
         },
         "results": results,
+        "errors": errors,
     }
 
     if output_prefix:

@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.metrics import coverage_score
+from uncertainty_flow.utils.exceptions import InvalidDataError
 
 
 class TestCoverageScore:
@@ -57,7 +58,7 @@ class TestCoverageScore:
         lower = np.array([6, 6, 6])
         upper = np.array([4, 4, 4])
 
-        with pytest.raises(ValueError, match="lower bound must be <= upper bound"):
+        with pytest.raises(InvalidDataError, match="lower bound must be <= upper bound"):
             coverage_score(y_true, lower, upper)
 
     def test_returns_float(self):

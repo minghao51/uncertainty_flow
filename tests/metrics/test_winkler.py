@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.metrics import winkler_score
+from uncertainty_flow.utils.exceptions import InvalidDataError, QuantileError
 
 
 class TestWinklerScore:
@@ -58,7 +59,7 @@ class TestWinklerScore:
         lower = np.array([0, 1, 2])
         upper = np.array([2, 3, 4])
 
-        with pytest.raises(ValueError, match="confidence must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match="confidence must be in \\(0, 1\\)"):
             winkler_score(y_true, lower, upper, 1.5)
 
     def test_validates_bounds(self):
@@ -67,7 +68,7 @@ class TestWinklerScore:
         lower = np.array([6, 6, 6])  # Higher than upper
         upper = np.array([4, 4, 4])
 
-        with pytest.raises(ValueError, match="lower bound must be <= upper bound"):
+        with pytest.raises(InvalidDataError, match="lower bound must be <= upper bound"):
             winkler_score(y_true, lower, upper, 0.9)
 
     def test_all_inside_interval(self):

@@ -13,6 +13,7 @@ from uncertainty_flow.decomposition.ensemble import (
     _point_prediction_matrix,
 )
 from uncertainty_flow.models import QuantileForestForecaster
+from uncertainty_flow.utils.exceptions import InvalidDataError
 
 
 class LinearBootstrapToyModel(BaseUncertaintyModel):
@@ -109,7 +110,7 @@ class TestEnsembleDecompositionInputValidation:
 
     def test_rejects_zero_bootstrap(self):
         """Should reject n_bootstrap=0."""
-        with pytest.raises(ValueError, match="at least 1"):
+        with pytest.raises(InvalidDataError, match="at least 1"):
             EnsembleDecomposition(
                 model_factory=lambda: LinearBootstrapToyModel(),
                 train_data=None,
@@ -118,13 +119,16 @@ class TestEnsembleDecompositionInputValidation:
 
     def test_rejects_invalid_confidence(self):
         """Should reject confidence outside (0, 1)."""
-        with pytest.raises(ValueError, match="must be in"):
+        with pytest.raises(InvalidDataError, match="must be in"):
             EnsembleDecomposition(
                 model_factory=lambda: LinearBootstrapToyModel(),
                 train_data=None,
                 confidence=0.0,
             )
-        with pytest.raises(ValueError, match="must be in"):
+
+    def test_rejects_confidence_above_one(self):
+        """Should reject confidence > 1."""
+        with pytest.raises(InvalidDataError, match="must be in"):
             EnsembleDecomposition(
                 model_factory=lambda: LinearBootstrapToyModel(),
                 train_data=None,
@@ -133,7 +137,7 @@ class TestEnsembleDecompositionInputValidation:
 
     def test_rejects_empty_train_data(self):
         """Should reject empty train_data."""
-        with pytest.raises(ValueError, match="at least one row"):
+        with pytest.raises(InvalidDataError, match="at least one row"):
             EnsembleDecomposition(
                 model_factory=lambda: LinearBootstrapToyModel(),
                 train_data=pl.DataFrame(),

@@ -6,6 +6,7 @@ import pytest
 
 from uncertainty_flow import QuantileForestForecaster
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import InvalidDataError, ModelNotFittedError
 
 
 @pytest.fixture
@@ -204,7 +205,7 @@ class TestQuantileForestForecasterFit:
             auto_tune=False,
             random_state=42,
         )
-        with pytest.raises(ValueError, match="Unknown copula_family"):
+        with pytest.raises(InvalidDataError, match="Unknown copula_family"):
             model.fit(time_series_data)
 
 
@@ -217,7 +218,7 @@ class TestQuantileForestForecasterPredict:
             targets="price",
             horizon=3,
         )
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             model.predict(pl.DataFrame({"date": [1, 2, 3], "price": [1, 2, 3]}))
 
     def test_predict_returns_distribution_prediction(self, univariate_time_series):

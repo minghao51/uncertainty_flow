@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import InvalidDataError, QuantileError
 
 
 class FakeCopula:
@@ -40,7 +41,7 @@ class TestDistributionPredictionInit:
     def test_validates_2d_matrix(self):
         """Should raise error for 1D matrix."""
         matrix = np.array([1, 2, 3])
-        with pytest.raises(ValueError, match="must be 2D"):
+        with pytest.raises(InvalidDataError, match="must be 2D"):
             DistributionPrediction(
                 quantile_matrix=matrix,
                 quantile_levels=[0.25, 0.5, 0.75],
@@ -50,7 +51,7 @@ class TestDistributionPredictionInit:
     def test_validates_matrix_shape(self):
         """Should raise error when matrix columns don't match levels."""
         matrix = np.array([[1, 2], [3, 4]])
-        with pytest.raises(ValueError, match="expected.*columns"):
+        with pytest.raises(InvalidDataError, match="expected.*columns"):
             DistributionPrediction(
                 quantile_matrix=matrix,
                 quantile_levels=[0.25, 0.5, 0.75],  # 3 levels
@@ -60,7 +61,7 @@ class TestDistributionPredictionInit:
     def test_validates_non_empty_targets(self):
         """Should raise error for empty target list."""
         matrix = np.array([[1, 2, 3]])
-        with pytest.raises(ValueError, match="target_names cannot be empty"):
+        with pytest.raises(InvalidDataError, match="target_names cannot be empty"):
             DistributionPrediction(
                 quantile_matrix=matrix,
                 quantile_levels=[0.25, 0.5, 0.75],
@@ -151,9 +152,9 @@ class TestIntervalMethod:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="confidence must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match="confidence must be in \\(0, 1\\)"):
             dp.interval(1.5)
-        with pytest.raises(ValueError, match="confidence must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match="confidence must be in \\(0, 1\\)"):
             dp.interval(-0.1)
 
 
@@ -223,8 +224,7 @@ class TestMultivariate:
         assert "volume" in result.columns
         assert result.to_numpy().tolist() == [[2, 20], [5, 50]]
 
-    def test_legacy_mean_method_removed(self):
-        """mean() should not exist on DistributionPrediction."""
+    def test_mean_method(self):
         matrix = np.array(
             [
                 [1, 2, 3, 10, 20, 30],
@@ -236,7 +236,10 @@ class TestMultivariate:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price", "volume"],
         )
-        assert not hasattr(dp, "mean")
+        assert hasattr(dp, "mean")
+        result = dp.mean()
+        assert isinstance(result, pl.DataFrame)
+        assert result.shape == (2, 2)
 
 
 class TestPlotMethod:
@@ -473,7 +476,7 @@ class TestPosteriorMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="posterior"):
+        with pytest.raises(InvalidDataError, match="posterior"):
             dp.posterior_samples()
 
     def test_posterior_samples_returns_array(self):
@@ -495,7 +498,7 @@ class TestPosteriorMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="posterior"):
+        with pytest.raises(InvalidDataError, match="posterior"):
             dp.credible_interval(0.9)
 
     def test_credible_interval_returns_dataframe(self):
@@ -532,7 +535,7 @@ class TestPosteriorMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="chain"):
+        with pytest.raises(InvalidDataError, match="chain"):
             dp.rhat()
 
     def test_rhat_returns_array(self):
@@ -555,7 +558,7 @@ class TestPosteriorMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="posterior"):
+        with pytest.raises(InvalidDataError, match="posterior"):
             dp.posterior_summary()
 
     def test_posterior_summary_returns_dataframe(self):
@@ -639,7 +642,7 @@ class TestGroupMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="group"):
+        with pytest.raises(InvalidDataError, match="group"):
             dp.group_uncertainty()
 
     def test_group_uncertainty_returns_dict(self, dp_with_groups):
@@ -654,7 +657,7 @@ class TestGroupMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="group"):
+        with pytest.raises(InvalidDataError, match="group"):
             dp.group_intervals(0.9)
 
     def test_group_intervals_returns_dict_of_dataframes(self, dp_with_groups):
@@ -671,7 +674,7 @@ class TestGroupMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["price"],
         )
-        with pytest.raises(ValueError, match="group"):
+        with pytest.raises(InvalidDataError, match="group"):
             dp.cross_group_correlation()
 
     def test_cross_group_correlation_returns_array(self, dp_with_groups):
@@ -703,7 +706,7 @@ class TestTreatmentMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["outcome"],
         )
-        with pytest.raises(ValueError, match="treatment"):
+        with pytest.raises(InvalidDataError, match="treatment"):
             dp.treatment_effect()
 
     def test_treatment_effect_returns_array(self, dp_with_treatment):
@@ -723,7 +726,7 @@ class TestTreatmentMethods:
             quantile_levels=[0.25, 0.5, 0.75],
             target_names=["outcome"],
         )
-        with pytest.raises(ValueError, match="treatment"):
+        with pytest.raises(InvalidDataError, match="treatment"):
             dp.heterogeneity_score()
 
     def test_heterogeneity_score_returns_float(self, dp_with_treatment):
@@ -794,7 +797,7 @@ class TestDistributionPredictionCRPS:
     def test_crps_requires_two_quantile_levels(self):
         q = np.array([[5.0]])
         dp = DistributionPrediction(q, [0.5], ["y"])
-        with pytest.raises(ValueError, match="at least 2"):
+        with pytest.raises(InvalidDataError, match="at least 2"):
             dp.crps(np.array([5.0]))
 
 

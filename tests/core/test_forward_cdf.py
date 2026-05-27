@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import InvalidDataError
 
 
 class TestForwardCDF:
@@ -173,7 +174,7 @@ class TestPITValues:
             quantile_levels=[0.5],
             target_names=["y"],
         )
-        with pytest.raises(ValueError, match="at least 2 quantile levels"):
+        with pytest.raises(InvalidDataError, match="at least 2 quantile levels"):
             pred._pit_values(np.array([1.0, 2.0]))
 
 

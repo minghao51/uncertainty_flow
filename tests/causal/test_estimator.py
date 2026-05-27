@@ -84,8 +84,10 @@ class TestCausalUncertaintyEstimatorInit:
         assert model.random_state == 123
 
     def test_init_invalid_method_raises(self):
-        """Should raise ValueError for invalid method."""
-        with pytest.raises(ValueError, match="Invalid method"):
+        """Should raise ConfigurationError for invalid method."""
+        from uncertainty_flow.utils.exceptions import ConfigurationError
+
+        with pytest.raises(ConfigurationError, match="Invalid method"):
             CausalUncertaintyEstimator(
                 outcome_model=_make_outcome_model(),
                 method="invalid",
@@ -143,8 +145,10 @@ class TestCausalUncertaintyEstimatorFit:
 
     def test_fit_dr_with_conformal_outcome_raises(self, causal_data):
         """DR mode should guard against unsupported conformalized outcome model."""
+        from uncertainty_flow.utils.exceptions import ConfigurationError
+
         model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model(), random_state=42)
-        with pytest.raises(ValueError, match="does not support conformal wrapper"):
+        with pytest.raises(ConfigurationError, match="does not support conformal wrapper"):
             model.fit(causal_data, target="outcome")
 
 
@@ -158,8 +162,10 @@ class TestCausalUncertaintyEstimatorPredict:
 
     def test_predict_before_fit_raises(self):
         """Should raise error if model not fitted."""
+        from uncertainty_flow.utils.exceptions import ModelNotFittedError
+
         model = CausalUncertaintyEstimator(outcome_model=_make_outcome_model())
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             model.predict(pl.DataFrame({"x1": [1], "x2": [2], "treatment": [1], "outcome": [0]}))
 
     def test_predict_returns_distribution_prediction(self, causal_data):

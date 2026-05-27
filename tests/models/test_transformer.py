@@ -5,6 +5,7 @@ import pytest
 
 from uncertainty_flow.core.config import get_config
 from uncertainty_flow.models import CHRONOS_MODELS
+from uncertainty_flow.utils.exceptions import ConfigurationError
 
 
 class TestTransformerForecasterInit:
@@ -48,7 +49,7 @@ class TestTransformerForecasterInit:
         """Should raise error for invalid model name."""
         from uncertainty_flow.models import TransformerForecaster
 
-        with pytest.raises(ValueError, match="Unknown model_name"):
+        with pytest.raises(ConfigurationError, match="Unknown model_name"):
             TransformerForecaster(target="y", model_name="invalid-model")
 
     def test_chronos_models_config(self):

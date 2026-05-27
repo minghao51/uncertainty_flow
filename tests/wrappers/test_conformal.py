@@ -8,6 +8,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from uncertainty_flow import ConformalRegressor
 from uncertainty_flow.core.config import QuantileConfig, reset_config, set_config
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import ModelNotFittedError
 
 
 @pytest.fixture
@@ -155,7 +156,7 @@ class TestConformalRegressorPredict:
     def test_predict_before_fit_raises(self):
         """Should raise error if model not fitted."""
         model = ConformalRegressor(base_model=GradientBoostingRegressor())
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             model.predict(pl.DataFrame({"x": [1, 2, 3]}))
 
     def test_predict_returns_distribution_prediction(self, regression_data):

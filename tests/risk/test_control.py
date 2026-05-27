@@ -8,6 +8,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.risk import ConformalRiskControl, asymmetric_loss
 from uncertainty_flow.risk.control import _interval_half_width, _prediction_mean
+from uncertainty_flow.utils.exceptions import InvalidDataError
 from uncertainty_flow.wrappers import ConformalRegressor
 
 
@@ -78,7 +79,7 @@ class TestConformalRiskControlPredict:
         risk_fn = asymmetric_loss()
         risk_control = ConformalRiskControl(sample_model, risk_fn)
         test_data = pl.DataFrame({"x1": [1, 2], "x2": [3, 4]})
-        with pytest.raises(Exception):  # InvalidDataError
+        with pytest.raises(InvalidDataError):
             risk_control.predict(test_data)
 
     def test_predict_returns_dataframe(self, sample_model, risk_control, sample_data):
@@ -110,7 +111,7 @@ class TestConformalRiskControlRiskThreshold:
         """Should raise error if called before fit."""
         risk_fn = asymmetric_loss()
         risk_control = ConformalRiskControl(sample_model, risk_fn)
-        with pytest.raises(Exception):  # InvalidDataError
+        with pytest.raises(InvalidDataError):
             risk_control.risk_threshold()
 
     def test_risk_threshold_after_fit_returns_value(self, sample_model, risk_control, sample_data):
@@ -237,6 +238,28 @@ class TestConformalRiskControlMeanMethod:
         )
         risk_control.fit(sample_data, target="y")
         assert risk_control._risk_threshold is not None
+
+    def test_mean_vectorized_matches_loop(self, sample_model, sample_data):
+        risk_fn = asymmetric_loss()
+        risk_control = ConformalRiskControl(
+            sample_model,
+            risk_fn,
+            target_risk=0.1,
+            calibration_method="mean",
+            random_state=42,
+        )
+        risk_control.fit(sample_data, target="y")
+
+        sorted_risks = risk_control._calibration_risks[np.argsort(risk_control._calibration_proxy)]
+        unique_proxy = risk_control._proxy_grid
+        sorted_proxy = np.sort(risk_control._calibration_proxy)
+        _, unique_idx = np.unique(sorted_proxy, return_index=True)
+
+        expected_curve = np.empty_like(unique_proxy, dtype=float)
+        for i, start_idx in enumerate(unique_idx):
+            expected_curve[i] = float(np.mean(sorted_risks[: start_idx + 1]))
+
+        np.testing.assert_allclose(risk_control._risk_curve, expected_curve, atol=1e-12)
 
 
 @pytest.fixture

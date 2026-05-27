@@ -9,6 +9,7 @@ from uncertainty_flow.core.config import (
     set_config,
 )
 from uncertainty_flow.core.types import DEFAULT_QUANTILES
+from uncertainty_flow.utils.exceptions import ConfigurationError, QuantileError
 from uncertainty_flow.wrappers.conformal import DEFAULT_QUANTILES as CONFORMAL_DEFAULT_QUANTILES
 
 
@@ -52,18 +53,18 @@ class TestQuantileValidation:
 
     def test_empty_quantiles_raises_error(self):
         """Empty quantile list should raise ValueError."""
-        with pytest.raises(ValueError, match="Quantile list cannot be empty"):
+        with pytest.raises(QuantileError, match="Quantile list cannot be empty"):
             QuantileConfig(default_quantiles=[])
 
     def test_quantile_out_of_range_raises_error(self):
         """Quantiles outside (0, 1) should raise ValueError."""
-        with pytest.raises(ValueError, match="must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match=r"must be in \(0, 1\)"):
             QuantileConfig(default_quantiles=[0.0, 0.5, 1.0])
 
-        with pytest.raises(ValueError, match="must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match=r"must be in \(0, 1\)"):
             QuantileConfig(default_quantiles=[-0.1, 0.5, 0.9])
 
-        with pytest.raises(ValueError, match="must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match=r"must be in \(0, 1\)"):
             QuantileConfig(default_quantiles=[0.1, 0.5, 1.1])
 
     def test_duplicate_quantiles_warning(self):
@@ -84,8 +85,8 @@ class TestCalibrationSizeValidation:
     def test_warn_threshold_less_than_min_raises_error(self):
         """warn_calibration_size must be >= min_calibration_size."""
         with pytest.raises(
-            ValueError,
-            match="warn_calibration_size \\(30\\) must be >= min_calibration_size \\(50\\)",
+            ConfigurationError,
+            match=r"warn_calibration_size \(30\) must be >= min_calibration_size \(50\)",
         ):
             QuantileConfig(
                 min_calibration_size=50,

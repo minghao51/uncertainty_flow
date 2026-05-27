@@ -7,6 +7,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow import ConformalForecaster
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import ModelNotFittedError
 
 
 @pytest.fixture
@@ -204,7 +205,7 @@ class TestConformalForecasterPredict:
             horizon=3,
             targets="price",
         )
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             model.predict(pl.DataFrame({"date": [1, 2, 3], "price": [1, 2, 3]}))
 
     def test_predict_returns_distribution_prediction(self, univariate_time_series):

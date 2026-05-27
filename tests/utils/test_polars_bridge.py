@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.utils import to_numpy, to_numpy_series, to_polars
+from uncertainty_flow.utils.exceptions import InvalidDataError
 from uncertainty_flow.utils.polars_bridge import as_numpy
 
 
@@ -35,7 +36,7 @@ class TestToNumpy:
     def test_validates_missing_columns(self):
         """Should raise error for missing columns."""
         df = pl.DataFrame({"a": [1, 2, 3]})
-        with pytest.raises(ValueError, match="not found"):
+        with pytest.raises(InvalidDataError, match="not found"):
             to_numpy(df, ["a", "b"])
 
     def test_selects_columns_in_order(self):
@@ -64,12 +65,12 @@ class TestToPolars:
 
     def test_1d_array_multiple_columns_raises_error(self):
         arr = np.array([1, 2, 3])
-        with pytest.raises(ValueError, match="1D array requires single column name"):
+        with pytest.raises(InvalidDataError, match="1D array requires single column name"):
             to_polars(arr, ["a", "b"])
 
     def test_validates_column_count(self):
         arr = np.array([[1, 4], [2, 5], [3, 6]])
-        with pytest.raises(ValueError, match="1 column names provided"):
+        with pytest.raises(InvalidDataError, match="1 column names provided"):
             to_polars(arr, ["a"])
 
     def test_restores_index(self):
@@ -81,7 +82,7 @@ class TestToPolars:
     def test_validates_index_length(self):
         arr = np.array([[1, 4], [2, 5], [3, 6]])
         index = pl.Series(["x", "y"])
-        with pytest.raises(ValueError, match="Index length.*doesn't match"):
+        with pytest.raises(InvalidDataError, match="Index length.*doesn't match"):
             to_polars(arr, ["a", "b"], index=index)
 
 
@@ -101,7 +102,7 @@ class TestToNumpySeries:
 
     def test_series_rejects_non_series(self):
         df = pl.DataFrame({"a": [1, 2, 3]})
-        with pytest.raises(ValueError, match=r"Expected pl\.Series, got DataFrame\."):
+        with pytest.raises(InvalidDataError, match=r"Expected pl\.Series, got DataFrame\."):
             to_numpy_series(df)  # type: ignore[arg-type]
 
 

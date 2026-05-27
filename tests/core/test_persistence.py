@@ -468,7 +468,39 @@ class TestHMACSigning:
         from uncertainty_flow.core._persistence import load_model_archive
 
         with pytest.warns(UserWarning, match="no HMAC signature"):
-            load_model_archive(archive, signing_key=b"some-key")
+            load_model_archive(archive, signing_key=b"some-key", verify_hmac=False)
+
+    def test_load_raises_when_signed_archive_has_no_verification_key(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "signed_missing_key.uf"
+        key = b"test-secret-key-32-bytes-long!!!!!"
+
+        from uncertainty_flow.core._persistence import load_model_archive, save_model_archive
+
+        save_model_archive(model, archive, hmac_sign=True, signing_key=key)
+
+        with pytest.raises(ValueError, match="contains HMAC signature"):
+            load_model_archive(archive)
+
+    def test_load_raises_when_unsigned_archive_verified_with_key(self, tabular_data, tmp_path):
+        model = ConformalRegressor(
+            base_model=GradientBoostingRegressor(n_estimators=10, random_state=42),
+            auto_tune=False,
+            random_state=42,
+        )
+        model.fit(tabular_data, target="target")
+        archive = tmp_path / "unsigned_verified.uf"
+        model.save(archive)
+
+        from uncertainty_flow.core._persistence import load_model_archive
+
+        with pytest.raises(ValueError, match="archive has no HMAC signature"):
+            load_model_archive(archive, signing_key=b"some-key", verify_hmac=True)
 
     def test_valid_hmac_loads_successfully(self, tabular_data, tmp_path):
         model = ConformalRegressor(

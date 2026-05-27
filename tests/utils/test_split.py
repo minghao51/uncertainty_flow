@@ -67,7 +67,7 @@ class TestRandomHoldoutSplit:
             }
         )
         splitter = RandomHoldoutSplit(random_state=42)
-        with pytest.raises(ValueError, match="Calibration set too small"):
+        with pytest.raises(CalibrationSizeError, match="Calibration set too small"):
             splitter.split(df, 0.3)  # Would give 15 samples
 
     def test_warns_small_calibration(self):
@@ -139,7 +139,7 @@ class TestTemporalHoldoutSplit:
             }
         )
         splitter = TemporalHoldoutSplit()
-        with pytest.raises(ValueError, match="Calibration set too small"):
+        with pytest.raises(CalibrationSizeError, match="Calibration set too small"):
             splitter.split(df, 0.3)  # Would give 15 samples
 
     def test_warns_small_calibration(self):

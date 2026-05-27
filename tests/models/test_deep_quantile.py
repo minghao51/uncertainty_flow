@@ -6,6 +6,7 @@ import pytest
 
 from uncertainty_flow import DeepQuantileNet
 from uncertainty_flow.core.distribution import DistributionPrediction
+from uncertainty_flow.utils.exceptions import ModelNotFittedError
 
 
 @pytest.fixture
@@ -130,7 +131,7 @@ class TestDeepQuantileNetPredict:
     def test_predict_before_fit_raises(self):
         """Should raise error if model not fitted."""
         model = DeepQuantileNet()
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             model.predict(pl.DataFrame({"x": [1, 2, 3]}))
 
     def test_predict_returns_distribution_prediction(self, sample_regression_data):

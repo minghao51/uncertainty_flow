@@ -5,6 +5,7 @@ import polars as pl
 import pytest
 
 from uncertainty_flow.metrics import pinball_loss
+from uncertainty_flow.utils.exceptions import QuantileError
 
 
 class TestPinballLoss:
@@ -52,10 +53,10 @@ class TestPinballLoss:
         y_true = np.array([1, 2, 3])
         y_pred = np.array([1, 2, 3])
 
-        with pytest.raises(ValueError, match="quantile must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match="quantile must be in \\(0, 1\\)"):
             pinball_loss(y_true, y_pred, 1.5)
 
-        with pytest.raises(ValueError, match="quantile must be in \\(0, 1\\)"):
+        with pytest.raises(QuantileError, match="quantile must be in \\(0, 1\\)"):
             pinball_loss(y_true, y_pred, -0.1)
 
     def test_perfect_prediction_zero_loss(self):

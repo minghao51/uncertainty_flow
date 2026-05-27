@@ -7,6 +7,7 @@ from sklearn.ensemble import GradientBoostingRegressor
 
 from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.multimodal import CrossModalAggregator
+from uncertainty_flow.utils.exceptions import ConfigurationError, ModelNotFittedError
 from uncertainty_flow.wrappers import ConformalRegressor
 
 # ---------------------------------------------------------------------------
@@ -69,15 +70,15 @@ class TestCrossModalAggregatorInit:
         assert agg.aggregation == "independent"
 
     def test_init_copula_not_supported(self):
-        with pytest.raises(ValueError, match="Invalid aggregation"):
+        with pytest.raises(ConfigurationError, match="Invalid aggregation"):
             CrossModalAggregator(feature_groups=FEATURE_GROUPS, aggregation="copula")
 
     def test_init_invalid_aggregation_raises(self):
-        with pytest.raises(ValueError, match="Invalid aggregation"):
+        with pytest.raises(ConfigurationError, match="Invalid aggregation"):
             CrossModalAggregator(feature_groups=FEATURE_GROUPS, aggregation="unknown")
 
     def test_init_empty_groups_raises(self):
-        with pytest.raises(ValueError, match="feature_groups cannot be empty"):
+        with pytest.raises(ConfigurationError, match="feature_groups cannot be empty"):
             CrossModalAggregator(feature_groups={})
 
     def test_init_random_state(self):
@@ -119,12 +120,12 @@ class TestCrossModalAggregatorFit:
 
     def test_fit_requires_base_model(self, multimodal_data):
         agg = CrossModalAggregator(feature_groups=FEATURE_GROUPS, random_state=42)
-        with pytest.raises(ValueError, match="base_model is required"):
+        with pytest.raises(ConfigurationError, match="base_model is required"):
             agg.fit(multimodal_data, target="demand")
 
     def test_fit_requires_target(self, multimodal_data):
         agg = CrossModalAggregator(feature_groups=FEATURE_GROUPS, random_state=42)
-        with pytest.raises(ValueError, match="target is required"):
+        with pytest.raises(ConfigurationError, match="target is required"):
             agg.fit(multimodal_data, base_model=_make_base_model())
 
     def test_fit_with_lazyframe(self, multimodal_data):
@@ -147,7 +148,7 @@ class TestCrossModalAggregatorPredict:
 
     def test_predict_before_fit_raises(self, multimodal_data):
         agg = CrossModalAggregator(feature_groups=FEATURE_GROUPS, random_state=42)
-        with pytest.raises(ValueError, match="not fitted"):
+        with pytest.raises(ModelNotFittedError, match="not fitted"):
             agg.predict(multimodal_data)
 
     def test_predict_returns_distribution_prediction(self, multimodal_data):
@@ -239,7 +240,7 @@ class TestGroupMethodsIntegration:
 
     def test_copula_aggregation_rejected_at_construction(self):
         """Copula aggregation should be rejected until implementation lands."""
-        with pytest.raises(ValueError, match="Invalid aggregation"):
+        with pytest.raises(ConfigurationError, match="Invalid aggregation"):
             CrossModalAggregator(
                 feature_groups=FEATURE_GROUPS,
                 aggregation="copula",
