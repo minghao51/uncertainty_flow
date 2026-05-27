@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.base import RegressorMixin
 from sklearn.neural_network import MLPRegressor
 
+from ..utils.exceptions import UncertaintyFlowError
 from .base_quantile import BaseQuantileNeuralNet
 
 
@@ -108,8 +109,12 @@ class DeepQuantileNet(BaseQuantileNeuralNet, RegressorMixin):
         for q in self.quantile_levels:
             head = LinearQuantileHead(solver=self.head_solver)
             head.fit(self._trunk_features_, y, quantile=q)
-            assert head.coef_ is not None
-            assert head.intercept_ is not None
+            if head.coef_ is None:
+                raise UncertaintyFlowError(f"Quantile head fitting failed for q={q}: coef_ is None")
+            if head.intercept_ is None:
+                raise UncertaintyFlowError(
+                    f"Quantile head fitting failed for q={q}: intercept_ is None"
+                )
             self._head_coefs_[q] = head.coef_
             self._head_intercepts_[q] = head.intercept_
 

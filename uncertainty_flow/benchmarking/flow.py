@@ -25,6 +25,25 @@ from .tuning import TuningConfig, auto_tune_model
 logger = logging.getLogger(__name__)
 
 
+def _compute_fold_metrics(pred, y_true: np.ndarray) -> dict[str, float]:
+    lower_90_s, upper_90_s = pred.interval_bounds(0.9)
+    lower_80_s, upper_80_s = pred.interval_bounds(0.8)
+    lower_90 = to_numpy_series(lower_90_s)
+    upper_90 = to_numpy_series(upper_90_s)
+    lower_80 = to_numpy_series(lower_80_s)
+    upper_80 = to_numpy_series(upper_80_s)
+
+    return {
+        "cov_90": coverage_score(y_true, lower_90, upper_90),
+        "cov_80": coverage_score(y_true, lower_80, upper_80),
+        "wink_90": winkler_score(y_true, lower_90, upper_90, confidence=0.9),
+        "wink_80": winkler_score(y_true, lower_80, upper_80, confidence=0.8),
+        "sharp_90": float(np.mean(upper_90 - lower_90)),
+        "sharp_80": float(np.mean(upper_80 - lower_80)),
+        "pinball": float(pinball_loss(y_true, lower_90, 0.1)),
+    }
+
+
 @dataclass
 class LoadedDataset:
     """Dataset payload for flow execution."""
@@ -68,7 +87,7 @@ class BenchmarkFlow:
         errors: list[dict[str, str]] = []
         for model_name in active_names:
             try:
-                results.append(self._run_one(model_name, loaded))
+                results.append(self.run_one(model_name, loaded))
             except (KeyboardInterrupt, SystemExit):
                 raise
             except RECOVERABLE_EXCEPTIONS as e:
@@ -95,7 +114,7 @@ class BenchmarkFlow:
             errors=errors,
         )
 
-    def _run_one(self, model_name: str, loaded: LoadedDataset) -> ModelResult:
+    def run_one(self, model_name: str, loaded: LoadedDataset) -> ModelResult:
         tune_df, train_df, test_df = self._train_test_split(loaded.df)
         tuning_result = self._get_tuning_result(model_name, tune_df, loaded.target)
 
@@ -203,30 +222,17 @@ class BenchmarkFlow:
 
         n_pred = len(pred.interval(0.9))
         y_true = to_numpy_series(test_df[target])[-n_pred:]
-        lower_90_s, upper_90_s = pred.interval_bounds(0.9)
-        lower_80_s, upper_80_s = pred.interval_bounds(0.8)
-        lower_90 = to_numpy_series(lower_90_s)
-        upper_90 = to_numpy_series(upper_90_s)
-        lower_80 = to_numpy_series(lower_80_s)
-        upper_80 = to_numpy_series(upper_80_s)
-
-        cov_90 = coverage_score(y_true, lower_90, upper_90)
-        cov_80 = coverage_score(y_true, lower_80, upper_80)
-        wink_90 = winkler_score(y_true, lower_90, upper_90, confidence=0.9)
-        wink_80 = winkler_score(y_true, lower_80, upper_80, confidence=0.8)
-        sharp_90 = float(np.mean(upper_90 - lower_90))
-        sharp_80 = float(np.mean(upper_80 - lower_80))
-        pinball = float(pinball_loss(y_true, lower_90, 0.1))
+        m = _compute_fold_metrics(pred, y_true)
 
         return ModelResult(
             model_name=model_name,
-            coverage_90=round(cov_90, 4),
-            coverage_80=round(cov_80, 4),
-            sharpness_90=round(sharp_90, 4),
-            sharpness_80=round(sharp_80, 4),
-            winkler_90=round(wink_90, 4),
-            winkler_80=round(wink_80, 4),
-            pinball_loss=round(pinball, 4),
+            coverage_90=round(m["cov_90"], 4),
+            coverage_80=round(m["cov_80"], 4),
+            sharpness_90=round(m["sharp_90"], 4),
+            sharpness_80=round(m["sharp_80"], 4),
+            winkler_90=round(m["wink_90"], 4),
+            winkler_80=round(m["wink_80"], 4),
+            pinball_loss=round(m["pinball"], 4),
             train_time_sec=round(float(getattr(benchmark, "train_time", 0.0)), 3),
             n_samples=n_pred,
             tuned_params=tuned_params,
@@ -270,20 +276,15 @@ class BenchmarkFlow:
 
             n_pred = len(pred.interval(0.9))
             y_true = to_numpy_series(test_df[loaded.target])[-n_pred:]
-            lower_90_s, upper_90_s = pred.interval_bounds(0.9)
-            lower_80_s, upper_80_s = pred.interval_bounds(0.8)
-            lower_90 = to_numpy_series(lower_90_s)
-            upper_90 = to_numpy_series(upper_90_s)
-            lower_80 = to_numpy_series(lower_80_s)
-            upper_80 = to_numpy_series(upper_80_s)
+            m = _compute_fold_metrics(pred, y_true)
 
-            cov_90s.append(coverage_score(y_true, lower_90, upper_90))
-            cov_80s.append(coverage_score(y_true, lower_80, upper_80))
-            wink_90s.append(winkler_score(y_true, lower_90, upper_90, confidence=0.9))
-            wink_80s.append(winkler_score(y_true, lower_80, upper_80, confidence=0.8))
-            sharp_90s.append(float(np.mean(upper_90 - lower_90)))
-            sharp_80s.append(float(np.mean(upper_80 - lower_80)))
-            pinballs.append(float(pinball_loss(y_true, lower_90, 0.1)))
+            cov_90s.append(m["cov_90"])
+            cov_80s.append(m["cov_80"])
+            wink_90s.append(m["wink_90"])
+            wink_80s.append(m["wink_80"])
+            sharp_90s.append(m["sharp_90"])
+            sharp_80s.append(m["sharp_80"])
+            pinballs.append(m["pinball"])
             train_times.append(float(getattr(benchmark, "train_time", 0.0)))
             n_samples_list.append(n_pred)
 

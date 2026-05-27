@@ -60,8 +60,10 @@ class BenchmarkRunner:
     def run_model(self, model_name: str) -> ModelResult:
         if self.flow.loaded is None:
             self.load_data()
-        self._require_loaded()
-        return self.flow._run_one(model_name, self.flow.loaded)
+        loaded = self.flow.loaded
+        if loaded is None:
+            raise DataError("No dataset loaded")
+        return self.flow.run_one(model_name, loaded)
 
     def run_all(
         self,

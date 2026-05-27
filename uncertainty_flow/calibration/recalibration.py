@@ -7,6 +7,8 @@ then remap predictions at inference time.
 
 from __future__ import annotations
 
+import warnings
+
 import numpy as np
 import polars as pl
 from sklearn.isotonic import IsotonicRegression
@@ -228,7 +230,12 @@ class RecalibratedModel(BaseUncertaintyModel):
                 # Since both empirical_at_levels and pred._levels are
                 # monotone increasing, np.interp gives the inverse.
                 if empirical_at_levels[-1] <= empirical_at_levels[0]:
-                    # Degenerate isotonic map (should not happen)
+                    warnings.warn(
+                        "Degenerate isotonic calibration map detected "
+                        f"(target index {t_idx}). Falling back to uncalibrated "
+                        "quantile levels. Results may be unreliable.",
+                        stacklevel=2,
+                    )
                     input_level = level
                 else:
                     input_level = float(np.interp(level, empirical_at_levels, pred._levels))

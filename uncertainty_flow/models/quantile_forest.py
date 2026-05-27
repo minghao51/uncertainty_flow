@@ -314,6 +314,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         for tree_idx, tree_leaf_ids in enumerate(all_leaf_ids.T):
             tree_dist = leaf_dists[tree_idx]
             positions = np.searchsorted(tree_dist["leaf_ids"], tree_leaf_ids)
+            positions = np.clip(positions, 0, len(tree_dist["quantiles"]) - 1)
             predictions += tree_dist["quantiles"][positions]
 
         predictions /= len(leaf_dists)
