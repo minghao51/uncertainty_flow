@@ -8,7 +8,9 @@ from .exceptions import (
     InvalidDataError,
     ModelError,
     ModelNotFittedError,
+    NonRecoverableError,
     QuantileError,
+    RecoverableError,
     UncertaintyFlowError,
     UncertaintyFlowWarning,
 )
@@ -45,7 +47,9 @@ __all__ = [
     "InvalidDataError",
     "ModelError",
     "ModelNotFittedError",
+    "NonRecoverableError",
     "QuantileError",
+    "RecoverableError",
     "UncertaintyFlowError",
     "UncertaintyFlowWarning",
 ]

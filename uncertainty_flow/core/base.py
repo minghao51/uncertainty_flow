@@ -1,5 +1,7 @@
 """Base classes for uncertainty quantification models."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,6 +14,39 @@ from .types import PolarsInput, TargetSpec
 
 if TYPE_CHECKING:
     from .distribution import DistributionPrediction
+
+
+def _base_calibration_report(
+    model: BaseUncertaintyModel,
+    data: pl.DataFrame,
+    target: str | list[str] | None,
+    quantile_levels: list[float] | None = None,
+) -> pl.DataFrame:
+    from ..utils.calibration_utils import calibration_report as _calibration_report
+
+    return _calibration_report(model, data, target, quantile_levels)  # type: ignore[arg-type]
+
+
+def _base_explain_interval_width(
+    model: BaseUncertaintyModel,
+    X: pl.DataFrame,  # noqa: N803
+    background: pl.DataFrame | None = None,
+    quantile_pairs: list[tuple[float, float]] | None = None,
+) -> pl.DataFrame:
+    from ..calibration.shap_values import uncertainty_shap
+
+    return uncertainty_shap(model, X, background=background, quantile_pairs=quantile_pairs)
+
+
+def _base_analyze_leverage(
+    model: BaseUncertaintyModel,
+    X: pl.DataFrame,  # noqa: N803
+    **kwargs,
+) -> pl.DataFrame:
+    from ..analysis.leverage import FeatureLeverageAnalyzer
+
+    analyzer = FeatureLeverageAnalyzer(model, **kwargs)
+    return analyzer.analyze(X)
 
 
 class BaseUncertaintyModel(ABC):
@@ -100,14 +135,8 @@ class BaseUncertaintyModel(ABC):
         Returns:
             Polars DataFrame with calibration metrics
         """
-        # Lazy import to avoid circular dependency:
-        # calibration_utils -> DistributionPrediction -> this module
-        from ..utils.calibration_utils import calibration_report as _calibration_report
-
-        # Collect lazyframe if needed
         data = materialize_lazyframe(data)
-
-        return _calibration_report(self, data, target, quantile_levels)  # type: ignore[arg-type]
+        return _base_calibration_report(self, data, target, quantile_levels)
 
     def save(
         self,
@@ -207,13 +236,13 @@ class BaseUncertaintyModel(ABC):
         Returns:
             Polars DataFrame with SHAP attributions per feature.
         """
-        from ..calibration.shap_values import uncertainty_shap
-
         X = materialize_lazyframe(X)  # noqa: N806
         if background is not None:
             background = materialize_lazyframe(background)
 
-        return uncertainty_shap(self, X, background=background, quantile_pairs=quantile_pairs)
+        return _base_explain_interval_width(
+            self, X, background=background, quantile_pairs=quantile_pairs
+        )
 
     def analyze_leverage(
         self,
@@ -233,8 +262,5 @@ class BaseUncertaintyModel(ABC):
         Returns:
             Polars DataFrame with leverage scores per feature.
         """
-        from ..analysis.leverage import FeatureLeverageAnalyzer
-
         X = materialize_lazyframe(X)  # noqa: N806
-        analyzer = FeatureLeverageAnalyzer(self, **kwargs)
-        return analyzer.analyze(X)
+        return _base_analyze_leverage(self, X, **kwargs)

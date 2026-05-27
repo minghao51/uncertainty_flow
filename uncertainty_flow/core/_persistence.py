@@ -15,7 +15,7 @@ import zipfile
 from datetime import datetime, timezone
 from importlib import metadata
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .types import DEFAULT_QUANTILES
 
@@ -29,6 +29,91 @@ DEPENDENCY_NAMES = {
     "scikit-learn": "scikit-learn",
     "scipy": "scipy",
 }
+
+
+class _ModelUnpickler(pickle.Unpickler):
+    _ALLOWED_PREFIXES: ClassVar[tuple[str, ...]] = (
+        "numpy.",
+        "numpy._",
+        "sklearn.",
+        "scipy.",
+        "_loss.",
+        "torch.",
+        "uncertainty_flow.",
+    )
+
+    _ALLOWED: ClassVar[set[tuple[str, str]]] = {
+        ("builtins", "dict"),
+        ("builtins", "list"),
+        ("builtins", "tuple"),
+        ("builtins", "set"),
+        ("builtins", "frozenset"),
+        ("builtins", "float"),
+        ("builtins", "int"),
+        ("builtins", "str"),
+        ("builtins", "bool"),
+        ("builtins", "NoneType"),
+        ("builtins", "bytes"),
+        ("builtins", "bytearray"),
+        ("collections", "OrderedDict"),
+        ("collections", "defaultdict"),
+        ("numpy", "ndarray"),
+        ("numpy", "dtype"),
+        ("numpy.core.multiarray", "_reconstruct"),
+        ("numpy.core.multiarray", "scalar"),
+        ("numpy.core.multiarray", "array"),
+        ("numpy.core", "dtype"),
+        ("numpy.core", "_dtype_ctypes"),
+        ("numpy._core.multiarray", "_reconstruct"),
+        ("numpy._core.multiarray", "scalar"),
+        ("numpy._core.multiarray", "array"),
+        ("numpy._core", "dtype"),
+        ("numpy._core.numeric", "_frombuffer"),
+        ("numpy.random._pickle", "__randomstate_ctor"),
+        ("numpy.random._pickle", "__bit_generator_ctor"),
+        ("numpy.random._mt19937", "MT19937"),
+        ("sklearn.ensemble._forest", "RandomForestRegressor"),
+        ("sklearn.ensemble._forest", "RandomTreesEmbedding"),
+        ("sklearn.ensemble._gb", "GradientBoostingRegressor"),
+        ("sklearn.tree._tree", "Tree"),
+        ("sklearn.tree._classes", "DecisionTreeRegressor"),
+        ("sklearn.tree", "DecisionTreeRegressor"),
+        ("sklearn.linear_model._base", "LinearRegression"),
+        ("sklearn.preprocessing._data", "StandardScaler"),
+        ("sklearn.neural_network._multilayer_perceptron", "MLPRegressor"),
+        ("sklearn.neural_network._stochastic_optimizers", "AdamOptimizer"),
+        ("sklearn.dummy", "DummyRegressor"),
+        ("sklearn._loss.loss", "HalfSquaredError"),
+        ("_loss", "CyHalfSquaredError"),
+        ("sklearn._loss.link", "IdentityLink"),
+        ("sklearn._loss.link", "Interval"),
+        ("scipy.stats._distn_infrastructure", "rv_frozen"),
+        ("scipy.stats", "norm"),
+        ("scipy.stats", "t"),
+        ("scipy.stats._continuous_distns", "norm_gen"),
+        ("scipy.stats._continuous_distns", "t_gen"),
+        ("polars.dataframe.frame", "DataFrame"),
+        ("uncertainty_flow.models.quantile_forest", "QuantileForestForecaster"),
+        ("uncertainty_flow.models.deep_quantile", "DeepQuantileNet"),
+        ("uncertainty_flow.models.deep_quantile", "LinearQuantileHead"),
+        ("uncertainty_flow.multivariate.copula", "GaussianCopula"),
+        ("uncertainty_flow.multivariate.copula", "ClaytonCopula"),
+        ("uncertainty_flow.multivariate.copula", "GumbelCopula"),
+        ("uncertainty_flow.multivariate.copula", "FrankCopula"),
+        ("uncertainty_flow.multivariate.copula", "PairwiseChainCopula"),
+        ("uncertainty_flow.wrappers.conformal", "ConformalRegressor"),
+    }
+
+    def find_class(self, module: str, name: str) -> type:
+        if (module, name) in self._ALLOWED:
+            return super().find_class(module, name)
+        for prefix in self._ALLOWED_PREFIXES:
+            if module.startswith(prefix):
+                return super().find_class(module, name)
+        raise pickle.UnpicklingError(
+            f"Forbidden class '{module}.{name}' in model archive. "
+            f"If this is expected, add it to _ModelUnpickler._ALLOWED."
+        )
 
 
 def _sha256_hex(payload: bytes) -> str:
@@ -284,14 +369,26 @@ def load_model_archive(
             )
 
     stored_hmac = metadata_dict.get("model_payload_hmac")
-    if stored_hmac is not None and signing_key is not None:
-        expected_hmac = hmac.new(signing_key, model_payload, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(expected_hmac, str(stored_hmac)):
+    if stored_hmac is not None:
+        if signing_key is None:
+            if verify_hmac:
+                raise ValueError(
+                    "Invalid model archive: archive contains HMAC signature, "
+                    "but no signing_key was provided for verification."
+                )
+        else:
+            expected_hmac = hmac.new(signing_key, model_payload, hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected_hmac, str(stored_hmac)):
+                raise ValueError(
+                    "Invalid model archive: HMAC signature verification failed. "
+                    "The archive may have been tampered with."
+                )
+    elif signing_key is not None:
+        if verify_hmac:
             raise ValueError(
-                "Invalid model archive: HMAC signature verification failed. "
-                "The archive may have been tampered with."
+                "Invalid model archive: archive has no HMAC signature, "
+                "but verify_hmac=True with a signing_key."
             )
-    elif stored_hmac is None and signing_key is not None:
         warnings.warn(
             "Archive has no HMAC signature but a signing_key was provided. "
             "The archive may have been created without HMAC signing.",
@@ -300,9 +397,11 @@ def load_model_archive(
         )
 
     try:
-        model = pickle.load(io.BytesIO(model_payload))  # nosec B301
-    except (pickle.PickleError, AttributeError, ImportError, EOFError) as exc:
-        raise ValueError("Invalid model archive: failed to deserialize model payload.") from exc
+        model = _ModelUnpickler(io.BytesIO(model_payload)).load()
+    except Exception as exc:
+        raise ValueError(
+            f"Invalid model archive: failed to deserialize model payload: {exc}"
+        ) from exc
 
     _warn_version_mismatches(metadata_dict)
     setattr(model, "_metadata", metadata_dict)

@@ -1,5 +1,7 @@
 """Core type aliases and constants for uncertainty_flow."""
 
+from __future__ import annotations
+
 from collections.abc import Sequence
 from enum import Enum
 
@@ -25,8 +27,17 @@ TargetSpec = str | list[str]
 class _ConfigQuantiles(Sequence[float]):
     """Dynamic proxy reflecting the active config quantiles."""
 
+    def __init__(self) -> None:
+        self._cache: tuple[float, ...] | None = None
+        self._cached_hash: int = 0
+
     def _values(self) -> tuple[float, ...]:
-        return tuple(get_config().default_quantiles)
+        cfg = get_config()
+        current_hash = hash(tuple(cfg.default_quantiles))
+        if self._cache is None or current_hash != self._cached_hash:
+            self._cache = tuple(cfg.default_quantiles)
+            self._cached_hash = current_hash
+        return self._cache
 
     def __getitem__(self, index: int | slice) -> float | tuple[float, ...]:
         return self._values()[index]

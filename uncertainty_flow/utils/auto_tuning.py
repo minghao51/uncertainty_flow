@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import warnings
 from itertools import product
 from typing import Any, Literal
 
@@ -10,6 +11,7 @@ import polars as pl
 from sklearn.base import BaseEstimator
 
 from ..metrics import coverage_score, winkler_score
+from .exceptions import UncertaintyFlowWarning
 from .polars_bridge import to_numpy_series
 
 
@@ -91,11 +93,18 @@ def score_distribution_prediction(
             lower = to_numpy_series(interval["lower"])
             upper = to_numpy_series(interval["upper"])
 
-        n = min(len(y_true), len(median))
-        y_true = y_true[-n:]
-        median = median[-n:]
-        lower = lower[-n:]
-        upper = upper[-n:]
+        if len(y_true) != len(median):
+            warnings.warn(
+                f"y_true length ({len(y_true)}) != prediction length ({len(median)}). "
+                "Truncating to overlapping portion.",
+                UncertaintyFlowWarning,
+                stacklevel=2,
+            )
+            n = min(len(y_true), len(median))
+            y_true = y_true[-n:]
+            median = median[-n:]
+            lower = lower[-n:]
+            upper = upper[-n:]
 
         mae = float(np.mean(np.abs(y_true - median)))
         coverage = float(coverage_score(y_true, lower, upper))

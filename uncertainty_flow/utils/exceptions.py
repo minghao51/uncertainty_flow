@@ -1,8 +1,8 @@
 """Exception hierarchy for uncertainty_flow."""
 
 
-class UncertaintyFlowError(ValueError):
-    """Base error class for uncertainty_flow."""
+class UncertaintyFlowError(Exception):
+    """Base for all library errors."""
 
     def __init__(self, message: str, error_code: str | None = None):
         self.error_code = error_code
@@ -11,7 +11,15 @@ class UncertaintyFlowError(ValueError):
         super().__init__(message)
 
 
-class ModelError(UncertaintyFlowError):
+class RecoverableError(UncertaintyFlowError):
+    """Errors where retry/recovery is possible."""
+
+
+class NonRecoverableError(UncertaintyFlowError):
+    """Critical errors that cannot be programmatically bypassed."""
+
+
+class ModelError(NonRecoverableError):
     """Base class for model-related errors."""
 
 
@@ -25,7 +33,7 @@ class ModelNotFittedError(ModelError):
         )
 
 
-class DataError(UncertaintyFlowError):
+class DataError(NonRecoverableError):
     """Base class for data-related errors."""
 
 
@@ -36,7 +44,7 @@ class InvalidDataError(DataError):
         super().__init__(f"Invalid data: {reason}", error_code="UF-E003")
 
 
-class CalibrationError(UncertaintyFlowError):
+class CalibrationError(NonRecoverableError):
     """Base class for calibration-related errors."""
 
 
@@ -50,7 +58,7 @@ class CalibrationSizeError(CalibrationError):
         )
 
 
-class ConfigurationError(UncertaintyFlowError):
+class ConfigurationError(NonRecoverableError):
     """Base class for configuration-related errors."""
 
 
@@ -69,11 +77,8 @@ class UncertaintyFlowWarning(UserWarning):
 
 
 RECOVERABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
-    UncertaintyFlowError,
+    RecoverableError,
+    ConnectionError,
+    TimeoutError,
     OSError,
-    RuntimeError,
-    ValueError,
-    TypeError,
-    KeyError,
-    ImportError,
 )

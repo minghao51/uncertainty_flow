@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -79,23 +81,28 @@ class QuantileConfig(BaseSettings):
 
 
 _config: QuantileConfig | None = None
+_config_lock = threading.Lock()
 
 
 def get_config() -> QuantileConfig:
     """Get the global configuration instance, creating a default on first call."""
     global _config
     if _config is None:
-        _config = QuantileConfig()
+        with _config_lock:
+            if _config is None:
+                _config = QuantileConfig()
     return _config
 
 
 def set_config(config: QuantileConfig) -> None:
     """Set a custom global configuration."""
     global _config
-    _config = config
+    with _config_lock:
+        _config = config
 
 
 def reset_config() -> None:
     """Reset configuration to defaults."""
     global _config
-    _config = None
+    with _config_lock:
+        _config = None
