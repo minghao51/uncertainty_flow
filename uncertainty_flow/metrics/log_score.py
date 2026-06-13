@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import warnings
+from typing import Any
 
 import numpy as np
 
@@ -65,8 +66,14 @@ def log_score(
         )
 
     log_densities = np.empty(len(y_true), dtype=np.float64)
+    dist_cache: dict[bytes, Any] = {}
     for i in range(len(y_true)):
-        dist = fit_parametric(quantile_matrix[i], quantile_levels, family=family)
+        row = quantile_matrix[i]
+        row_key = row.tobytes()
+        dist = dist_cache.get(row_key)
+        if dist is None:
+            dist = fit_parametric(row, quantile_levels, family=family)
+            dist_cache[row_key] = dist
         log_densities[i] = float(dist.logpdf(y_true[i]))
 
     finite_mask = np.isfinite(log_densities)

@@ -226,6 +226,7 @@ class FeatureLeverageAnalyzer:
                 "Use analyze_multivariate() for per-target and joint leverage scores."
             )
 
+        column_arrays = {col: data[col].to_numpy() for col in data.columns}
         baseline_width_matrix = _interval_width_matrix(baseline_pred, self.confidence)
         baseline_width = baseline_width_matrix[:, 0]
         n_repeats = self._effective_perturbation_count(data.height)
@@ -233,7 +234,7 @@ class FeatureLeverageAnalyzer:
         results = []
 
         for feature_name in data.columns:
-            feature_vals = data[feature_name].to_numpy()
+            feature_vals = column_arrays[feature_name]
 
             # Skip constant features
             if np.std(feature_vals) == 0:
@@ -241,7 +242,10 @@ class FeatureLeverageAnalyzer:
 
             # Compute leverage score via permutation
             perturbed_width_stack, _ = self._predict_perturbation_effects(
-                data, feature_name, n_repeats
+                data,
+                column_arrays,
+                feature_name,
+                n_repeats,
             )
             leverage_score = self._compute_permutation_leverage(
                 baseline_width,
@@ -321,6 +325,7 @@ class FeatureLeverageAnalyzer:
     def _predict_perturbation_effects(
         self,
         data: pl.DataFrame,
+        column_arrays: dict[str, np.ndarray],
         feature_name: str,
         n_repeats: int,
     ) -> tuple[np.ndarray, np.ndarray]:
@@ -328,14 +333,13 @@ class FeatureLeverageAnalyzer:
         if n_repeats <= 0:
             raise ValueError("n_repeats must be positive")
 
-        frames = []
-        feature_vals = data[feature_name].to_numpy()
+        batched_columns = {col: np.tile(values, n_repeats) for col, values in column_arrays.items()}
+        feature_vals = column_arrays[feature_name]
+        batched_columns[feature_name] = np.concatenate(
+            [self._rng.permutation(feature_vals) for _ in range(n_repeats)]
+        )
 
-        for _ in range(n_repeats):
-            permuted_vals = self._rng.permutation(feature_vals)
-            frames.append(data.with_columns(pl.Series(feature_name, permuted_vals)))
-
-        batched = pl.concat(frames, rechunk=False)
+        batched = pl.DataFrame(batched_columns)
         perturbed_pred = self.model.predict(batched)
         width_matrix = _interval_width_matrix(perturbed_pred, self.confidence)
         point_matrix = _point_matrix(perturbed_pred)
@@ -389,16 +393,27 @@ class FeatureLeverageAnalyzer:
         Returns:
             Tuple of (aleatoric_score, epistemic_score)
         """
+        from ..utils.exceptions import InvalidDataError
+
         # Bin feature values into quantiles
         try:
-            # Create Polars Series for qcut
+            # Create Polars Series for qcut.
             feature_series = pl.Series(feature_vals)
             binned = feature_series.qcut(self.n_bins, allow_duplicates=True)
             bin_labels = binned.to_numpy()
-        except (ValueError, pl.ColumnNotFoundError, Exception):
-            # Fallback: use equal-width bins if qcut fails
-            bin_edges = np.linspace(np.min(feature_vals), np.max(feature_vals), self.n_bins + 1)
-            bin_labels = np.digitize(feature_vals, bin_edges[:-1])
+        except (ValueError, TypeError):
+            # Fallback: use equal-width bins if qcut fails for documented cases.
+            try:
+                bin_edges = np.linspace(
+                    np.min(feature_vals),
+                    np.max(feature_vals),
+                    self.n_bins + 1,
+                )
+                bin_labels = np.digitize(feature_vals, bin_edges[:-1])
+            except (ValueError, TypeError) as exc:
+                raise InvalidDataError(
+                    "Unable to bin feature values for leverage analysis"
+                ) from exc
 
         # Compute within-group and between-group variance
         unique_bins = np.unique(bin_labels)
@@ -462,15 +477,17 @@ class FeatureLeverageAnalyzer:
         baseline_point_matrix = _point_matrix(pred)
         target_names = list(pred._targets)
         n_repeats = self._effective_perturbation_count(data.height)
+        column_arrays = {col: data[col].to_numpy() for col in data.columns}
         results = []
 
         for feature_name in data.columns:
-            feature_vals = data[feature_name].to_numpy()
+            feature_vals = column_arrays[feature_name]
             if np.std(feature_vals) == 0:
                 continue
 
             perturbed_width_stack, perturbed_point_stack = self._predict_perturbation_effects(
                 data,
+                column_arrays,
                 feature_name,
                 n_repeats,
             )

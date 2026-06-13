@@ -214,6 +214,47 @@ class TestFeatureLeverageAnalyzerEdgeCases:
         assert analyzer._effective_perturbation_count(100) == 8
         assert analyzer._effective_perturbation_count(500) == 1
 
+    def test_qcut_value_error_falls_back_to_equal_width_bins(
+        self,
+        sample_forecaster,
+        monkeypatch,
+    ):
+        """Should fall back to equal-width bins for documented qcut failures."""
+        analyzer = FeatureLeverageAnalyzer(sample_forecaster, n_bins=4)
+        feature_vals = np.array([0.0, 1.0, 2.0, 3.0])
+        baseline_width = np.array([1.0, 1.5, 2.0, 2.5])
+
+        def raise_value_error(self, *args, **kwargs):  # noqa: ANN001
+            raise ValueError("qcut failed")
+
+        monkeypatch.setattr(pl.Series, "qcut", raise_value_error)
+
+        aleatoric_score, epistemic_score = analyzer._compute_decomposition(
+            feature_vals,
+            baseline_width,
+        )
+
+        assert aleatoric_score >= 0
+        assert epistemic_score >= 0
+
+    def test_unexpected_binning_error_is_not_silently_swallowed(
+        self,
+        sample_forecaster,
+        monkeypatch,
+    ):
+        """Should surface unexpected binning failures instead of masking them."""
+        analyzer = FeatureLeverageAnalyzer(sample_forecaster, n_bins=4)
+        feature_vals = np.array([0.0, 1.0, 2.0, 3.0])
+        baseline_width = np.array([1.0, 1.5, 2.0, 2.5])
+
+        def raise_runtime_error(self, *args, **kwargs):  # noqa: ANN001
+            raise RuntimeError("unexpected failure")
+
+        monkeypatch.setattr(pl.Series, "qcut", raise_runtime_error)
+
+        with pytest.raises(RuntimeError, match="unexpected failure"):
+            analyzer._compute_decomposition(feature_vals, baseline_width)
+
 
 class TestFeatureLeverageAnalyzerMultivariate:
     """Test multivariate extension."""

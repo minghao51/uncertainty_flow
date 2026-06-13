@@ -55,8 +55,8 @@ jobs:
           enable-cache: true
           python-version: "3.11"
       - run: uv sync --extra dev --extra ml
-      - name: Run optional dependency tests (NumPyro + Torch)
-        run: uv run pytest -q tests/bayesian/test_numpyro_model.py tests/models/test_deep_quantile_torch.py
+      - name: Run optional dependency tests (NumPyro + Torch + SHAP)
+        run: uv run pytest -q tests/bayesian/test_numpyro_model.py tests/models/test_deep_quantile_torch.py tests/calibration/test_shap.py
 
   docs-check:
     runs-on: ubuntu-24.04

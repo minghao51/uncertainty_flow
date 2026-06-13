@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import polars as pl
 import pytest
@@ -95,30 +97,42 @@ def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
             item.add_marker(getattr(pytest.mark, marker_name))
 
 
+def _build_time_series_frame(
+    *,
+    n: int,
+    seed: int,
+    target_name: str,
+    include_volume: bool,
+) -> pl.DataFrame:
+    """Build deterministic synthetic time series data for tests."""
+    rng = np.random.default_rng(seed)
+    index: Sequence[int] = range(n)
+    target_values = [10 + i * 0.5 + np.sin(i / 3) + rng.standard_normal() * 0.5 for i in index]
+
+    data: dict[str, Sequence[float] | Sequence[int]] = {"date": index, target_name: target_values}
+    if include_volume:
+        data["volume"] = [100 + i * 2 + np.cos(i / 2) + rng.standard_normal() * 5 for i in index]
+
+    return pl.DataFrame(data)
+
+
 @pytest.fixture
-def time_series_data():
+def time_series_data() -> pl.DataFrame:
     """Create extended time series DataFrame for testing (150 rows)."""
-    rng = np.random.default_rng(42)
-    n = 150
-    return pl.DataFrame(
-        {
-            "date": range(n),
-            "price": [10 + i * 0.5 + np.sin(i / 3) + rng.standard_normal() * 0.5 for i in range(n)],
-            "volume": [100 + i * 2 + np.cos(i / 2) + rng.standard_normal() * 5 for i in range(n)],
-        }
+    return _build_time_series_frame(
+        n=150,
+        seed=42,
+        target_name="price",
+        include_volume=True,
     )
 
 
 @pytest.fixture
-def univariate_time_series():
+def univariate_time_series() -> pl.DataFrame:
     """Create univariate time series DataFrame (150 rows)."""
-    rng = np.random.default_rng(42)
-    n = 150
-    return pl.DataFrame(
-        {
-            "date": range(n),
-            "target": [
-                10 + i * 0.5 + np.sin(i / 3) + rng.standard_normal() * 0.5 for i in range(n)
-            ],
-        }
+    return _build_time_series_frame(
+        n=150,
+        seed=42,
+        target_name="target",
+        include_volume=False,
     )

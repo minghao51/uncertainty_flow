@@ -19,10 +19,13 @@ from uncertainty_flow.benchmarking import (
     auto_tune,
 )
 from uncertainty_flow.benchmarking.datasets import download_dataset
-from uncertainty_flow.utils.exceptions import RECOVERABLE_EXCEPTIONS
+from uncertainty_flow.utils.exceptions import RECOVERABLE_EXCEPTIONS, ConfigurationError
 
 logger = logging.getLogger(__name__)
-RECOVERABLE_CLI_EXCEPTIONS = RECOVERABLE_EXCEPTIONS + (click.ClickException,)
+RECOVERABLE_CLI_EXCEPTIONS = RECOVERABLE_EXCEPTIONS + (
+    click.ClickException,
+    ConfigurationError,
+)
 
 
 @click.group()
