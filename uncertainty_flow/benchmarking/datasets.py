@@ -490,7 +490,7 @@ def list_datasets_by_domain() -> dict[str, list[DatasetInfo]]:
 
 
 def get_numeric_cols(df: pl.DataFrame) -> list[str]:
-    """Get only numeric columns for sklearn compatibility."""
+    """Get only numeric columns accepted by sklearn estimators."""
     return [c for c in df.columns if df[c].dtype != pl.String]
 
 

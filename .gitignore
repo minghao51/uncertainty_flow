@@ -70,6 +70,18 @@ results/
 # Data files
 data/*.parquet
 
+# Local medallion pipeline workspace
+data/01_bronze/
+data/02_silver/
+data/03_gold/
+data/04_platinum/
+data/.staging/
+data/_locks/
+
+# Default CLI outputs (use results/ for retained local reports)
+/benchmark_results.json
+/benchmark_results.csv
+
 # Auto-generated notebook doc stubs (source of truth = notebooks/*.qmd)
 docs/notebooks/
 !docs/notebooks/.gitkeep

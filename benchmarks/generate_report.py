@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a comparison report from consolidated benchmark results.
+"""Generate a comparison report from pipeline-native benchmark results.
 
 Usage:
     uv run python benchmarks/generate_report.py
@@ -12,50 +12,56 @@ import json
 from pathlib import Path
 
 import polars as pl
-from run_benchmarks import UF_MODELS
+
+from uncertainty_flow.benchmarking.registry import default_model_registry
 
 
-def load_results(results_dir: str = "results") -> dict:
-    results = {}
+def load_results(results_dir: str = "results") -> list[dict]:
+    """Load typed ``PipelineRunResult`` JSON exports from a directory."""
+
+    results: list[dict] = []
     results_path = Path(results_dir)
 
-    for json_file in sorted(results_path.glob("consolidated_*.json")):
-        if "_all.json" in str(json_file):
-            continue
-        with open(json_file) as f:
+    for json_file in sorted(results_path.glob("*.json")):
+        with json_file.open(encoding="utf-8") as f:
             data = json.load(f)
-            dataset_name = data["metadata"]["dataset"]
-            results[dataset_name] = data
+        if isinstance(data, dict) and isinstance(data.get("model_results"), list):
+            results.append(data)
 
     return results
 
 
-def create_comparison_table(results: dict) -> pl.DataFrame:
+def create_comparison_table(results: list[dict]) -> pl.DataFrame:
+    """Flatten typed per-model results into the report table."""
+
     rows = []
-    for dataset_name, data in results.items():
-        metadata = data["metadata"]
-        for r in data["results"]:
+    for data in results:
+        manifest = data["manifest"]
+        dataset_name = manifest["dataset_id"]
+        dataset_domain = manifest["dataset_domain"]
+        for result in data["model_results"]:
+            metrics = result.get("metrics", {})
             rows.append(
                 {
                     "dataset": dataset_name,
-                    "domain": metadata["domain"],
-                    "model": r["model"],
-                    "coverage_90": r["coverage_90"],
-                    "coverage_80": r.get("coverage_80", 0),
-                    "sharpness_90": r["sharpness_90"],
-                    "sharpness_80": r.get("sharpness_80", 0),
-                    "winkler_90": r["winkler_90"],
-                    "winkler_80": r.get("winkler_80", 0),
-                    "pinball_loss": r.get("pinball_loss", 0),
-                    "crps": r.get("crps", 0),
-                    "mae": r.get("mae", 0),
-                    "rmse": r.get("rmse", 0),
-                    "calibration_error": r.get("calibration_error", 0),
-                    "train_time_sec": r["train_time_sec"],
-                    "timing_mean": r.get("timing_mean", r["train_time_sec"]),
-                    "timing_std": r.get("std", 0),
-                    "memory_delta_mb": r.get("memory_delta_mb", 0),
-                    "n_runs": r.get("n_runs", 1),
+                    "domain": dataset_domain,
+                    "model": result["model_id"],
+                    "coverage_90": metrics.get("coverage_90", float("nan")),
+                    "coverage_80": metrics.get("coverage_80", float("nan")),
+                    "sharpness_90": metrics.get("sharpness_90", float("nan")),
+                    "sharpness_80": metrics.get("sharpness_80", float("nan")),
+                    "winkler_90": metrics.get("winkler_90", float("nan")),
+                    "winkler_80": metrics.get("winkler_80", float("nan")),
+                    "pinball": metrics.get("pinball", float("nan")),
+                    "crps": metrics.get("crps", float("nan")),
+                    "mae": metrics.get("mae", float("nan")),
+                    "rmse": metrics.get("rmse", float("nan")),
+                    "calibration_error_90": metrics.get("calibration_error_90", float("nan")),
+                    "train_time_sec": result["train_time_sec"],
+                    "timing_mean": result["train_time_sec"],
+                    "timing_std": 0.0,
+                    "memory_delta_mb": 0.0,
+                    "n_runs": 1,
                 }
             )
     return pl.DataFrame(rows)
@@ -67,7 +73,6 @@ def generate_report(df: pl.DataFrame) -> str:
     lines.append("CONSOLIDATED BENCHMARK REPORT")
     lines.append("=" * 100)
 
-    uf_models = set(UF_MODELS)
     regression_models = {
         "linear-regression",
         "ridge-regression",
@@ -75,6 +80,7 @@ def generate_report(df: pl.DataFrame) -> str:
         "gradient-boosting",
     }
     baseline_models = {"naive-forecast", "moving-average"}
+    uf_models = set(default_model_registry().names()) - regression_models - baseline_models
 
     for dataset in df["dataset"].unique().to_list():
         ds_df = df.filter(pl.col("dataset") == dataset)
@@ -110,7 +116,7 @@ def generate_report(df: pl.DataFrame) -> str:
                 f"  {row['model']:<24} {row['coverage_90']:>7.4f} "
                 f"{row['winkler_90']:>9.4f} {row.get('crps', 0):>9.4f} "
                 f"{row.get('mae', 0):>9.4f} {row.get('rmse', 0):>9.4f} "
-                f"{row.get('calibration_error', 0):>7.4f} "
+                f"{row.get('calibration_error_90', float('nan')):>7.4f} "
                 f"{row['timing_mean']:>10.4f} "
                 f"{row['timing_std']:>8.4f} {row.get('memory_delta_mb', 0):>7.1f}"
             )
@@ -125,7 +131,7 @@ def generate_report(df: pl.DataFrame) -> str:
             pl.col("winkler_90").mean().alias("avg_winkler_90"),
             pl.col("mae").mean().alias("avg_mae"),
             pl.col("crps").mean().alias("avg_crps"),
-            pl.col("calibration_error").mean().alias("avg_cal_err"),
+            pl.col("calibration_error_90").mean().alias("avg_cal_err"),
         )
         .sort("avg_winkler_90")
     )
@@ -178,7 +184,7 @@ def main() -> None:
 
     results = load_results(args.results_dir)
     if not results:
-        print("No consolidated results found. Run benchmarks first.")
+        print("No pipeline-native JSON results found. Run benchmarks first.")
         return
 
     df = create_comparison_table(results)

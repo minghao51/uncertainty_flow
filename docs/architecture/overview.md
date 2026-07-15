@@ -8,7 +8,7 @@ This document is the source of truth for how the package is organized and how pr
 uncertainty_flow/
 ├── analysis/                  # Feature leverage analysis for uncertainty attribution
 ├── bayesian/                  # Bayesian quantile regression (NumPyro, optional)
-├── benchmarking/              # BenchmarkFlow orchestration, providers, sinks, datasets, tuning
+├── benchmarking/              # Hamilton pipeline, registries, medallion artifacts, tuning
 ├── calibration/               # Calibration reports, residual analysis, SHAP helpers
 ├── causal/                    # Treatment effect estimation with conformal uncertainty
 ├── core/                      # Base classes, config, DistributionPrediction, persistence, shared types
@@ -124,26 +124,23 @@ That separation keeps marginal prediction logic independent from joint dependenc
 The `benchmarking/` package and CLI support:
 
 - loading benchmark datasets (`datasets.py`, adapter seam)
-- orchestrating lifecycle in `BenchmarkFlow` (`flow.py`, module seam)
+- orchestrating lifecycle in `BenchmarkCoordinator` and `ModelMatrixCoordinator`
 - model construction through provider contracts (`providers.py`, interface seam)
 - optional tuning through tuning adapters (`tuning.py`, adapter seam)
-- evaluation with consistent benchmark metrics (`flow.py` + `results.py`)
-- serialization/output through `ResultSink` (`sinks.py`, adapter seam)
+- evaluation with executable registry-backed metrics (`dataflows/modeling.py`)
+- typed output through `PipelineRunResult` and model execution records
 
 Those tools are intentionally separate from the model APIs so the library can stay usable both as a package and as an evaluation harness.
 
-### BenchmarkFlow Lifecycle
+### Hamilton Benchmark Lifecycle
 
 The benchmark orchestration lifecycle is:
 
-1. `load` dataset and resolve target column
-2. `split` into tune/train/test (or rolling-origin splits)
-3. `tune-per-run-context` (optional, cached per model in a run)
-4. `fit/predict` via provider-built benchmark adapters
-5. `evaluate` into `ModelResult` metrics
-6. `sink` output policy through `ResultSink`
-
-This replaces the older all-in-`runner.py` mental model: `runner.py` is now a public adapter over the deeper flow/providers/sinks/configs/results modules.
+1. Resolve a typed `RunRequest` and validate the selected providers.
+2. Load a registered dataset adapter and derive content-based identities.
+3. Materialize Bronze, Silver, and Gold artifacts in an isolated staging store.
+4. Fit models and evaluate registry-backed metrics into Platinum evidence.
+5. Verify checksums and promote the final manifest last for safe reuse.
 
 ## Analysis, Decomposition, and Risk Layer
 

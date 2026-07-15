@@ -2,6 +2,7 @@ import numpy as np
 import polars as pl
 import pytest
 
+import uncertainty_flow.benchmarking.tuning as tuning_module
 from uncertainty_flow.benchmarking.tuning import (
     SEARCH_SPACE,
     TuningConfig,
@@ -35,6 +36,18 @@ class TestTuningConfig:
         assert cfg.target_coverage == 0.8
         assert cfg.timeout == 60
         assert cfg.hybrid_validation is True
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        (
+            {"target_coverage": 1.0},
+            {"n_samples": 2},
+            {"timeout": 0},
+        ),
+    )
+    def test_invalid_values(self, kwargs):
+        with pytest.raises(ValueError):
+            TuningConfig(**kwargs)
 
 
 class TestTuningResult:
@@ -105,4 +118,42 @@ class TestAutoTuneModel:
                 df=_sample_df(),
                 target="price",
                 horizon=3,
+            )
+
+    def test_sample_limit_is_applied_before_validation(self, monkeypatch):
+        observed_rows = []
+        original_selector = tuning_module.select_validation_plan
+
+        def capture_rows(df, **kwargs):
+            observed_rows.append(len(df))
+            return original_selector(df, **kwargs)
+
+        monkeypatch.setattr(tuning_module, "select_validation_plan", capture_rows)
+        monkeypatch.setitem(
+            tuning_module.SEARCH_SPACE,
+            "quantile-forest",
+            {"n_estimators": [5], "horizon": [2]},
+        )
+
+        auto_tune_model(
+            model_name="quantile-forest",
+            df=_sample_df(150),
+            target="price",
+            horizon=2,
+            config=TuningConfig(n_samples=100),
+        )
+
+        assert observed_rows == [100]
+
+    def test_timeout_before_first_trial_is_explicit(self, monkeypatch):
+        ticks = iter((0.0, 2.0))
+        monkeypatch.setattr(tuning_module.time, "monotonic", lambda: next(ticks, 2.0))
+
+        with pytest.raises(TimeoutError, match="before completing a trial"):
+            auto_tune_model(
+                model_name="quantile-forest",
+                df=_sample_df(),
+                target="price",
+                horizon=2,
+                config=TuningConfig(timeout=1),
             )

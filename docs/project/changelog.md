@@ -42,8 +42,8 @@ This file is kept for historical reference. The canonical changelog is at the re
 - `CrossModalAggregator` now keeps `aggregation="copula"` as a reserved option and raises
   `NotImplementedError` during prediction (instead of constructor-time rejection), matching
   documented behavior.
-- `BenchmarkRunner.to_dict()` now includes both `results` and backward-compatible `models`
-  keys with identical payloads.
+- Historical benchmark result aliases were removed in the pipeline-only cutover; use
+  `PipelineRunResult.model_results` and the persisted Platinum manifest.
 
 ---
 

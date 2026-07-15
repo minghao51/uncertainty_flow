@@ -41,6 +41,10 @@ docs = [
     "pymdown-extensions>=10.0",
     "matplotlib>=3.7.0",
 ]
+benchmarking = [
+    "pyyaml>=6.0",
+    "sf-hamilton>=1.90.0",
+]
 
 [project.scripts]
 uncertainty-flow = "uncertainty_flow.cli:main"
@@ -135,7 +139,7 @@ skips = ["B101", "B110", "B403"]
 
 [dependency-groups]
 dev = [
-    "uncertainty-flow[dev,docs]",
+    "uncertainty-flow[benchmarking,dev,docs]",
     "pre-commit>=4.6.0",
     "pip-audit>=2.10.0",
     "bandit>=1.9.4",

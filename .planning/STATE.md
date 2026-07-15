@@ -53,10 +53,7 @@ All files below raise `NotImplementedError` or return `501`:
 
 | Severity | Issue | Location |
 |----------|-------|----------|
-| Medium | 4 mypy `valid-type` errors: `callable` used as type annotation instead of `typing.Callable` in `_FamilySpec` dataclass fields | `uncertainty_flow/core/parametric.py:83-87` |
-| Medium | mypy `index` error: indexing Polars `Series` with a `str` key — invalid index type | `uncertainty_flow/wrappers/adaptive_conformal.py:126` |
-| Medium | mypy `arg-type` error: `RollingOriginSplit.splits()` receives `DataFrame | None` due to `self.df` being nullable | `uncertainty_flow/benchmarking/runner.py:457` |
-| Medium | mypy `assignment` error: numpy array assigned where Polars `Series` expected | `uncertainty_flow/viz/_plotting.py:119` |
+| — | No currently known mypy failures; `uv run mypy uncertainty_flow/` passes after the Hamilton/medallion cutover. | — |
 
 ## Security Concerns
 
@@ -82,11 +79,10 @@ All files below raise `NotImplementedError` or return `501`:
 |-------|--------|
 | Scattered optional dependency guards | 6 modules use `try/except ImportError` blocks (`uncertainty_flow/__init__.py`, `uncertainty_flow/models/__init__.py`, `uncertainty_flow/bayesian/__init__.py`, `uncertainty_flow/viz/dashboard.py:72-77`, `uncertainty_flow/calibration/shap_values.py:62-68`, `uncertainty_flow/models/transformer_forecaster.py`) — no centralized optional dep manager |
 | 5 source files excluded from coverage | `pyproject.toml:94-99` omits `bayesian/numpyro_model.py`, `models/deep_quantile_torch.py`, `models/transformer_forecaster.py`, `calibration/shap_values.py`, `viz/dashboard.py` — these have zero tested coverage |
-| Low coverage floor (40%) | `pyproject.toml:102` — `fail_under = 40` means 60% of source can be untested without CI failure |
-| 7 mypy errors in 4 files | `core/parametric.py` (4 errors), `viz/_plotting.py` (1 error), `wrappers/adaptive_conformal.py` (1 error), `benchmarking/runner.py` (1 error) — type safety gaps |
-| `callable` used instead of `typing.Callable` | `uncertainty_flow/core/parametric.py:83-87` — `builtins.callable` is not valid as a type annotation per mypy |
+| Coverage floor | **RESOLVED** — `pyproject.toml` enforces `fail_under = 80.0`; the latest completed full coverage run reached 85.60%. |
+| Type checking | **RESOLVED** — the package-wide mypy gate passes. |
 | Duplicate JSON output in benchmark serialization | **RESOLVED** — `"models"` alias removed from `to_dict()`, only `"results"` key emitted |
-| Missing shared model registry | `MODEL_REGISTRY` in `uncertainty_flow/benchmarking/runner.py:136` is a plain dict with decorator registration — adding new benchmark models requires editing this file; no plugin/discovery mechanism |
+| Shared benchmark registries | **RESOLVED** — model, metric, and dataset resolution use typed registries in `uncertainty_flow/benchmarking/registry.py`. |
 | Hardcoded constants scattered across modules | `viz/dashboard.py:380` limits to 6 features; `viz/_plotting.py:16` hardcodes 500 max samples; `analysis/leverage.py:203` hardcodes 800-row prediction budget |
 | Persistence format has no forward-compat path | `uncertainty_flow/core/_persistence.py:22` — `SUPPORTED_FORMAT_VERSIONS = {1}` only; no migration tooling |
 | `DEFAULT_QUANTILES` is a dynamic proxy | `uncertainty_flow/core/types.py:25-48` — `_ConfigQuantiles` reads from global config on each access; callers that cache the value (e.g., in a list comprehension) may get stale config silently |

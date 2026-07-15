@@ -7,14 +7,16 @@ This document explains how to benchmark `uncertainty_flow` models using the buil
 ## Quick Start
 
 ```bash
-# Run the consolidated benchmark suite on all default datasets
-uv run python benchmarks/run_benchmarks.py --all-datasets
+# Run the canonical pipeline benchmark on a dataset
+mkdir -p results
+uv run python -m uncertainty_flow.cli benchmark --dataset weather --output results/weather
 
-# Run on a single dataset with custom iterations
-uv run python benchmarks/run_benchmarks.py -d weather -n 500 --iterations 5
+# Run selected registered providers without tuning
+uv run python -m uncertainty_flow.cli benchmark \
+  --dataset weather --model quantile-forest,conformal-regressor --no-auto-tune
 
 # Generate a report from saved results
-uv run python benchmarks/generate_report.py --output results/report.md
+uv run python benchmarks/generate_report.py --results-dir results --output results/report.md
 ```
 
 ---
@@ -60,16 +62,16 @@ uv run python -m uncertainty_flow.cli list-datasets --domain Climate
 
 ## CLI Commands
 
-Benchmark orchestration is implemented by the `BenchmarkFlow` module and exposed publicly through `BenchmarkRunner` and the CLI.
+Benchmark orchestration is implemented by the Hamilton-backed pipeline
+coordinators and exposed through the CLI and typed benchmarking contracts.
 
-Flow lifecycle per run:
+Pipeline lifecycle per run:
 
-1. `load` dataset
-2. `split` into tune/train/test (or rolling-origin splits)
-3. `tune-per-run-context` (optional)
-4. `fit/predict`
-5. `evaluate`
-6. `sink` through `ResultSink`
+1. Resolve `RunRequest` and validate provider/configuration metadata.
+2. Load through `DatasetRegistry` and derive content-based identity.
+3. Materialize Bronze, Silver, and Gold lineage in staging.
+4. Fit registered providers and evaluate registered metrics.
+5. Verify checksummed evidence and promote the final Platinum manifest last.
 
 ### `benchmark` — Run Benchmark
 
@@ -80,11 +82,11 @@ uv run python -m uncertainty_flow.cli benchmark --dataset <name> [OPTIONS]
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--dataset`, `-d` | (required) | Dataset name or HuggingFace path |
-| `--model`, `-m` | `all` | Models to run: `all`, `quantile-forest`, `conformal-regressor`, `conformal-forecaster` |
-| `--n-samples`, `-n` | `1000` | Number of samples to use |
+| `--model`, `-m` | `all` | Comma-separated registered model names, or `all` |
+| `--samples`, `-s` | `100` | Number of dataset rows to load |
 | `--horizon`, `-h` | `3` | Forecast horizon for time series models |
 | `--n-estimators`, `-e` | `30` | Number of base estimators |
-| `--target`, `-t` | `OT` | Target column name |
+| `--target`, `-t` | dataset default | Target column name |
 | `--auto-tune` | `true` | Enable/disable auto-tuning |
 | `--target-coverage`, `-c` | `0.9` | Target coverage level for tuning |
 | `--tune-samples` | `500` | Samples to use for tuning |
@@ -107,7 +109,7 @@ uv run python -m uncertainty_flow.cli benchmark --dataset weather --no-auto-tune
 
 # Custom coverage target and sample size
 uv run python -m uncertainty_flow.cli benchmark --dataset electricity \
-    --target-coverage 0.8 --n-samples 2000
+    --target-coverage 0.8 --samples 2000
 
 # Save results
 uv run python -m uncertainty_flow.cli benchmark --dataset weather \
@@ -183,49 +185,35 @@ uv run python -m uncertainty_flow.cli benchmark --dataset weather --no-auto-tune
 
 ```json
 {
-  "dataset": "weather",
-  "metadata": {
-    "run_id": "3d115493",
-    "timestamp": "2026-03-31T13:30:22Z",
-    "dataset": "weather",
-    "domain": "Climate",
-    "n_samples": 1000,
-    "horizon": 3,
-    "test_size": 0.2,
-    "auto_tune": true,
-    "target_coverage": 0.9
+  "manifest": {
+    "identity": {"run_id": "<content-derived-sha256>"},
+    "status": "success",
+    "verification_passed": true
   },
-  "errors": [],
-  "results": [
+  "verification": {"passed": true, "checks": []},
+  "artifacts": [],
+  "model_results": [
     {
-      "model": "conformal-forecaster",
-      "coverage_90": 0.9449,
-      "coverage_80": 0.8788,
-      "sharpness_90": 0.0223,
-      "sharpness_80": 0.0148,
-      "winkler_90": 0.0260,
-      "winkler_80": 0.0197,
-      "pinball_loss": 0.0027,
+      "model_id": "conformal-forecaster",
+      "provider": "conformal-forecaster",
+      "status": "success",
       "train_time_sec": 0.091,
-      "n_samples": 997,
-      "tuned_params": {"n_estimators": 50, "calibration_size": 0.25, "lags": 1},
-      "was_tuned": true,
-      "validation_coverage_90": 0.9123,
-      "validation_sharpness_90": 0.0311,
-      "validation_winkler_90": 0.0364,
-      "validation_split_type": "temporal_holdout",
-      "validation_strategy": "temporal_holdout",
-      "validation_n_splits": 1,
-      "test_split_type": "out_of_time"
+      "evaluation_row_count": 200,
+      "resolved_parameters": {"n_estimators": 50, "calibration_size": 0.25},
+      "metrics": {
+        "coverage_90": 0.9449,
+        "winkler_90": 0.0260,
+        "pinball": 0.0027
+      }
     }
-  ]
+  ],
+  "reused": false
 }
 ```
 
-Serialized benchmark output is owned by `ResultSink` (`sinks.py`) and uses:
+Serialized benchmark output is the typed `PipelineRunResult` and uses:
 
-- top-level: `dataset`, `metadata`, `errors`, `results`
-- no top-level `models` field
+- `manifest`, `verification`, `artifacts`, and `model_results` fields
 
 ### Metrics Explained
 
@@ -235,7 +223,7 @@ Serialized benchmark output is owned by `ResultSink` (`sinks.py`) and uses:
 | `coverage_80` | Fraction of true values within 80% prediction interval | ~0.80 |
 | `sharpness_90` | Average width of 90% prediction intervals | Lower is better |
 | `winkler_90` | Winkler score for 90% intervals | Lower is better |
-| `pinball_loss` | Pinball loss at quantile 0.1 | Lower is better |
+| `pinball` | Mean pinball loss across available quantiles | Lower is better |
 | `train_time_sec` | Training time in seconds | - |
 
 ---
@@ -245,32 +233,18 @@ Serialized benchmark output is owned by `ResultSink` (`sinks.py`) and uses:
 ### Python API
 
 ```python
-from uncertainty_flow.benchmarking import BenchmarkConfig, BenchmarkRunner
+from uncertainty_flow.benchmarking import ModelMatrixCoordinator
+from uncertainty_flow.benchmarking.contracts import RunRequest
 
-# Create config with auto-tuning enabled
-config = BenchmarkConfig(
-    dataset_name="weather",
-    n_samples=1000,
-    horizon=3,
-    auto_tune=True,
-    target_coverage=0.9,
+request = RunRequest(
+    dataset={"id": "fixture", "provider": "local_parquet", "uri": "fixture.parquet", "target": "y"},
+    validation={"strategy": "temporal_holdout", "test_size": 0.2, "preserve_order": True},
+    models=({"id": "conformal-forecaster", "provider": "conformal-forecaster"},),
+    evaluation={"metrics": ["coverage", "winkler", "crps"]},
+    storage={"provider": "local", "root": "data"},
 )
-
-# Run benchmark
-runner = BenchmarkRunner(config)
-runner.load_data()
-result = runner.run_all()
-
-# Access results
-for model_result in result.models:
-    print(f"{model_result.model_name}:")
-    print(f"  Coverage @ 90%: {model_result.coverage_90}")
-    print(f"  Sharpness @ 90%: {model_result.sharpness_90}")
-    print(f"  Tuned params: {model_result.tuned_params}")
-
-# Save results
-runner.save_json("results.json")
-runner.save_csv("results.csv")
+result = ModelMatrixCoordinator(storage_root="data").run_with_lock(request, frame)
+print(result.model_results[0].metrics)
 ```
 
 ## Extending Benchmark Models
@@ -279,18 +253,8 @@ Use the provider seam for new benchmark model adapters.
 
 - Stable built-in names remain: `quantile-forest`, `conformal-regressor`, `conformal-forecaster`
 - Provider contract lives in `providers.py` (`BenchmarkModelProvider`)
-- Legacy class registry path in `runner.py` remains for compatibility, but provider-based extension is the primary path
-- Prefer provider seam when adding new benchmark integrations or custom adapter logic
-
-## Maintainer Migration Note
-
-Benchmark architecture moved from an all-in-`runner.py` mental model to split modules:
-
-- orchestration: `flow.py`
-- model seams: `providers.py`
-- output seams: `sinks.py`
-- configs/results contracts: `configs.py`, `results.py`
-- public adapter: `runner.py`
+- Register provider parameters in `registry.py`; unknown parameters are rejected before execution.
+- Use `ModelMatrixCoordinator.run_with_lock()` for custom integrations.
 
 ### Auto-Tuning Only
 

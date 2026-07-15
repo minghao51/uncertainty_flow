@@ -2,11 +2,15 @@
 
 ## Benchmark Command Architecture
 
-The `benchmark` CLI command delegates orchestration to `BenchmarkFlow` through the `BenchmarkRunner` adapter. Runtime output policy is owned by the `ResultSink` seam, so JSON/CSV serialization is no longer a runner concern.
+The `benchmark` CLI command resolves a pipeline-native `RunRequest`, loads the
+dataset through a registered adapter, executes `ModelMatrixCoordinator`, and
+renders the immutable pipeline result. `pipeline run` exposes the same verified
+medallion lifecycle for local Parquet inputs.
 
-Current benchmark JSON shape follows `ResultSink.to_dict()`:
+Current benchmark JSON shape follows `PipelineRunResult.model_dump_json()`:
 
-- top-level: `dataset`, `metadata`, `errors`, `results`
-- no top-level `models` alias in serialized CLI output
+- top-level: `manifest`, `verification`, `artifacts`, and `model_results`
+- each `model_results` item contains provider, status, resolved parameters,
+  timing, row count, metrics, and artifact references
 
 ::: uncertainty_flow.cli

@@ -3,7 +3,9 @@
 import json
 import tempfile
 from pathlib import Path
+from types import SimpleNamespace
 
+import polars as pl
 import pytest
 from click.testing import CliRunner
 
@@ -101,8 +103,8 @@ class TestBenchmark:
         # Verify JSON structure
         with open(output) as f:
             data = json.load(f)
-            assert "dataset" in data
-            assert "models" in data
+            assert "manifest" in data
+            assert "model_results" in data
 
     @pytest.mark.integration
     @pytest.mark.optional
@@ -137,6 +139,111 @@ class TestBenchmark:
         assert result.exit_code == 1
         assert "Valid options:" in result.output
         assert "quantile-forest" in result.output
+
+    def test_pipeline_native_result_is_rendered_without_legacy_runner(self, tmp_path, monkeypatch):
+        """The package benchmark command emits the canonical typed result shape."""
+
+        frame = pl.DataFrame(
+            {
+                "feature": [float(i % 5) for i in range(150)],
+                "y": [float(i) + 0.25 for i in range(150)],
+            }
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            "uncertainty_flow.cli.load_dataset",
+            lambda *args, **kwargs: (
+                frame,
+                SimpleNamespace(domain="Synthetic", default_target="y"),
+            ),
+        )
+
+        output = tmp_path / "typed-result.json"
+        result = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "--dataset",
+                "fixture",
+                "--model",
+                "conformal-regressor",
+                "--no-auto-tune",
+                "--samples",
+                "150",
+                "--output",
+                str(output),
+            ],
+        )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(output.read_text())
+        assert "model_results" in payload
+        assert "models" not in payload
+        assert payload["model_results"][0]["provider"] == "conformal-regressor"
+
+    def test_output_only_flags_select_the_named_format(self, tmp_path, monkeypatch):
+        frame = pl.DataFrame(
+            {
+                "feature": [float(i % 5) for i in range(150)],
+                "y": [float(i) for i in range(150)],
+            }
+        )
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(
+            "uncertainty_flow.cli.load_dataset",
+            lambda *args, **kwargs: (
+                frame,
+                SimpleNamespace(domain="Synthetic", default_target="y"),
+            ),
+        )
+
+        json_result = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "--dataset",
+                "fixture-json",
+                "--model",
+                "conformal-regressor",
+                "--no-auto-tune",
+                "--output",
+                "json-result",
+                "--json-only",
+            ],
+        )
+        csv_result = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "--dataset",
+                "fixture-csv",
+                "--model",
+                "conformal-regressor",
+                "--no-auto-tune",
+                "--output",
+                "csv-result",
+                "--csv-only",
+            ],
+        )
+        invalid = runner.invoke(
+            cli,
+            [
+                "benchmark",
+                "--dataset",
+                "fixture",
+                "--json-only",
+                "--csv-only",
+            ],
+        )
+
+        assert json_result.exit_code == 0, json_result.output
+        assert (tmp_path / "json-result.json").is_file()
+        assert not (tmp_path / "json-result.csv").exists()
+        assert csv_result.exit_code == 0, csv_result.output
+        assert (tmp_path / "csv-result.csv").is_file()
+        assert not (tmp_path / "csv-result.json").exists()
+        assert invalid.exit_code == 2
+        assert "mutually exclusive" in invalid.output
 
 
 class TestTune:

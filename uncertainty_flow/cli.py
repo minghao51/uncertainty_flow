@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -13,19 +14,80 @@ import click
 from uncertainty_flow import __version__
 from uncertainty_flow.benchmarking import (
     AVAILABLE_DATASETS,
-    BenchmarkConfig,
-    BenchmarkRunner,
+    DatasetRegistry,
     TuningResult,
-    auto_tune,
+    default_dataset_registry,
+    default_model_registry,
 )
-from uncertainty_flow.benchmarking.datasets import download_dataset
+from uncertainty_flow.benchmarking.contracts import (
+    ArtifactRef,
+    ArtifactType,
+    ReusePolicy,
+    RunManifest,
+    RunRequest,
+)
+from uncertainty_flow.benchmarking.contracts.verification import VerificationStatus
+from uncertainty_flow.benchmarking.dataflows.vertical import resolved_run_config
+from uncertainty_flow.benchmarking.datasets import download_dataset, load_dataset
+from uncertainty_flow.benchmarking.driver import available_outputs, build_driver
+from uncertainty_flow.benchmarking.evidence import export_evidence
+from uncertainty_flow.benchmarking.matrix import ModelMatrixCoordinator
+from uncertainty_flow.benchmarking.operations import prune_unverified_runs
+from uncertainty_flow.benchmarking.storage import LocalArtifactStore
+from uncertainty_flow.benchmarking.tuning import TuningConfig, auto_tune_model
 from uncertainty_flow.utils.exceptions import RECOVERABLE_EXCEPTIONS, ConfigurationError
 
 logger = logging.getLogger(__name__)
 RECOVERABLE_CLI_EXCEPTIONS = RECOVERABLE_EXCEPTIONS + (
     click.ClickException,
     ConfigurationError,
+    ImportError,
+    RuntimeError,
+    ValueError,
 )
+
+
+def _load_pipeline_request(
+    path: Path,
+    *,
+    storage_root: str | None = None,
+    reuse_policy: str | None = None,
+) -> RunRequest:
+    """Resolve a pipeline request from CLI, environment, file, then defaults."""
+
+    try:
+        import yaml
+    except ImportError as error:
+        raise ConfigurationError(
+            "Pipeline configuration requires the benchmarking extra: uv sync --extra benchmarking"
+        ) from error
+    with path.open(encoding="utf-8") as handle:
+        payload = yaml.safe_load(handle)
+    if not isinstance(payload, dict):
+        raise click.ClickException("Pipeline config must contain a mapping")
+    pipeline_config = dict(payload.get("pipeline", {}))
+    dataset = dict(payload.get("dataset", {}))
+    dataset.setdefault("provider", "local_parquet")
+    validation = dict(payload.get("validation", {}))
+    models = tuple(dict(model) for model in payload.get("models", ()))
+    storage_config = dict(payload.get("storage", {}))
+    resolved_root = storage_root or os.environ.get("UNCERTAINTY_FLOW_PIPELINE_STORAGE_ROOT")
+    if resolved_root:
+        storage_config["root"] = resolved_root
+    resolved_reuse_policy = reuse_policy or os.environ.get("UNCERTAINTY_FLOW_PIPELINE_REUSE_POLICY")
+    return RunRequest(
+        mode=str(pipeline_config.get("mode", "benchmark")),
+        dataset=dataset,
+        validation=validation,
+        models=models,
+        evaluation=dict(payload.get("evaluation", {})),
+        storage=storage_config,
+        publication=dict(payload.get("publication", {})),
+        reuse_policy=ReusePolicy(
+            resolved_reuse_policy or pipeline_config.get("reuse_policy", "reuse_verified")
+        ),
+        fail_fast=bool(pipeline_config.get("fail_fast", False)),
+    )
 
 
 @click.group()
@@ -33,6 +95,175 @@ RECOVERABLE_CLI_EXCEPTIONS = RECOVERABLE_EXCEPTIONS + (
 def cli() -> None:
     """uncertainty-flow: Probabilistic forecasting and uncertainty quantification."""
     pass
+
+
+@cli.group()
+def pipeline() -> None:
+    """Plan, execute, and verify the Hamilton benchmark pipeline."""
+
+
+@pipeline.command("plan")
+@click.option(
+    "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True
+)
+@click.option("--storage-root", type=str, default=None)
+@click.option(
+    "--reuse-policy",
+    type=click.Choice(["reuse_verified", "fail_if_exists", "rerun"]),
+    default=None,
+)
+def pipeline_plan(config: Path, storage_root: str | None, reuse_policy: str | None) -> None:
+    """Validate configuration and DAG construction without side effects."""
+
+    try:
+        request = _load_pipeline_request(
+            config, storage_root=storage_root, reuse_policy=reuse_policy
+        )
+        resolved_run_config(request)
+        build_driver()
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+    click.echo("Pipeline plan valid")
+    click.echo(f"  Mode: {request.mode}")
+    click.echo(f"  Outputs: {', '.join(available_outputs())}")
+    click.echo("  Side effects: none")
+
+
+@pipeline.command("run")
+@click.option(
+    "--config", type=click.Path(exists=True, dir_okay=False, path_type=Path), required=True
+)
+@click.option("--storage-root", type=str, default=None)
+@click.option(
+    "--reuse-policy",
+    type=click.Choice(["reuse_verified", "fail_if_exists", "rerun"]),
+    default=None,
+)
+def pipeline_run(config: Path, storage_root: str | None, reuse_policy: str | None) -> None:
+    """Execute the initial local conformal-regressor pipeline branch."""
+
+    try:
+        request = _load_pipeline_request(
+            config, storage_root=storage_root, reuse_policy=reuse_policy
+        )
+        uri = request.dataset.get("uri")
+        if not isinstance(uri, str) or not uri:
+            raise click.ClickException("dataset.uri is required for pipeline run")
+        provider = request.dataset.get("provider", "local_parquet")
+        if not isinstance(provider, str) or not provider:
+            raise click.ClickException("dataset.provider must be a non-empty string")
+        dataset_registry = default_dataset_registry()
+        frame = dataset_registry.load(provider, uri)
+        dataset_version = dataset_registry.version(provider)
+        request = request.model_copy(
+            update={
+                "dataset": {
+                    **request.dataset,
+                    "adapter_version": dataset_version,
+                }
+            }
+        )
+        storage_root = request.storage.get("root", "data")
+        matrix_result = ModelMatrixCoordinator(storage_root=str(storage_root)).run_with_lock(
+            request, frame
+        )
+        manifest = matrix_result.manifest
+        verified = matrix_result.verification.passed
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"Run: {manifest.identity.run_id}")
+    click.echo(f"Status: {manifest.status.value}")
+    click.echo(f"Verified: {verified}")
+
+
+def _read_manifest(root: Path, run_id: str) -> tuple[LocalArtifactStore, RunManifest]:
+    store = LocalArtifactStore(root)
+    ref = ArtifactRef(
+        artifact_type=ArtifactType.MANIFEST,
+        path=f"04_platinum/runs/{run_id}/manifest.json",
+        schema_version="v1",
+    )
+    if not store.exists(ref):
+        raise click.ClickException(f"Run not found: {run_id}")
+    return store, RunManifest.model_validate(store.read_json(ref))
+
+
+@pipeline.command("verify")
+@click.argument("run_id")
+@click.option("--root", type=click.Path(file_okay=False, path_type=Path), default="data")
+def pipeline_verify(run_id: str, root: Path) -> None:
+    """Verify every checksummed artifact referenced by one run manifest."""
+
+    try:
+        store, manifest = _read_manifest(root, run_id)
+        invalid = [
+            ref.path
+            for ref in manifest.artifact_refs
+            if store.verify(ref).status != VerificationStatus.PASSED
+        ]
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+    if invalid or not manifest.verification_passed:
+        raise click.ClickException(
+            f"Run {run_id} is unverified" + (f": {', '.join(invalid)}" if invalid else "")
+        )
+    click.echo(f"Run {run_id} verified")
+
+
+@pipeline.command("lineage")
+@click.argument("run_id")
+@click.option("--root", type=click.Path(file_okay=False, path_type=Path), default="data")
+def pipeline_lineage(run_id: str, root: Path) -> None:
+    """Print the immutable artifacts referenced by one run."""
+
+    try:
+        _, manifest = _read_manifest(root, run_id)
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"Run: {manifest.identity.run_id}")
+    for ref in manifest.artifact_refs:
+        click.echo(ref.path)
+
+
+@pipeline.command("list-runs")
+@click.option("--root", type=click.Path(file_okay=False, path_type=Path), default="data")
+def pipeline_list_runs(root: Path) -> None:
+    """List persisted Platinum runs and their verification state."""
+
+    manifests = sorted((root / "04_platinum" / "runs").glob("*/manifest.json"))
+    for path in manifests:
+        try:
+            manifest = RunManifest.model_validate_json(path.read_text(encoding="utf-8"))
+        except RECOVERABLE_CLI_EXCEPTIONS as error:
+            raise click.ClickException(f"Invalid manifest {path}: {error}") from error
+        click.echo(
+            f"{manifest.identity.run_id}\t{manifest.status.value}\t"
+            f"verified={manifest.verification_passed}"
+        )
+
+
+@pipeline.command("export-site")
+@click.option("--root", type=click.Path(file_okay=False, path_type=Path), default="data")
+@click.option("--output", type=click.Path(file_okay=False, path_type=Path), required=True)
+def pipeline_export_site(root: Path, output: Path) -> None:
+    """Export verified Platinum summaries for the evidence site."""
+
+    try:
+        index = export_evidence(root, output)
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+    click.echo(f"Evidence export complete: {len(index.partitions)} partition(s)")
+
+
+@pipeline.command("gc")
+@click.option("--root", type=click.Path(file_okay=False, path_type=Path), default="data")
+@click.option("--apply", "apply_changes", is_flag=True, help="Delete failed/incomplete runs.")
+def pipeline_gc(root: Path, apply_changes: bool) -> None:
+    """Preview or remove only failed/incomplete Platinum runs."""
+
+    removed = prune_unverified_runs(root, dry_run=not apply_changes)
+    action = "Removed" if apply_changes else "Would remove"
+    click.echo(f"{action} {len(removed)} unverified run(s)")
 
 
 @cli.command()
@@ -215,25 +446,11 @@ def benchmark(
         uncertainty-flow benchmark --dataset electricity \\
             --n-samples 5000 --horizon 6 --n-estimators 50
     """
-    config = BenchmarkConfig(
-        dataset_name=dataset,
-        n_samples=samples,
-        horizon=horizon,
-        n_estimators=n_estimators,
-        target_column=target,
-        auto_tune=auto_tune,
-        target_coverage=target_coverage,
-        tune_samples=tune_samples,
-        test_size=test_size,
-        dataset_revision=dataset_revision,
-        hybrid_validation=hybrid_validation,
-    )
-
     if model == "all":
-        model_names = None
+        model_names = ["quantile-forest", "conformal-regressor", "conformal-forecaster"]
     else:
         model_names = [m.strip() for m in model.split(",")]
-        valid_models = {"quantile-forest", "conformal-regressor", "conformal-forecaster"}
+        valid_models = set(default_model_registry().names())
         for m in model_names:
             if m not in valid_models:
                 click.echo(
@@ -241,6 +458,8 @@ def benchmark(
                     err=True,
                 )
                 sys.exit(1)
+    if json_only and csv_only:
+        raise click.UsageError("--json-only and --csv-only are mutually exclusive")
 
     click.echo(f"\n{'=' * 60}")
     click.echo(f"Benchmark: {dataset}")
@@ -253,68 +472,139 @@ def benchmark(
     click.echo(f"  Models: {model}")
     click.echo()
 
-    runner = BenchmarkRunner(config)
-
     try:
         click.echo("Loading dataset...")
-        runner.load_data()
-        if runner.df is None:
-            raise RuntimeError("Failed to load dataset")
-        if runner.ds_info is None:
-            raise RuntimeError("Failed to get dataset info")
-        click.echo(f"  Loaded: {len(runner.df):,} rows, {len(runner.df.columns)} columns")
-        click.echo(f"  Domain: {runner.ds_info.domain}")
-        click.echo(f"  Target: {runner.target}")
+        loaded_frame, dataset_info = load_dataset(
+            dataset,
+            n_samples=samples,
+            revision=dataset_revision,
+        )
+        target_column = target or dataset_info.default_target
+        if target_column not in loaded_frame.columns:
+            raise ConfigurationError(
+                f"Target column {target_column!r} is not present in dataset {dataset!r}"
+            )
+        dataset_registry = DatasetRegistry()
+        dataset_registry.register(
+            "benchmark_dataset",
+            lambda _uri: loaded_frame,
+            version=f"benchmark-v1:{dataset_revision or 'resolved'}",
+        )
+        frame = dataset_registry.load("benchmark_dataset", dataset)
+        tuned_parameters: dict[str, dict[str, object]] = {}
+        if auto_tune:
+            for model_name in model_names:
+                tuned_parameters[model_name] = auto_tune_model(
+                    model_name,
+                    frame,
+                    target_column,
+                    horizon,
+                    TuningConfig(
+                        target_coverage=target_coverage,
+                        n_samples=tune_samples,
+                        hybrid_validation=hybrid_validation,
+                    ),
+                ).best_params
+        request = RunRequest(
+            dataset={
+                "id": dataset,
+                "provider": "benchmark_dataset",
+                "uri": dataset,
+                "target": target_column,
+                "domain": dataset_info.domain,
+                "adapter_version": dataset_registry.version("benchmark_dataset"),
+                "source_revision": dataset_revision,
+            },
+            validation={
+                "strategy": "temporal_holdout",
+                "test_size": test_size,
+                "preserve_order": True,
+            },
+            models=tuple(
+                {
+                    "id": model_name,
+                    "provider": model_name,
+                    "required": not allow_partial,
+                    "parameters": {
+                        "horizon": horizon,
+                        "n_estimators": n_estimators,
+                        "random_state": 42,
+                        **tuned_parameters.get(model_name, {}),
+                    },
+                }
+                for model_name in model_names
+            ),
+            evaluation={
+                "metrics": [
+                    "coverage",
+                    "sharpness",
+                    "winkler",
+                    "pinball",
+                    "crps",
+                    "mae",
+                    "rmse",
+                    "calibration_error",
+                ],
+                "coverage_levels": [0.8, 0.9],
+            },
+            storage={"provider": "local", "root": "data"},
+        )
+        result = ModelMatrixCoordinator(storage_root="data").run_with_lock(request, frame)
+        click.echo(f"  Loaded: {len(frame):,} rows, {len(frame.columns)} columns")
+        click.echo(f"  Domain: {dataset_info.domain}")
+        click.echo(f"  Target: {target_column}")
         click.echo()
-
-        result = runner.run_all(model_names, allow_partial=allow_partial)
 
         click.echo(f"\n{'=' * 60}")
         click.echo("Results")
         click.echo(f"{'=' * 60}\n")
 
-        for r in result.models:
-            click.echo(f"  {r.model_name}:")
-            click.echo(f"    Coverage @ 90%: {r.coverage_90:.4f}")
-            click.echo(f"    Coverage @ 80%: {r.coverage_80:.4f}")
-            click.echo(f"    Sharpness @ 90%: {r.sharpness_90:.4f}")
-            click.echo(f"    Sharpness @ 80%: {r.sharpness_80:.4f}")
-            click.echo(f"    Winkler @ 90%: {r.winkler_90:.4f}")
-            click.echo(f"    Winkler @ 80%: {r.winkler_80:.4f}")
-            click.echo(f"    Train time: {r.train_time_sec}s")
+        for model_result in result.model_results:
+            click.echo(f"  {model_result.model_id} [{model_result.status.value}]:")
+            for metric_name, metric_value in sorted(model_result.metrics.items()):
+                click.echo(f"    {metric_name}: {metric_value:.4f}")
+            click.echo(f"    Train time: {model_result.train_time_sec:.3f}s")
             click.echo()
 
-        if result.errors:
+        failed_models = [item for item in result.model_results if item.error is not None]
+        if failed_models:
             click.echo("Model failures:")
-            for error in result.errors:
-                click.echo(f"  - {error['model']}: {error['error']}")
+            for model_result in failed_models:
+                click.echo(f"  - {model_result.model_id}: {model_result.error}")
             click.echo()
 
+        json_path: Path
+        csv_path: Path
         if output:
             output_path = Path(output)
-            json_path = output_path.with_suffix(".json") if output_path.suffix else output_path
-            csv_path = (
-                output_path.with_suffix(".csv")
-                if output_path.suffix
-                else output_path.with_name(f"{output_path.name}.csv")
-            )
+            json_path = output_path.with_suffix(".json")
+            csv_path = output_path.with_suffix(".csv")
 
-            if not json_only:
-                runner.save_json(json_path)
-                click.echo(f"JSON results saved to: {json_path}")
-
-            if not csv_only:
-                runner.save_csv(csv_path)
-                click.echo(f"CSV results saved to: {csv_path}")
         else:
             default_json = Path("benchmark_results.json")
             default_csv = Path("benchmark_results.csv")
-            if not json_only:
-                runner.save_json(default_json)
-                click.echo(f"JSON results saved to: {default_json}")
-            if not csv_only:
-                runner.save_csv(default_csv)
-                click.echo(f"CSV results saved to: {default_csv}")
+            json_path = default_json
+            csv_path = default_csv
+
+        if not csv_only:
+            json_path.write_text(result.model_dump_json(indent=2), encoding="utf-8")
+            click.echo(f"JSON results saved to: {json_path}")
+        if not json_only:
+            rows = [
+                {
+                    "model": model_result.model_id,
+                    "provider": model_result.provider,
+                    "status": model_result.status.value,
+                    "train_time_sec": model_result.train_time_sec,
+                    "evaluation_row_count": model_result.evaluation_row_count,
+                    **model_result.metrics,
+                }
+                for model_result in result.model_results
+            ]
+            import polars as pl
+
+            pl.DataFrame(rows).write_csv(csv_path)
+            click.echo(f"CSV results saved to: {csv_path}")
 
     except (KeyboardInterrupt, SystemExit):
         raise
@@ -416,15 +706,35 @@ def tune(
     results: list[TuningResult] = []
     best_configs: dict[str, dict[str, Any]] = {}
 
+    try:
+        loaded_frame, dataset_info = load_dataset(
+            dataset,
+            n_samples=n_samples,
+            revision=dataset_revision,
+        )
+        target_column = dataset_info.default_target
+        dataset_registry = DatasetRegistry()
+        dataset_registry.register(
+            "benchmark_dataset",
+            lambda _uri: loaded_frame,
+            version=f"benchmark-v1:{dataset_revision or 'resolved'}",
+        )
+        frame = dataset_registry.load("benchmark_dataset", dataset)
+    except RECOVERABLE_CLI_EXCEPTIONS as error:
+        raise click.ClickException(str(error)) from error
+
     for model_name in model_names:
         try:
             click.echo(f"[{model_name}]")
-            result = auto_tune(
-                dataset_name=dataset,
+            result = auto_tune_model(
                 model_name=model_name,
-                n_samples=n_samples,
-                target_coverage=target_coverage,
-                dataset_revision=dataset_revision,
+                df=frame,
+                target=target_column,
+                horizon=3,
+                config=TuningConfig(
+                    target_coverage=target_coverage,
+                    n_samples=n_samples,
+                ),
             )
             results.append(result)
             best_configs[model_name] = result.best_params

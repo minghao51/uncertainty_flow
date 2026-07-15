@@ -99,9 +99,13 @@ uv run --extra opinion mypy uncertainty_flow/
 ### Benchmarking extension path
 
 - Prefer the provider seam in `uncertainty_flow/benchmarking/providers.py` (`BenchmarkModelProvider`) for new benchmark model integrations.
-- Use the legacy class registry path in `uncertainty_flow/benchmarking/runner.py` only for backward compatibility.
+- Register benchmark providers and their typed parameter schemas in
+  `uncertainty_flow/benchmarking/registry.py`; new orchestration must use the
+  pipeline-native `RunRequest` and `PipelineRunResult` contracts.
 - Keep built-in benchmark model-name contracts stable: `quantile-forest`, `conformal-regressor`, `conformal-forecaster`.
-- Output serialization belongs to the `ResultSink` seam in `uncertainty_flow/benchmarking/sinks.py`, not runner internals.
+- Output serialization belongs to the typed `PipelineRunResult` and
+  `ModelExecutionResult` contracts in `uncertainty_flow/benchmarking/contracts/`;
+  artifact publication belongs to the coordinator/storage boundary.
 
 ### Polars / NumPy boundary
 - **Public API:** always accepts and returns Polars DataFrames, Series, or LazyFrames.

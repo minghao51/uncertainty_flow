@@ -1,0 +1,67 @@
+---
+import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { resolve } from "node:path";
+import { gunzipSync } from "node:zlib";
+
+type EvidencePartition = { path: string; records: number; sha256: string };
+type EvidenceIndex = { partitions: EvidencePartition[] };
+type RunRecord = {
+  run_id: string;
+  model_id?: string;
+  status: string;
+  dataset_id: string;
+  metrics: Record<string, number>;
+  verified: boolean;
+  started_at: string;
+  lineage: string[];
+};
+
+export async function getStaticPaths() {
+  const evidenceRoot = resolve(process.cwd(), "public", "evidence");
+  const indexPath = resolve(evidenceRoot, "index.json");
+  if (!existsSync(indexPath)) return [];
+  const index = JSON.parse(readFileSync(indexPath, "utf8")) as EvidenceIndex;
+  const records = index.partitions.flatMap((partition) => {
+    const path = resolve(evidenceRoot, partition.path.replace("/evidence/", ""));
+    const compressed = readFileSync(path);
+    const checksum = createHash("sha256").update(compressed).digest("hex");
+    if (checksum !== partition.sha256) {
+      throw new Error(`Checksum mismatch for evidence partition ${partition.path}`);
+    }
+    const partitionRecords = gunzipSync(compressed)
+      .toString("utf8")
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => JSON.parse(line) as RunRecord);
+    if (partitionRecords.length !== partition.records) {
+      throw new Error(`Record count mismatch for evidence partition ${partition.path}`);
+    }
+    return partitionRecords;
+  });
+  return records.map((record) => ({
+    params: { run: record.model_id ? `${record.run_id}--${record.model_id}` : record.run_id },
+    props: { record },
+  }));
+}
+
+const { record } = Astro.props as { record: RunRecord };
+---
+
+<html lang="en">
+  <head><title>{record.run_id} | Uncertainty Flow Evidence</title></head>
+  <body>
+    <main>
+      <p><a href="/runs/">Back to runs</a></p>
+      <h1>Run {record.run_id}</h1>
+      {record.model_id && <p>Model: {record.model_id}</p>}
+      <p>Status: {record.status} · Verified: {String(record.verified)}</p>
+      <p>Dataset: {record.dataset_id}</p>
+      <h2>Metrics</h2>
+      <ul>{Object.entries(record.metrics).map(([name, value]) => <li>{name}: {value}</li>)}</ul>
+      <h2>Lineage</h2>
+      <ul>{record.lineage.map((artifact) => <li><code>{artifact}</code></li>)}</ul>
+    </main>
+  </body>
+</html>

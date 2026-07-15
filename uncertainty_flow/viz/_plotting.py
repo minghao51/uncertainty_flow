@@ -14,15 +14,15 @@ if TYPE_CHECKING:
     from ..core.distribution import DistributionPrediction
 
 PLOT_MAX_SAMPLES = 500
+_MPL_ERROR = "matplotlib is required for plotting. Install with: pip install matplotlib"
 
 
 def _require_mpl():
     try:
-        import matplotlib.pyplot as plt  # noqa: F401
-    except ImportError:
-        raise ImportError(
-            "matplotlib is required for plotting. Install with: pip install matplotlib"
-        )
+        import matplotlib.pyplot as plt
+    except ImportError as error:
+        raise ImportError(_MPL_ERROR) from error
+    return plt
 
 
 def _plot_slice(n_samples: int) -> slice:
@@ -67,7 +67,10 @@ def _subplot_grid(n_panels: int, n_cols: int = 3):
 
     n_cols = min(n_cols, n_panels)
     n_rows = (n_panels + n_cols - 1) // n_cols
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+    try:
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+    except ImportError as error:
+        raise ImportError(_MPL_ERROR) from error
     if n_panels == 1:
         axes = np.array([axes])
     axes_flat = np.asarray(axes).flatten()
@@ -154,8 +157,7 @@ def plot(
     max_targets: int = 6,
 ) -> None:
     """Fan chart of quantile bands. Requires matplotlib."""
-    _require_mpl()
-    import matplotlib.pyplot as plt
+    plt = _require_mpl()
 
     if confidence_bands is None:
         confidence_bands = [0.5, 0.8, 0.9, 0.95]
@@ -164,7 +166,10 @@ def plot(
     plot_indices = _plot_slice(pred._n_samples)
 
     if len(target_list) == 1:
-        fig, ax = plt.subplots(figsize=(12, 6))
+        try:
+            fig, ax = plt.subplots(figsize=(12, 6))
+        except ImportError as error:
+            raise ImportError(_MPL_ERROR) from error
         _plot_quantile_fan(ax, pred, target_list[0], actuals, confidence_bands, plot_indices, title)
         plt.tight_layout()
         plt.show()

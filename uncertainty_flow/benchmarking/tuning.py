@@ -1,6 +1,7 @@
 """Hyperparameter tuning for benchmark models."""
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Literal
 
@@ -50,6 +51,14 @@ class TuningConfig:
     timeout: int = 120
     hybrid_validation: bool = False
 
+    def __post_init__(self) -> None:
+        if not 0 < self.target_coverage < 1:
+            raise ValueError("target_coverage must be between 0 and 1")
+        if self.n_samples < 3:
+            raise ValueError("n_samples must be at least 3")
+        if self.timeout <= 0:
+            raise ValueError("timeout must be positive")
+
 
 @dataclass
 class TuningResult:
@@ -92,8 +101,6 @@ def tune_quantile_forest(
     n_estimators: int,
 ) -> tuple[float, float, float, float]:
     """Tune and evaluate quantile forest."""
-    import time
-
     start = time.time()
     min_calibration_size = min(0.5, max(0.25, 20 / max(1, len(train_df)) + 0.01))
     model = QuantileForestForecaster(
@@ -129,8 +136,6 @@ def tune_conformal_regressor(
     calibration_size: float,
 ) -> tuple[float, float, float, float]:
     """Tune and evaluate conformal regressor."""
-    import time
-
     start = time.time()
     model = ConformalRegressor(
         base_model=GradientBoostingRegressor(
@@ -168,8 +173,6 @@ def tune_conformal_forecaster(
     lags: int,
 ) -> tuple[float, float, float, float]:
     """Tune and evaluate conformal forecaster."""
-    import time
-
     start = time.time()
     model = ConformalForecaster(
         base_model=GradientBoostingRegressor(
@@ -276,6 +279,9 @@ def auto_tune_model(
     task_type: Literal["tabular", "time_series"] = (
         "time_series" if model_name in {"quantile-forest", "conformal-forecaster"} else "tabular"
     )
+    if config.n_samples < len(df):
+        df = df.tail(config.n_samples) if task_type == "time_series" else df.head(config.n_samples)
+    deadline = time.monotonic() + config.timeout
     validation_plan = select_validation_plan(
         df,
         task_type=task_type,
@@ -301,6 +307,8 @@ def auto_tune_model(
     if model_name == "quantile-forest":
         for n_est in search_space.get("n_estimators", [30]):
             for h in search_space.get("horizon", [3]):
+                if time.monotonic() >= deadline:
+                    break
                 trials += 1
                 cov, sharp, wink, train_time, score = _evaluate_over_splits(
                     evaluation_splits,
@@ -327,6 +335,8 @@ def auto_tune_model(
                 search_space.get("calibration_size", [0.2]),
             )
             for calib in calib_candidates:
+                if time.monotonic() >= deadline:
+                    break
                 trials += 1
                 cov, sharp, wink, train_time, score = _evaluate_over_splits(
                     evaluation_splits,
@@ -357,6 +367,8 @@ def auto_tune_model(
             )
             for calib in calib_candidates:
                 for lags in search_space.get("lags", [2]):
+                    if time.monotonic() >= deadline:
+                        break
                     trials += 1
                     cov, sharp, wink, train_time, score = _evaluate_over_splits(
                         evaluation_splits,
@@ -380,10 +392,12 @@ def auto_tune_model(
                             "train_time": train_time,
                         }
 
-    cov_90 = best_metrics.get("coverage_90", 0)
-    sharp_90 = best_metrics.get("sharpness_90", 0)
-    wink_90 = best_metrics.get("winkler_90", 0)
-    train_time = best_metrics.get("train_time", 0)
+    if not best_metrics:
+        raise TimeoutError(f"Tuning {model_name!r} timed out before completing a trial")
+    cov_90 = best_metrics["coverage_90"]
+    sharp_90 = best_metrics["sharpness_90"]
+    wink_90 = best_metrics["winkler_90"]
+    train_time = best_metrics["train_time"]
     if validation_plan.metadata.task_type == "time_series":
         validation_split_type = (
             "out_of_time_plus_out_of_sample"

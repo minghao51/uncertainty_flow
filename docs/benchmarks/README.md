@@ -189,11 +189,14 @@ The medium tier (conformal-forecaster, random-forest) provides the best cost-qua
 
 ```bash
 # Install all optional dependencies
-uv sync --extra opinion
+uv sync --extra benchmarking --extra ml
 
 # Run full benchmark
-uv run python benchmarks/run_benchmarks.py --all-datasets -n 1000 --iterations 3 --warmup 1 -o full_run
+mkdir -p results
+uv run python -m uncertainty_flow.cli benchmark --dataset weather \
+  --model quantile-forest,conformal-regressor --output results/weather
 
 # Generate report
-uv run python benchmarks/generate_report.py --output docs/benchmarks/20260426-comprehensive-run.md
+uv run python benchmarks/generate_report.py --results-dir results \
+  --output docs/benchmarks/20260426-comprehensive-run.md
 ```

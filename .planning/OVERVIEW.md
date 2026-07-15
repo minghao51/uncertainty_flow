@@ -89,7 +89,7 @@ The foundational layer that all models build upon.
 
 **Typical prediction flow:** `PolarsInput` → `model.fit(df, target)` → trains internally (numpy/sklearn/torch) → `model.predict(df)` → `DistributionPrediction` (quantile matrix + levels) → `.interval(0.9)` / `.median()` / `.mean()` / `.sample()`
 
-**Benchmarking flow:** `uncertainty-flow benchmark --dataset weather` → `BenchmarkRunner` loads dataset (HuggingFace or local parquet) → auto-tunes hyperparams → runs all models → saves JSON/CSV results
+**Benchmarking flow:** `uncertainty-flow benchmark --dataset weather` → registry-backed dataset/model resolution → Hamilton validation and model DAGs → staged Bronze/Silver/Gold/Platinum materialization → checksum/signature verification → typed JSON/CSV results
 
 **Conformal calibration flow:** Training data → split into fit/calibration → fit base model on fit set → compute nonconformity scores on calibration set → predict: point prediction ± quantile of scores
 
@@ -108,6 +108,7 @@ The foundational layer that all models build upon.
 | ML | scikit-learn >=1.3.0 | Base models (RF, GBM, MLP), preprocessing |
 | Statistics | SciPy >=1.11.0 | Copulas, parametric fitting, stats |
 | CLI | Click >=8.0.0 | Command-line interface |
+| Dataflow | Hamilton >=1.89 | Side-effect-free benchmark DAG construction |
 | Validation | Pydantic >=2.0.0 + pydantic-settings >=2.13.1 | Config models, env var binding |
 | Plotting | Matplotlib >=3.7.0 | Static visualizations |
 | Deep learning (opt) | PyTorch >=2.0.0 | DeepQuantileNetTorch |

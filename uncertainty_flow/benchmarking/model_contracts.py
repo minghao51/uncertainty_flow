@@ -23,6 +23,18 @@ class BenchmarkModel(Protocol):
 
 
 @dataclass(frozen=True)
+class ModelBuildConfig:
+    """Resolved configuration consumed by supported model providers."""
+
+    model_name: str
+    target_column: str
+    horizon: int = 3
+    n_estimators: int = 30
+    random_state: int = 42
+    tuned_params: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class ValidationMetadata:
     """Validation metrics captured during tuning."""
 

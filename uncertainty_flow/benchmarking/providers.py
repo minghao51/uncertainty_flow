@@ -4,18 +4,19 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import ClassVar, Protocol, cast
+from typing import Callable, Protocol, cast
 
+import numpy as np
 import polars as pl
-from sklearn.ensemble import GradientBoostingRegressor
+from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
+from sklearn.linear_model import LinearRegression, Ridge
 
 from uncertainty_flow.core.distribution import DistributionPrediction
 from uncertainty_flow.models import QuantileForestForecaster
 from uncertainty_flow.utils.exceptions import ConfigurationError, ModelNotFittedError
 from uncertainty_flow.wrappers import ConformalForecaster, ConformalRegressor
 
-from .configs import ModelBuildConfig
-from .model_contracts import BenchmarkModel
+from .model_contracts import BenchmarkModel, ModelBuildConfig
 
 
 def _int_param(params: dict[str, object] | None, key: str, default: int) -> int:
@@ -40,6 +41,13 @@ def _float_param(params: dict[str, object] | None, key: str, default: float) -> 
     return default
 
 
+def _hidden_layers(params: dict[str, object]) -> tuple[int, ...]:
+    value = params.get("hidden_layer_sizes", (64, 32))
+    if isinstance(value, (list, tuple)) and all(isinstance(item, int) for item in value):
+        return tuple(value)
+    return (64, 32)
+
+
 class BenchmarkModelProvider(Protocol):
     """Provider interface for concrete benchmark model adapters."""
 
@@ -55,11 +63,24 @@ class _BaseAdapter:
 
     config: ModelBuildConfig
     train_time: float = 0.0
+    target: str | None = None
 
     def predict(self, df: pl.DataFrame) -> DistributionPrediction:
         if not hasattr(self, "model") or self.model is None:
             raise ModelNotFittedError("BenchmarkModel")
         return self.model.predict(df)
+
+
+def _prediction(
+    lower: np.ndarray, median: np.ndarray, upper: np.ndarray, target: str
+) -> DistributionPrediction:
+    """Build the common quantile representation for deterministic baselines."""
+
+    return DistributionPrediction(
+        np.column_stack((lower, median, upper)),
+        [0.1, 0.5, 0.9],
+        [target],
+    )
 
 
 @dataclass
@@ -127,10 +148,230 @@ class _ConformalForecasterAdapter(_BaseAdapter):
         self.train_time = time.time() - start
 
 
+@dataclass
+class _ConformalBaselineAdapter(_BaseAdapter):
+    model: ConformalRegressor | None = None
+    estimator_kind: str = "linear"
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        params = self.config.tuned_params or {}
+        calibration_size = _float_param(params, "calibration_size", 0.2)
+        n_estimators = _int_param(params, "n_estimators", self.config.n_estimators)
+        if self.estimator_kind == "linear":
+            estimator = LinearRegression()
+        elif self.estimator_kind == "ridge":
+            alpha = _float_param(params, "alpha", 1.0)
+            estimator = Ridge(alpha=alpha)
+        elif self.estimator_kind == "random-forest":
+            estimator = RandomForestRegressor(
+                n_estimators=n_estimators,
+                random_state=self.config.random_state,
+                n_jobs=-1,
+            )
+        else:
+            estimator = GradientBoostingRegressor(
+                n_estimators=n_estimators,
+                random_state=self.config.random_state,
+            )
+        self.model = ConformalRegressor(
+            base_model=estimator,
+            calibration_size=calibration_size,
+            auto_tune=False,
+            random_state=self.config.random_state,
+        )
+        start = time.perf_counter()
+        self.model.fit(df, target=target)
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.model is None:
+            raise ModelNotFittedError("ConformalBaseline")
+        return self.model.predict(df)
+
+
+@dataclass
+class _NaiveForecastAdapter(_BaseAdapter):
+    last_value: float | None = None
+    residual_std: float | None = None
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        start = time.perf_counter()
+        values = df[target].to_numpy()
+        self.last_value = float(values[-1])
+        horizon = _int_param(self.config.tuned_params, "horizon", self.config.horizon)
+        self.residual_std = (
+            float(np.std(np.diff(values)) * np.sqrt(horizon))
+            if len(values) > 1
+            else float(np.std(values))
+        )
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.last_value is None or self.residual_std is None or self.target is None:
+            raise ModelNotFittedError("NaiveForecast")
+        n = len(df)
+        return _prediction(
+            np.full(n, self.last_value - 1.645 * self.residual_std),
+            np.full(n, self.last_value),
+            np.full(n, self.last_value + 1.645 * self.residual_std),
+            self.target,
+        )
+
+
+@dataclass
+class _MovingAverageAdapter(_BaseAdapter):
+    average: float | None = None
+    residual_std: float | None = None
+    window: int = 5
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        start = time.perf_counter()
+        values = df[target].to_numpy()
+        self.window = _int_param(self.config.tuned_params, "window", 5)
+        self.average = float(np.mean(values[-self.window :]))
+        if len(values) > self.window:
+            residuals = values[self.window :] - np.array(
+                [np.mean(values[i - self.window : i]) for i in range(self.window, len(values))]
+            )
+            self.residual_std = float(np.std(residuals))
+        else:
+            self.residual_std = float(np.std(values))
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.average is None or self.residual_std is None or self.target is None:
+            raise ModelNotFittedError("MovingAverage")
+        n = len(df)
+        return _prediction(
+            np.full(n, self.average - 1.645 * self.residual_std),
+            np.full(n, self.average),
+            np.full(n, self.average + 1.645 * self.residual_std),
+            self.target,
+        )
+
+
+@dataclass
+class _DeepQuantileAdapter(_BaseAdapter):
+    model: object | None = None
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        from uncertainty_flow.models import DeepQuantileNet
+
+        params = self.config.tuned_params or {}
+        self.model = DeepQuantileNet(
+            hidden_layer_sizes=_hidden_layers(params),
+            trunk_max_iter=_int_param(params, "trunk_max_iter", 300),
+            random_state=self.config.random_state,
+        )
+        start = time.perf_counter()
+        self.model.fit(df, target=target)
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.model is None:
+            raise ModelNotFittedError("DeepQuantileNet")
+        return cast(DistributionPrediction, self.model.predict(df))
+
+
+@dataclass
+class _DeepQuantileTorchAdapter(_BaseAdapter):
+    model: object | None = None
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        try:
+            from uncertainty_flow.models import DeepQuantileNetTorch
+        except ImportError as error:
+            raise ImportError(
+                "torch required for deep-quantile-torch. Install: uv sync --extra opinion"
+            ) from error
+        params = self.config.tuned_params or {}
+        self.model = DeepQuantileNetTorch(
+            hidden_layer_sizes=_hidden_layers(params),
+            epochs=_int_param(params, "epochs", 100),
+            learning_rate=_float_param(params, "learning_rate", 0.001),
+            device="cpu",
+            random_state=self.config.random_state,
+        )
+        start = time.perf_counter()
+        self.model.fit(df, target=target)
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.model is None:
+            raise ModelNotFittedError("DeepQuantileNetTorch")
+        return cast(DistributionPrediction, self.model.predict(df))
+
+
+@dataclass
+class _TransformerForecasterAdapter(_BaseAdapter):
+    model: object | None = None
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        try:
+            from uncertainty_flow.models import TransformerForecaster
+        except ImportError as error:
+            raise ImportError(
+                "chronos-forecasting required. Install: uv sync --extra opinion"
+            ) from error
+        params = self.config.tuned_params or {}
+        self.model = TransformerForecaster(
+            target=target,
+            horizon=self.config.horizon,
+            model_name=str(params.get("chronos_model", "chronos-bolt-tiny")),
+            calibration_size=_float_param(params, "calibration_size", 0.2),
+            auto_tune=False,
+            device="cpu",
+            random_state=self.config.random_state,
+        )
+        start = time.perf_counter()
+        self.model.fit(df)
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.model is None:
+            raise ModelNotFittedError("TransformerForecaster")
+        return cast(DistributionPrediction, self.model.predict(df))
+
+
+@dataclass
+class _BayesianQuantileAdapter(_BaseAdapter):
+    model: object | None = None
+
+    def fit(self, df: pl.DataFrame, target: str) -> None:
+        try:
+            from uncertainty_flow.bayesian import BayesianQuantileRegressor
+        except ImportError as error:
+            raise ImportError(
+                "numpyro is required. Install with: uv sync --extra opinion"
+            ) from error
+        params = self.config.tuned_params or {}
+        self.model = BayesianQuantileRegressor(
+            n_warmup=_int_param(params, "n_warmup", 1000),
+            n_samples=_int_param(params, "n_samples", 2000),
+            prior_width=_float_param(params, "prior_width", 10.0),
+            random_state=self.config.random_state,
+        )
+        start = time.perf_counter()
+        self.model.fit(df, target=target)
+        self.target = target
+        self.train_time = time.perf_counter() - start
+
+    def predict(self, df: pl.DataFrame) -> DistributionPrediction:
+        if self.model is None:
+            raise ModelNotFittedError("BayesianQuantileRegressor")
+        return cast(DistributionPrediction, self.model.predict(df))
+
+
 @dataclass(frozen=True)
 class _DefaultProvider:
     name: str
-    adapter_cls: type
+    adapter_cls: Callable[[ModelBuildConfig], BenchmarkModel]
 
     def build(self, config: ModelBuildConfig) -> BenchmarkModel:
         return self.adapter_cls(config)
@@ -148,6 +389,55 @@ _DEFAULT_PROVIDERS: dict[str, BenchmarkModelProvider] = {
         BenchmarkModelProvider,
         _DefaultProvider("conformal-forecaster", _ConformalForecasterAdapter),
     ),
+    "linear-regression": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider(
+            "linear-regression",
+            lambda config: _ConformalBaselineAdapter(config, estimator_kind="linear"),
+        ),
+    ),
+    "ridge-regression": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider(
+            "ridge-regression",
+            lambda config: _ConformalBaselineAdapter(config, estimator_kind="ridge"),
+        ),
+    ),
+    "random-forest": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider(
+            "random-forest",
+            lambda config: _ConformalBaselineAdapter(config, estimator_kind="random-forest"),
+        ),
+    ),
+    "gradient-boosting": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider(
+            "gradient-boosting",
+            lambda config: _ConformalBaselineAdapter(config, estimator_kind="gradient-boosting"),
+        ),
+    ),
+    "naive-forecast": cast(
+        BenchmarkModelProvider, _DefaultProvider("naive-forecast", _NaiveForecastAdapter)
+    ),
+    "moving-average": cast(
+        BenchmarkModelProvider, _DefaultProvider("moving-average", _MovingAverageAdapter)
+    ),
+    "deep-quantile": cast(
+        BenchmarkModelProvider, _DefaultProvider("deep-quantile", _DeepQuantileAdapter)
+    ),
+    "deep-quantile-torch": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider("deep-quantile-torch", _DeepQuantileTorchAdapter),
+    ),
+    "transformer-forecaster": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider("transformer-forecaster", _TransformerForecasterAdapter),
+    ),
+    "bayesian-quantile": cast(
+        BenchmarkModelProvider,
+        _DefaultProvider("bayesian-quantile", _BayesianQuantileAdapter),
+    ),
 }
 
 
@@ -156,70 +446,17 @@ def get_default_providers() -> dict[str, BenchmarkModelProvider]:
     return dict(_DEFAULT_PROVIDERS)
 
 
-class ClassRegistryProvider:
-    """Provider that adapts legacy class-registered benchmark models."""
-
-    def __init__(self, name: str, model_cls: type) -> None:
-        self.name = name
-        self._model_cls = model_cls
-
-    def build(self, config: ModelBuildConfig) -> BenchmarkModel:
-        return self._model_cls(_LegacyConfig(config), dict(config.tuned_params or {}))
-
-
-class _LegacyConfig:
-    """Dynamic proxy exposing ModelBuildConfig fields with fallback defaults."""
-
-    _FIELD_DEFAULTS: ClassVar[dict[str, object]] = {
-        "n_estimators": 30,
-        "horizon": 3,
-        "random_state": 42,
-        "target_coverage": 0.9,
-        "test_size": 0.2,
-        "dataset_name": "",
-        "n_samples": 1000,
-        "auto_tune": True,
-        "tune_samples": 500,
-        "tune_timeout": 120,
-        "confidence_levels": None,
-        "dataset_revision": None,
-        "hybrid_validation": False,
-        "rolling_origin": False,
-        "rolling_n_splits": 5,
-        "rolling_min_train": 50,
-        "rolling_horizon": 1,
-        "tune_size": 0.2,
-        "target_column": None,
-    }
-
-    def __init__(self, config: ModelBuildConfig) -> None:
-        self.n_estimators = config.n_estimators
-        self.horizon = config.horizon
-        self.random_state = config.random_state
-        self.target_column = config.target_column
-        self.tuned_params = config.tuned_params
-
-    def __getattr__(self, name: str) -> object:
-        defaults = _LegacyConfig._FIELD_DEFAULTS
-        if name in defaults:
-            return defaults[name]
-        known = sorted(
-            list(defaults)
-            + ["n_estimators", "horizon", "random_state", "target_column", "tuned_params"]
-        )
-        raise AttributeError(f"_LegacyConfig has no attribute '{name}'. Available: {known}")
-
-
 def resolve_provider(
     model_name: str,
     providers: dict[str, BenchmarkModelProvider],
     class_registry: dict[str, type],
 ) -> BenchmarkModelProvider:
-    """Resolve model provider from explicit providers, then legacy registry."""
-    if model_name in providers:
+    """Resolve a supported provider while rejecting retired class registrations."""
+
+    del class_registry
+    try:
         return providers[model_name]
-    if model_name in class_registry:
-        return ClassRegistryProvider(model_name, class_registry[model_name])
-    raise ConfigurationError(
-        f"Unknown model: {model_name}. Available: {sorted(set(providers) | set(class_registry))}"
-    )
+    except KeyError as error:
+        raise ConfigurationError(
+            f"Unknown model: {model_name}. Available: {sorted(providers)}"
+        ) from error

@@ -24,21 +24,19 @@ This notebook is a **model selection guide** backed by benchmark data.
 
 The benchmarking package uses explicit module seams:
 
-- **Orchestration Module**: `BenchmarkFlow` in `uncertainty_flow/benchmarking/flow.py`
+- **Orchestration Modules**: `BenchmarkCoordinator` and `ModelMatrixCoordinator`
 - **Model Provider Interface Seam**: `BenchmarkModelProvider` in `providers.py`
 - **Dataset Adapter Seam**: `load_dataset` in `datasets.py`
 - **Tuning Adapter Seam**: `auto_tune_model` in `tuning.py`
-- **Evaluation Adapter Seam**: metric evaluation to `ModelResult` in `flow.py` + `results.py`
-- **Result Sink Adapter Seam**: serialization/output policy in `ResultSink` (`sinks.py`)
+- **Evaluation Adapter Seam**: executable metric registrations in `registry.py`
+- **Result Contract**: `PipelineRunResult` and `ModelExecutionResult` in `contracts/results.py`
 
-Benchmark lifecycle per run:
+Pipeline lifecycle per run:
 
-1. `load`
-2. `split`
-3. `tune-per-run-context`
-4. `fit/predict`
-5. `evaluate`
-6. `sink`
+1. Resolve `RunRequest` and load through a registered dataset adapter.
+2. Materialize Bronze, Silver, and Gold lineage in staging.
+3. Fit registered providers and evaluate registered metrics.
+4. Verify and promote the final Platinum manifest last.
 
 ## Model Reference
 
@@ -184,28 +182,21 @@ plt.show()
 ```{python}
 #| label: python-api
 #| eval: false
-from uncertainty_flow.benchmarking import BenchmarkConfig, BenchmarkRunner
+from uncertainty_flow.benchmarking import ModelMatrixCoordinator
+from uncertainty_flow.benchmarking.contracts import RunRequest
+from uncertainty_flow.benchmarking.registry import default_dataset_registry
 
-config = BenchmarkConfig(
-    dataset_name="weather",
-    n_samples=1000,
-    horizon=3,
-    auto_tune=True,
+frame = default_dataset_registry().load("local_parquet", "weather.parquet")
+
+request = RunRequest(
+    dataset={"id": "weather", "provider": "local_parquet", "uri": "weather.parquet", "target": "y"},
+    validation={"strategy": "random_holdout", "test_size": 0.2},
+    models=({"id": "conformal-forecaster", "provider": "conformal-forecaster"},),
+    evaluation={"metrics": ["coverage", "winkler", "crps"]},
+    storage={"provider": "local", "root": "data"},
 )
-
-runner = BenchmarkRunner(config)
-result = runner.run_all(
-    model_names=[
-        "quantile-forest",
-        "conformal-regressor",
-        "conformal-forecaster",
-    ]
-)
-
-as_dict = runner.to_dict()
-print(as_dict.keys())  # dataset, metadata, errors, results
-runner.save_json("my_benchmark.json")
-runner.save_csv("my_benchmark.csv")
+result = ModelMatrixCoordinator(storage_root="data").run_with_lock(request, frame)
+print(result.model_results[0].metrics)
 ```
 
 ### CLI
@@ -213,31 +204,29 @@ runner.save_csv("my_benchmark.csv")
 ```{bash}
 #| label: cli-examples
 #| eval: false
-uf benchmark --models conformal-regressor quantile-forest --datasets weather electricity --n-obs 1000
-
-uf compare --files benchmark_run1.json benchmark_run2.json
+uf benchmark --dataset weather --model conformal-regressor,quantile-forest --n-samples 1000
 
 uf list-datasets
 
-uf auto-tune --model quantile-forest --dataset weather
+uf tune --dataset weather --model quantile-forest
 ```
 
-### Output Schema (`ResultSink.to_dict()`)
+### Output Schema (`PipelineRunResult.model_dump_json()`)
 
 ```json
 {
-  "dataset": "weather",
-  "metadata": {},
-  "errors": [],
-  "results": []
+  "manifest": {},
+  "verification": {},
+  "artifacts": [],
+  "model_results": []
 }
 ```
 
 ### Extending Benchmarks
 
-- Stable built-in benchmark names remain: `quantile-forest`, `conformal-regressor`, `conformal-forecaster`
-- Prefer the provider seam (`providers.py`) when adding benchmark models
-- Use legacy class registry path (`runner.py`) only for compatibility with older extensions
+- Stable built-in benchmark names are registered in `registry.py` and include the retained package and baseline providers.
+- Prefer a typed provider registration with parameter validation and explicit optional-dependency behavior.
+- Persist model outputs through the coordinator; do not add a second standalone execution path.
 
 ## Recommendations
 
@@ -255,5 +244,5 @@ uf auto-tune --model quantile-forest --dataset weather
 
 - **Start with `ConformalRegressor`** — guaranteed coverage with any sklearn model
 - **Benchmark on your own data** — results vary by dataset; no single best model
-- **Use `BenchmarkFlow` lifecycle vocabulary** when extending orchestration and adapters
+- **Use the pipeline lifecycle vocabulary** when extending orchestration and adapters
 - **Coverage ≠ quality** — also look at Winkler score (sharpness) and CRPS
