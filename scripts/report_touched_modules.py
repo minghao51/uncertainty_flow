@@ -24,11 +24,7 @@ def _base_ref() -> str:
 def main() -> int:
     base = _base_ref()
     out = _git(["diff", "--name-only", base])
-    files = [
-        f
-        for f in out.splitlines()
-        if f.startswith("uncertainty_flow/") and f.endswith(".py")
-    ]
+    files = [f for f in out.splitlines() if f.startswith("uncertainty_flow/") and f.endswith(".py")]
     if not files:
         print("No touched uncertainty_flow Python modules detected")
         return 0

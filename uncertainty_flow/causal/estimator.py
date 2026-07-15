@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 from sklearn.linear_model import LogisticRegression
 
@@ -64,8 +66,8 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
 
     def __init__(
         self,
-        outcome_model,
-        propensity_model=None,
+        outcome_model: Any,
+        propensity_model: Any | None = None,
         treatment_col: str = "treatment",
         method: str = "doubly_robust",
         random_state: int | None = None,
@@ -104,7 +106,7 @@ class CausalUncertaintyEstimator(BaseUncertaintyModel):
         self,
         data: PolarsInput,
         target: TargetSpec | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "CausalUncertaintyEstimator":
         """
         Fit the causal model to training data.

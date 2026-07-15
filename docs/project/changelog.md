@@ -1,6 +1,6 @@
 # CHANGELOG.md
 
-All notable changes to `uncertainty_flow` are documented in the root [CHANGELOG.md](../../CHANGELOG.md).
+All notable changes to `uncertainty_flow` are documented in the [canonical changelog on GitHub](https://github.com/minghao51/uncertainty_flow/blob/main/CHANGELOG.md).
 
 This file is kept for historical reference. The canonical changelog is at the repository root.
 

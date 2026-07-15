@@ -19,6 +19,10 @@ jobs:
           enable-cache: true
       - run: uv sync --extra dev
       - uses: pre-commit/action@v3.0.1
+      - name: Verify Ruff quality gates
+        run: |
+          uv run ruff check .
+          uv run ruff format . --check
 
   typecheck:
     runs-on: ubuntu-24.04
@@ -42,7 +46,9 @@ jobs:
           enable-cache: true
           python-version: ${{ matrix.python-version }}
       - run: uv sync --extra dev
-      - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q
+      - run: uv run pytest tests/ --ignore=tests/models/test_deep_quantile_torch.py -q --cov-fail-under=80
+      - name: Run deployment conformance tests
+        run: uv run pytest -q --no-cov tests/benchmarking/test_deployment.py tests/benchmarking/test_local_artifact_store.py
       - name: Report touched modules in this branch
         run: uv run python scripts/report_touched_modules.py
 
@@ -80,7 +86,44 @@ jobs:
             exit 1
           fi
       - name: Build documentation
-        run: uv run mkdocs build
+        run: uv run mkdocs build --strict
+
+  evidence-site:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: evidence-site/package-lock.json
+      - run: npm ci --prefix evidence-site
+      - run: npm run build --prefix evidence-site
+      - name: Verify generated evidence ignore policy
+        run: |
+          git check-ignore --no-index -q evidence-site/public/evidence/index.json
+          if git check-ignore --no-index -q evidence-site/public/evidence/.gitkeep; then
+            echo "public/evidence/.gitkeep must remain trackable"
+            exit 1
+          fi
+
+  base-cli-smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Build the package
+        run: uv build
+      - name: Install into an isolated base environment
+        run: |
+          uv venv .venv-base
+          uv pip install --python .venv-base/bin/python dist/*.whl
+      - name: Smoke-test the base CLI surface
+        run: |
+          .venv-base/bin/uncertainty-flow --help
+          .venv-base/bin/python -c "import uncertainty_flow.cli"
 
   security:
     runs-on: ubuntu-24.04

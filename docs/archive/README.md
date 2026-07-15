@@ -4,13 +4,13 @@ This folder keeps superseded planning documents and merged guides for historical
 
 ## Archived Planning Snapshots
 
-- [./plans/2026-03-20-uncertainty-flow-v1-design.md](./plans/2026-03-20-uncertainty-flow-v1-design.md)
-- [./plans/2026-03-20-implementation-progress.md](./plans/2026-03-20-implementation-progress.md)
-- [./plans/2026-03-20-final-summary.md](./plans/2026-03-20-final-summary.md)
+- [plans/20260320-uncertainty-flow-v1-design.md](plans/20260320-uncertainty-flow-v1-design.md)
+- [plans/20260320-implementation-progress.md](plans/20260320-implementation-progress.md)
+- [plans/20260320-final-summary.md](plans/20260320-final-summary.md)
 
 These files describe point-in-time implementation plans and completion claims. They are useful context, but they should not be treated as the current state of the project.
 
-- [./plans/20260416-technical-roadmap-v1.md](./plans/20260416-technical-roadmap-v1.md) — Superseded v3–v5 technical roadmap. Replaced by [../project/roadmap.md](../project/roadmap.md).
+- [plans/20260416-technical-roadmap-v1.md](plans/20260416-technical-roadmap-v1.md) — Superseded v3–v5 technical roadmap. Replaced by [../project/roadmap.md](../project/roadmap.md).
 
 ## Archived Merged Guides
 

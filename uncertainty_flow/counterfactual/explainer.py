@@ -136,7 +136,7 @@ class UncertaintyExplainer:
         target_reduction: float = 0.5,
         feature_bounds: dict[str, tuple[float, float]] | None = None,
         fixed_features: list[str] | None = None,
-        **search_kwargs,
+        **search_kwargs: Any,
     ) -> SearchResult:
         """
         Find counterfactual that reduces prediction interval width.
@@ -233,7 +233,7 @@ class UncertaintyExplainer:
         target_reduction: float = 0.5,
         feature_bounds: dict[str, tuple[float, float]] | None = None,
         fixed_features: list[str] | None = None,
-        **search_kwargs,
+        **search_kwargs: Any,
     ) -> list[SearchResult]:
         """
         Generate counterfactual explanations for multiple samples.

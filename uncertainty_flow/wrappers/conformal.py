@@ -1,6 +1,7 @@
 """ConformalRegressor - wrap any sklearn model with conformal prediction."""
 
 import warnings
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -153,7 +154,7 @@ class ConformalRegressor(BaseUncertaintyModel):
         self,
         data: PolarsInput,
         target: TargetSpec | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "ConformalRegressor":
         """
         Fit the conformal regressor.

@@ -1,6 +1,7 @@
 """ConformalForecaster - time series forecasting with conformal prediction."""
 
 import warnings
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -68,10 +69,8 @@ class ConformalForecaster(BaseUncertaintyModel):
             base_model: Any sklearn-compatible regressor
             horizon: Forecast horizon (steps ahead)
             targets: Target column name(s)
-            copula_family: (
-                "auto" (BIC selection) or one of "gaussian", "clayton", "gumbel", "frank". "
-                "Use "independent" for no inter-target correlation."
-            )
+            copula_family: Copula family: "auto" (BIC selection), "gaussian", "clayton",
+                "gumbel", or "frank". Use "independent" for no inter-target correlation.
             lags: Lag order(s) to generate
             calibration_method: "holdout" or "cross"
             calibration_size: Fraction for calibration (from END)
@@ -190,7 +189,7 @@ class ConformalForecaster(BaseUncertaintyModel):
         self,
         data: PolarsInput,
         target: TargetSpec | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "ConformalForecaster":
         """
         Fit the conformal forecaster.

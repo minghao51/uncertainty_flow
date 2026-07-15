@@ -47,7 +47,13 @@ nav:
       - Charting: guides/charting.md
       - Benchmarking: guides/benchmarking.md
       - Design Principles: guides/design.md
-  - Architecture: architecture/overview.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - ADR-001 Model Persistence: adr/001-model-persistence-format.md
+      - ADR-002 Hamilton Boundary: adr/002-hamilton-boundary.md
+      - ADR-003 Medallion Artifacts: adr/003-medallion-artifacts.md
+      - ADR-004 Run Identity and Status: adr/004-run-identity-and-status.md
+      - ADR-005 Evidence Export: adr/005-evidence-export.md
   - API Reference:
       - Benchmarking: api/benchmarking.md
       - Core: api/core.md
@@ -74,10 +80,26 @@ nav:
       - Risk & Multivariate: notebooks/04-risk-copulas.md
       - Methods & Benchmarks: notebooks/05-benchmarks.md
   - Benchmarks: benchmarks/README.md
+  - Operations:
+      - Deployment: operations/deployment.md
+      - Recovery: operations/recovery.md
+      - Verification: operations/verification.md
   - Project:
       - Contributing: project/contributing.md
       - Changelog: project/changelog.md
       - Roadmap: project/roadmap.md
+      - Technical Roadmap: project/technical_roadmap.md
+      - Benchmark API Specification: api/spec.md
+      - Comprehensive Benchmark Report: benchmarks/20260426-comprehensive-run.md
+      - Active Plans:
+          - Hamilton/Medallion Refactor: plans/20260713-hamilton-medallion-refactor-plan.md
+          - External Integrations and Debt: plans/20260715-external-integrations-and-debt-handoff.md
+
+exclude_docs: |
+  archive/**
+  plans/20260401-v6-plus-design.md
+  plans/20260411-phase4-runtime-handoff.md
+  plans/20260520-hardening-handoff.md
 
 extra_css:
   - stylesheets/notebooks.css

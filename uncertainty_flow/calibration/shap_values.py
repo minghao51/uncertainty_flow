@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import polars as pl
 
@@ -9,7 +11,7 @@ from ..utils.polars_bridge import to_numpy
 
 
 def uncertainty_shap(
-    model,
+    model: Any,
     X: pl.DataFrame,  # noqa: N803
     background: pl.DataFrame | None = None,
     quantile_pairs: list[tuple[float, float]] | None = None,

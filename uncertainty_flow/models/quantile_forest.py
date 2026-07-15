@@ -1,6 +1,7 @@
 """QuantileForestForecaster - Quantile Regression Forest for time series."""
 
 import warnings
+from typing import Any
 
 import numpy as np
 import polars as pl
@@ -171,7 +172,7 @@ class QuantileForestForecaster(BaseUncertaintyModel):
         self,
         data: PolarsInput,
         target: TargetSpec | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "QuantileForestForecaster":
         """
         Fit the quantile forest forecaster.

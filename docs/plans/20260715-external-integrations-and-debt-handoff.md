@@ -1,6 +1,6 @@
 # External Integrations and Repository Debt Handoff
 
-**Status:** Ready for implementation after deployment decisions
+**Status:** D3/D4 implemented; E0 decisions pending
 **Prepared:** 2026-07-15
 **Predecessor:** `docs/plans/20260713-hamilton-medallion-refactor-plan.md`
 
@@ -23,6 +23,12 @@ This handoff separates work that requires an explicit platform decision from wor
 - Last completed release gate: `1110 passed, 45 skipped`, 85.62% coverage, Ruff and package mypy passing.
 
 Re-run the baseline before implementation; the counts above are a dated snapshot, not a permanent assertion.
+
+## Implementation status
+
+- **2026-07-15 — D3 complete:** formatted `scripts/report_touched_modules.py`, removed stale cutover wording, repaired archive/changelog links, added live ADR/operations/active-plan navigation, excluded historical plans from the built site, fixed public Griffe annotations/docstrings, and enabled strict MkDocs builds.
+- **2026-07-15 — D4 complete:** CI now runs explicit Ruff quality gates, the coverage-bearing suite with an 80% floor, deployment conformance tests, strict MkDocs, the evidence-site install/build plus generated-file ignore checks, and an isolated base-install CLI smoke test.
+- **2026-07-15 — E0 pending:** no provider SDK or external deployment behavior has been selected or implemented. Artifact store, scheduler, distributed lock, signer, alerts, retention, and evidence-host decisions remain owner choices below.
 
 ## Invariants
 

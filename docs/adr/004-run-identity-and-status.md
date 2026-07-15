@@ -26,4 +26,4 @@ Required branch failures block Platinum publication. Optional diagnostic failure
 
 - Repeated identical requests can safely reuse verified artifacts.
 - Run manifests become machine-verifiable operational records.
-- Compatibility translation must map random legacy IDs separately from new content-derived IDs.
+- Any migration tooling must keep historical random IDs separate from the canonical content-derived IDs.

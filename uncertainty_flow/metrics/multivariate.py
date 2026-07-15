@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -19,7 +19,7 @@ def _ensure_2d(y_arr: np.ndarray, d: int) -> np.ndarray:
 
 def energy_score(
     pred: DistributionPrediction,
-    y_true,
+    y_true: Any,
     n_samples: int = 1000,
     random_state: int | None = None,
 ) -> float:
@@ -83,7 +83,7 @@ def energy_score(
 
 def variogram_score(
     pred: DistributionPrediction,
-    y_true,
+    y_true: Any,
     n_samples: int = 1000,
     p: float = 0.5,
     random_state: int | None = None,

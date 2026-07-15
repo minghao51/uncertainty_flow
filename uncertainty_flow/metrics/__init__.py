@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars as pl
 
@@ -62,9 +62,9 @@ def _median_for_target(point, target: str) -> pl.Series:
 
 def score(
     pred: DistributionPrediction,
-    y_true,
+    y_true: Any,
     metric: str | Callable,
-    **kwargs,
+    **kwargs: Any,
 ) -> float | dict[str, float]:
     """Unified metric entry point.
 

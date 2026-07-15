@@ -1,6 +1,7 @@
 """CrossModalAggregator - combine predictions from multiple feature groups."""
 
 import copy
+from typing import Any
 
 import numpy as np
 
@@ -65,8 +66,8 @@ class CrossModalAggregator(BaseUncertaintyModel):
         data: PolarsInput,
         target: TargetSpec | None = None,
         *,
-        base_model=None,
-        **kwargs,
+        base_model: Any | None = None,
+        **kwargs: Any,
     ) -> "CrossModalAggregator":
         """Fit a cloned base model for each feature group.
 

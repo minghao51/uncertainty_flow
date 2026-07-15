@@ -22,4 +22,4 @@ The first implementation is a local filesystem `ArtifactStore` with atomic tempo
 
 - Failed staging runs cannot appear in the published run catalog.
 - Storage implementations can later be replaced by object-store adapters without changing Hamilton nodes.
-- Existing JSON/CSV sinks remain compatibility outputs until parity is proven.
+- The canonical pipeline owns persisted result publication and evidence export.

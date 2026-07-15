@@ -56,7 +56,7 @@ jobs:
 
       - name: Build MkDocs
         if: steps.cache.outputs.cache-hit != 'true'
-        run: uv run mkdocs build
+        run: uv run mkdocs build --strict
 
       - uses: actions/upload-pages-artifact@v3
         with:

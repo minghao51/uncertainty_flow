@@ -5,7 +5,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import polars as pl
 
@@ -62,7 +62,7 @@ class BaseUncertaintyModel(ABC):
         self,
         data: PolarsInput,
         target: TargetSpec | None = None,
-        **kwargs,
+        **kwargs: Any,
     ) -> "BaseUncertaintyModel":
         """
         Fit the model to training data.
@@ -247,7 +247,7 @@ class BaseUncertaintyModel(ABC):
     def analyze_leverage(
         self,
         X: PolarsInput,  # noqa: N803
-        **kwargs,
+        **kwargs: Any,
     ) -> pl.DataFrame:
         """
         Analyze which features most influence prediction uncertainty.
